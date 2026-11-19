@@ -21,13 +21,15 @@ knowledge/
 *.log
 .DS_Store
 
-# Xcode / SwiftPM / Apple builds & signing
+# Xcode / SwiftPM / Apple builds & signing (ship binaries via GitHub Releases, not Git commits)
 apple-app/.build/
 apple-app/.swiftpm/
+apple-app/dist/
 **/xcuserdata/
 *.xcuserstate
 DerivedData/
 *.xcarchive
+*.ipa
 *.dSYM
 *.mobileprovision
 *.p12

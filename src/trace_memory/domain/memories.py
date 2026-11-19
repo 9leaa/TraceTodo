@@ -534,8 +534,11 @@ class MemoryItem:
             raise ValueError(f"Invalid assertion_kind: {self.assertion_kind}")
         if self.status not in MEMORY_STATUSES:
             raise ValueError(f"Invalid status: {self.status}")
-        normalized = validate_and_normalize_payload(self.memory_type, self.payload)
-        object.__setattr__(self, "payload", normalized)
+        if self.status == "forgotten":
+            object.__setattr__(self, "payload", {})
+        else:
+            normalized = validate_and_normalize_payload(self.memory_type, self.payload)
+            object.__setattr__(self, "payload", normalized)
         now = utc_now_iso()
         if not self.created_at:
             object.__setattr__(self, "created_at", now)
