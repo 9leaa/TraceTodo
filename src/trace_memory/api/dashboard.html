@@ -1,0 +1,3514 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="TraceTodo" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" type="image/png" href="/icon.png" />
+  <link rel="apple-touch-icon" href="/icon.png" />
+  <title>TraceTodo · 融合记忆与四象限待办中心</title>
+  <style>
+    :root {
+      --header-h: 60px;
+      --bg: #f4f6fb;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --muted: #64748b;
+      --primary: #7c3aed;
+      --primary-soft: #f3e8ff;
+      --q1-bg: #fef2f2; --q1-border: #fca5a5; --q1-badge: #dc2626;
+      --q2-bg: #eff6ff; --q2-border: #93c5fd; --q2-badge: #2563eb;
+      --q3-bg: #fffbeb; --q3-border: #fcd34d; --q3-badge: #d97706;
+      --q4-bg: #f8fafc; --q4-border: #cbd5e1; --q4-badge: #475569;
+      --radius: 14px;
+      --mc-lavender: #ede5ff; --mc-lavender-acc: #8b5cf6;
+      --mc-pink: #ffe2ec;     --mc-pink-acc: #ec4899;
+      --mc-sky: #bceaff;      --mc-sky-acc: #0ea5e9;
+      --mc-butter: #fff3b0;   --mc-butter-acc: #eab308;
+      --mc-mint: #c9f7ce;     --mc-mint-acc: #10b981;
+      --mc-peach: #ffe0ba;    --mc-peach-acc: #f97316;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+    header {
+      background: #ffffff;
+      color: #1e293b;
+      padding: calc(10px + env(safe-area-inset-top)) 20px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      border-bottom: 1px solid #e2e8f0;
+      position: sticky;
+      top: 0;
+      z-index: 35;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand-logo {
+      width: 34px; height: 34px;
+      border-radius: 10px;
+      overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 8px rgba(59,130,246,0.22);
+    }
+    .brand-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .brand h1 { font-size: 16px; font-weight: 700; letter-spacing: 0.2px; color: #0f172a; }
+    .pill {
+      font-size: 11.5px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: #f1f5f9;
+      color: #475569;
+      font-weight: 500;
+    }
+    .top-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .header-search-wrap {
+      flex: 1 1 200px;
+      min-width: 180px;
+      max-width: 480px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 4px 6px 4px 12px;
+    }
+    .header-search-wrap input {
+      border: none;
+      background: transparent;
+      flex: 1;
+      padding: 5px 4px;
+      outline: none;
+      font-size: 13px;
+    }
+    input, select, button, textarea {
+      font: inherit;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+    button {
+      cursor: pointer;
+      background: var(--surface);
+      color: var(--text);
+      font-weight: 500;
+      transition: all 0.15s ease;
+      touch-action: manipulation;
+    }
+    button:disabled { opacity: 0.62; cursor: wait; }
+    button:hover { border-color: #94a3b8; background: #f8fafc; }
+    button.primary { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+    button.primary:hover { background: #2563eb; }
+    button.duodo-btn {
+      background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-weight: 600;
+      padding: 8px 15px;
+      box-shadow: 0 4px 12px rgba(59,130,246,0.28);
+    }
+    button.duodo-btn:hover { filter: brightness(1.06); }
+    button.ai-pill {
+      background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 14px;
+      box-shadow: 0 2px 10px rgba(168,85,247,0.28);
+    }
+    button.ai-pill:disabled { opacity: 0.6; cursor: wait; }
+    button.ghost-dark {
+      background: #f8fafc;
+      color: #334155;
+      border: 1px solid #e2e8f0;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+    button.ghost-dark:hover { background: #eef2ff; border-color: #c7d2fe; color: #3730a3; }
+
+    /* 3-Region Workspace Layout */
+    .workspace-shell {
+      display: flex;
+      min-height: calc(100vh - 58px);
+      background: #f5f7fb;
+    }
+    .left-rail {
+      width: 106px;
+      flex-shrink: 0;
+      margin: 16px 0 16px 16px;
+      background: #ffffff;
+      border-radius: 14px;
+      padding: 12px 6px;
+      box-shadow: 0 6px 22px rgba(15,23,42,0.05);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      align-self: flex-start;
+      position: sticky;
+      top: calc(var(--header-h, 60px) + 16px);
+      max-height: calc(100vh - var(--header-h, 60px) - 32px);
+      min-height: calc(100vh - var(--header-h, 60px) - 32px);
+      overflow-y: auto;
+      z-index: 30;
+    }
+    .tabs {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      width: 100%;
+    }
+    .tab-btn {
+      border: none;
+      background: transparent;
+      padding: 10px 6px;
+      border-radius: 10px;
+      color: #64748b;
+      font-weight: 600;
+      font-size: 11.5px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      width: 100%;
+      user-select: none;
+    }
+    .tab-btn > * { pointer-events: none; }
+    .tab-btn:hover { background: #f8fafc; color: #1e293b; border-color: transparent; }
+    .tab-btn .tab-ico {
+      width: 34px; height: 34px;
+      border-radius: 999px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+      transition: all 0.15s ease;
+    }
+    .tab-btn.active { background: #f1f5f9; color: #0f172a; }
+    .tab-btn.active .tab-ico { background: #2d3748; color: #ffffff; }
+    .rail-tip-box {
+      margin-top: auto;
+      width: 100%;
+      padding: 10px 6px 4px;
+      text-align: center;
+    }
+    .rail-tip-title { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; color: #64748b; margin-bottom: 4px; }
+    .rail-tip-card {
+      background: #e8eef5;
+      border-radius: 10px;
+      padding: 8px 6px;
+      font-size: 10.5px;
+      line-height: 1.4;
+      color: #334155;
+      margin-top: 4px;
+    }
+
+    .container {
+      flex: 1;
+      min-width: 0;
+      padding: 20px 22px calc(76px + env(safe-area-inset-bottom));
+    }
+    .panel { display: none; }
+    .panel.active { display: block; animation: fadeInPanel 0.14s ease; }
+    @keyframes fadeInPanel {
+      from { opacity: 0.45; transform: translateY(3px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    .right-timeline-rail {
+      width: 300px;
+      flex-shrink: 0;
+      background: #f5f7fb;
+      border-left: 1px solid #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: var(--header-h, 60px);
+      height: calc(100vh - var(--header-h, 60px));
+      align-self: flex-start;
+    }
+    .timeline-header {
+      background: linear-gradient(135deg, #4b91f7 0%, #2563eb 100%);
+      color: #fff;
+      padding: 18px 18px 0;
+    }
+    .timeline-header h2 {
+      font-size: 15px;
+      font-weight: 500;
+      letter-spacing: 2px;
+      margin-bottom: 12px;
+    }
+    .timeline-tabs { display: flex; gap: 16px; }
+    .timeline-tab {
+      border: none;
+      background: transparent;
+      color: rgba(255,255,255,0.75);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 0 2px 10px;
+      border-bottom: 3px solid transparent;
+      border-radius: 0;
+    }
+    .timeline-tab:hover { background: transparent; color: #fff; }
+    .timeline-tab.active { color: #fff; border-bottom-color: #fff; }
+    .timeline-body {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+    }
+    .tl-item { display: flex; flex-direction: column; gap: 7px; }
+    .tl-head { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #64748b; }
+    .tl-dot { width: 11px; height: 11px; border-radius: 999px; border: 2.5px solid #3b82f6; background: #fff; }
+    .tl-card {
+      margin-left: 14px;
+      background: #fff;
+      border-radius: 10px;
+      padding: 12px;
+      box-shadow: 0 4px 12px rgba(15,23,42,0.05);
+      display: flex; flex-direction: column; gap: 7px;
+    }
+    .tl-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 2px; }
+    .tl-btn-ok { background: #3b82f6; color: #fff; border: none; padding: 5px; border-radius: 6px; font-size: 12px; }
+    .tl-btn-ok:hover { background: #2563eb; }
+    .tl-btn-sub { background: #fff; color: #64748b; border: 1px solid #cbd5e1; padding: 5px; border-radius: 6px; font-size: 12px; }
+
+    .mobile-fab { display: none; }
+    @media (max-width: 1120px) {
+      .right-timeline-rail { display: none; }
+    }
+    @media (max-width: 768px) {
+      .left-rail {
+        position: fixed;
+        bottom: 0; left: 0; right: 0; top: auto;
+        width: 100%;
+        min-height: 0;
+        max-height: none;
+        overflow-y: visible;
+        margin: 0;
+        border-radius: 0;
+        padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+        z-index: 40;
+        border-top: 1px solid #e2e8f0;
+        box-shadow: 0 -4px 16px rgba(15,23,42,0.06);
+      }
+      .rail-tip-box { display: none; }
+      .tabs { flex-direction: row; justify-content: space-around; }
+      .tab-btn { font-size: 10.5px; padding: 4px; gap: 2px; flex: 1; min-width: 0; }
+      .tab-btn .tab-ico { width: 26px; height: 26px; font-size: 14px; }
+      .toast { bottom: calc(76px + env(safe-area-inset-bottom)); right: 12px; left: 12px; text-align: center; }
+      .header-search-wrap { order: 3; max-width: 100%; width: 100%; }
+      .mobile-fab {
+        display: flex;
+        position: fixed;
+        right: 18px;
+        bottom: calc(68px + env(safe-area-inset-bottom));
+        width: 54px; height: 54px;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
+        color: #fff;
+        font-size: 26px;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        box-shadow: 0 8px 20px rgba(59,130,246,0.38);
+        z-index: 45;
+      }
+    }
+
+    /* Vibrant 2x2 Summary Hero Cards */
+    .summary-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .summary-title {
+      font-size: 15px;
+      font-weight: 500;
+      letter-spacing: 2.2px;
+      color: #475569;
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    @media (max-width: 640px) { .kpi-grid { grid-template-columns: 1fr; } }
+    .hero-kpi {
+      border-radius: 12px;
+      padding: 18px 22px;
+      color: #fff;
+      position: relative;
+      overflow: hidden;
+      min-height: 110px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 6px;
+    }
+    .hero-kpi.coral  { background: linear-gradient(135deg, #ff7e67 0%, #ff4b8b 100%); box-shadow: 0 10px 24px rgba(255,86,120,0.28); }
+    .hero-kpi.indigo { background: linear-gradient(135deg, #5f52f6 0%, #2592e8 100%); box-shadow: 0 10px 24px rgba(64,110,240,0.28); }
+    .hero-kpi.teal   { background: linear-gradient(135deg, #0ecfa8 0%, #16a6df 100%); box-shadow: 0 10px 24px rgba(16,185,176,0.28); }
+    .hero-kpi.violet { background: linear-gradient(135deg, #ec46c7 0%, #7a5af8 100%); box-shadow: 0 10px 24px rgba(168,75,246,0.28); }
+    .hero-kpi .label { font-size: 11.5px; font-weight: 600; letter-spacing: 0.8px; opacity: 0.9; }
+    .hero-kpi .val { font-size: 29px; font-weight: 700; line-height: 1.15; }
+    .hero-kpi .sub { font-size: 11.5px; opacity: 0.9; display: flex; gap: 14px; }
+    .hero-kpi .watermark {
+      position: absolute;
+      right: 14px;
+      bottom: -8px;
+      font-size: 68px;
+      opacity: 0.16;
+      pointer-events: none;
+    }
+
+    /* Middle Analytics Cards */
+    .analytics-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    @media (max-width: 768px) { .analytics-row { grid-template-columns: 1fr; } }
+    .analytic-card {
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 18px 20px;
+      box-shadow: 0 6px 20px rgba(15,23,42,0.05);
+      min-height: 215px;
+    }
+    .analytic-card h4 {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 1.4px;
+      color: #64748b;
+      margin-bottom: 12px;
+    }
+    .focus-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 0;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 13.5px;
+      cursor: pointer;
+    }
+    .focus-row:last-child { border-bottom: none; }
+    .focus-row:hover { color: #3b82f6; }
+    .donut-wrap { display: flex; align-items: center; gap: 22px; padding-top: 6px; }
+    .donut-legend { display: grid; gap: 10px; font-size: 12.5px; }
+    .legend-item { display: flex; align-items: center; gap: 8px; }
+    .legend-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
+
+    /* Legacy compatibility for smaller KPI cards in Supervision */
+    .kpi-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 16px;
+    }
+    .kpi-card .label { font-size: 12px; color: var(--muted); }
+    .kpi-card .val { font-size: 24px; font-weight: 700; margin-top: 2px; }
+
+    .diag-box {
+      background: linear-gradient(135deg, #f3e8ff 0%, #eef2ff 50%, #f8fafc 100%);
+      border: 1px solid #ddd6fe;
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      margin-bottom: 18px;
+    }
+    .diag-box h3 { font-size: 14px; color: #4c1d95; margin-bottom: 8px; }
+    .diag-list { list-style: none; display: grid; gap: 5px; font-size: 13px; color: #1e293b; }
+
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .btn-group { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .btn-group button.active { background: #1e293b; color: #fff; border-color: #1e293b; }
+
+    /* 2x2 Eisenhower Matrix */
+    .matrix-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+    @media (max-width: 860px) { .matrix-grid { grid-template-columns: 1fr; } }
+    .quad-box {
+      border-radius: var(--radius);
+      padding: 14px;
+      border: 1px solid var(--border);
+      min-height: 230px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .quad-Q1_do_first { background: var(--q1-bg); border-color: var(--q1-border); }
+    .quad-Q2_schedule { background: var(--q2-bg); border-color: var(--q2-border); }
+    .quad-Q3_delegate { background: var(--q3-bg); border-color: var(--q3-border); }
+    .quad-Q4_eliminate { background: var(--q4-bg); border-color: var(--q4-border); }
+    .quad-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      color: #fff;
+    }
+    .badge-Q1_do_first { background: var(--q1-badge); }
+    .badge-Q2_schedule { background: var(--q2-badge); }
+    .badge-Q3_delegate { background: var(--q3-badge); }
+    .badge-Q4_eliminate { background: var(--q4-badge); }
+
+    .task-card, .mem-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 13px 15px;
+      box-shadow: 0 2px 6px rgba(15,23,42,0.04);
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      position: relative;
+      overflow: hidden;
+    }
+    .task-card::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 5px;
+      background: var(--card-accent, #0ea5e9);
+    }
+    .task-card.theme-lavender { --card-accent: var(--mc-lavender-acc); background: linear-gradient(180deg, rgba(237,229,255,0.28) 0%, #fff 45%); }
+    .task-card.theme-pink     { --card-accent: var(--mc-pink-acc);     background: linear-gradient(180deg, rgba(255,226,236,0.28) 0%, #fff 45%); }
+    .task-card.theme-sky      { --card-accent: var(--mc-sky-acc);      background: linear-gradient(180deg, rgba(188,234,255,0.28) 0%, #fff 45%); }
+    .task-card.theme-butter   { --card-accent: var(--mc-butter-acc);   background: linear-gradient(180deg, rgba(255,243,176,0.28) 0%, #fff 45%); }
+    .task-card.theme-mint     { --card-accent: var(--mc-mint-acc);     background: linear-gradient(180deg, rgba(201,247,206,0.28) 0%, #fff 45%); }
+    .task-card.theme-peach    { --card-accent: var(--mc-peach-acc);    background: linear-gradient(180deg, rgba(255,224,186,0.28) 0%, #fff 45%); }
+
+    .task-card.done { opacity: 0.65; }
+    .task-card.done .task-title { text-decoration: line-through; }
+    .task-top { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+    .task-title { font-weight: 600; font-size: 14.5px; cursor: pointer; }
+    .task-title:hover { color: var(--primary); }
+    .meta-row { display: flex; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--muted); align-items: center; }
+    .tag {
+      background: #f1f5f9;
+      color: #334155;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+    }
+    .tag.lock { background: #fef3c7; color: #92400e; }
+    .tag.inferred { background: #f3e8ff; color: #6b21a8; }
+    .tag.score { background: #e0e7ff; color: #3730a3; font-weight: 600; }
+    .tag.rollover-warn { background: #fee2e2; color: #b91c1c; font-weight: 600; }
+    .tag.rollover-ok { background: #ffedd5; color: #c2410c; }
+    .tag.supervise { background: #f3e8ff; color: #7c3aed; font-weight: 600; }
+
+    /* Checklist mini view on card */
+    .card-checklist {
+      background: rgba(248,250,252,0.85);
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 7px 10px;
+      display: grid;
+      gap: 4px;
+    }
+    .chk-progress-bar {
+      height: 5px;
+      background: #e2e8f0;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-bottom: 4px;
+    }
+    .chk-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #a855f7, #ec4899);
+      border-radius: 999px;
+      transition: width 0.2s ease;
+    }
+    .chk-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12.5px;
+      cursor: pointer;
+    }
+    .chk-row input[type="checkbox"] { width: 14px; height: 14px; accent-color: #7c3aed; cursor: pointer; }
+    .chk-row.is-done span { text-decoration: line-through; color: var(--muted); }
+
+    .card-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 2px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .card-actions button, .card-actions select { padding: 4px 9px; font-size: 12px; border-radius: 8px; }
+
+    .list-stack { display: flex; flex-direction: column; gap: 10px; }
+    .two-col { display: grid; grid-template-columns: 1.2fr 1fr; gap: 18px; }
+    @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+    .card-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .card-box h3 { font-size: 15px; margin-bottom: 12px; }
+    .answer-box {
+      font-family: inherit;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-size: 13.5px;
+      line-height: 1.65;
+      margin-top: 10px;
+    }
+    .answer-box h4 { font-size: 14px; font-weight: 700; margin: 8px 0 4px; color: #0f172a; }
+    .answer-box ul, .answer-box ol { padding-left: 20px; margin: 6px 0; display: grid; gap: 4px; }
+    .answer-box code { background: #e2e8f0; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+    pre.answer-box { white-space: pre-wrap; }
+
+    /* DuoDo Bottom-Sheet / Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15,23,42,0.52);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 60;
+    }
+    .modal-backdrop.open { display: flex; }
+    @media (max-width: 640px) {
+      .modal-backdrop { align-items: flex-end; padding: 0; }
+      .duodo-sheet { border-bottom-left-radius: 0 !important; border-bottom-right-radius: 0 !important; max-height: 92vh !important; }
+    }
+    .modal {
+      background: var(--surface);
+      border-radius: 18px;
+      max-width: 720px;
+      width: 100%;
+      max-height: 86vh;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .duodo-sheet {
+      background: #f5f5f7;
+      border-radius: 26px;
+      max-width: 520px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 24px 60px rgba(15,23,42,0.28);
+    }
+    .duodo-header-card {
+      border-radius: 20px;
+      padding: 16px 18px 14px;
+      transition: background 0.25s ease;
+      box-shadow: 0 4px 14px rgba(15,23,42,0.06);
+    }
+    .duodo-header-card.bg-lavender { background: var(--mc-lavender); }
+    .duodo-header-card.bg-pink     { background: var(--mc-pink); }
+    .duodo-header-card.bg-sky      { background: var(--mc-sky); }
+    .duodo-header-card.bg-butter   { background: var(--mc-butter); }
+    .duodo-header-card.bg-mint     { background: var(--mc-mint); }
+    .duodo-header-card.bg-peach    { background: var(--mc-peach); }
+
+    .duodo-title-input {
+      width: 100%;
+      border: none;
+      background: transparent;
+      font-size: 19px;
+      font-weight: 700;
+      color: #0f172a;
+      outline: none;
+      padding: 4px 0;
+    }
+    .duodo-title-input::placeholder { color: rgba(15,23,42,0.42); }
+    .duodo-sub-input {
+      width: 100%;
+      border: none;
+      background: transparent;
+      font-size: 13px;
+      color: rgba(15,23,42,0.68);
+      outline: none;
+      padding: 2px 0 8px;
+    }
+    .color-dots { display: flex; gap: 12px; align-items: center; margin-top: 4px; }
+    .color-dot {
+      width: 24px; height: 24px;
+      border-radius: 999px;
+      border: 2px solid rgba(255,255,255,0.65);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 800;
+      color: #0f172a;
+      transition: transform 0.15s ease;
+    }
+    .color-dot.selected {
+      transform: scale(1.16);
+      border: 3px solid #ffffff;
+      box-shadow: 0 2px 8px rgba(15,23,42,0.2);
+    }
+
+    .duodo-card {
+      background: #ffffff;
+      border-radius: 18px;
+      padding: 12px 16px;
+      box-shadow: 0 2px 8px rgba(15,23,42,0.03);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .seg-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      background: #f1f5f9;
+      border-radius: 12px;
+      padding: 3px;
+      gap: 4px;
+    }
+    .seg-tab {
+      border: none;
+      background: transparent;
+      border-radius: 10px;
+      padding: 7px 10px;
+      font-weight: 600;
+      font-size: 13.5px;
+      color: #64748b;
+    }
+    .seg-tab.active {
+      background: #ffffff;
+      color: #0f172a;
+      box-shadow: 0 1px 4px rgba(15,23,42,0.08);
+    }
+    .privacy-pill {
+      background: #f1f5f9;
+      color: #475569;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 12px;
+      text-align: center;
+    }
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 4px 0;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 13.5px;
+    }
+    .setting-row:last-child { border-bottom: none; }
+    .setting-label { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+    .setting-ctrl { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .setting-ctrl select, .setting-ctrl input { padding: 5px 8px; font-size: 12.5px; border-radius: 8px; }
+    .chip-btn {
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 999px;
+      background: #f1f5f9;
+      border: 1px solid transparent;
+    }
+    .chip-btn.active { background: #ede9fe; color: #6d28d9; border-color: #c4b5fd; font-weight: 600; }
+
+    /* iOS-style switch */
+    .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer; inset: 0;
+      background-color: #cbd5e1; transition: .2s; border-radius: 999px;
+    }
+    .slider:before {
+      position: absolute; content: ""; height: 18px; width: 18px;
+      left: 3px; bottom: 3px; background-color: white; transition: .2s; border-radius: 50%;
+    }
+    .switch input:checked + .slider { background-color: #8b5cf6; }
+    .switch input:checked + .slider:before { transform: translateX(20px); }
+
+    .subtask-edit-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #f8fafc;
+      border-radius: 10px;
+      padding: 6px 10px;
+    }
+    .subtask-edit-row input[type="text"] {
+      flex: 1;
+      border: none;
+      background: transparent;
+      padding: 2px 4px;
+      outline: none;
+    }
+
+    /* Immersive Focus Lock Overlay */
+    .focus-overlay {
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(circle at top, #1e1b4b 0%, #090d1a 70%);
+      color: #f8fafc;
+      z-index: 200;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .focus-overlay.open { display: flex; }
+    .focus-card {
+      max-width: 520px;
+      width: 100%;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 26px;
+      padding: 28px 24px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .focus-timer {
+      font-size: 62px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 2px;
+      background: linear-gradient(135deg, #c4b5fd, #f9a8d4);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .focus-progress-track {
+      height: 8px;
+      background: rgba(255,255,255,0.12);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .focus-progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #a855f7, #ec4899);
+      transition: width 0.5s linear;
+    }
+    .focus-sublist {
+      text-align: left;
+      background: rgba(15,23,42,0.45);
+      border-radius: 14px;
+      padding: 12px 14px;
+      display: grid;
+      gap: 8px;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .focus-sublist label { display: flex; gap: 10px; align-items: center; font-size: 13.5px; cursor: pointer; }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #0f172a;
+      color: #fff;
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      display: none;
+      z-index: 250;
+      box-shadow: 0 10px 25px rgba(15,23,42,0.28);
+    }
+
+    .auth-sheet {
+      width: 100%;
+      max-width: 420px;
+      background: linear-gradient(165deg, #f3f5ff 0%, #ffffff 48%);
+      border-radius: 24px;
+      padding: 28px 26px 24px;
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22), 0 0 0 1px rgba(255,255,255,0.8) inset;
+      position: relative;
+      display: grid;
+      gap: 16px;
+    }
+    .auth-close-circle {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      border: none;
+      background: rgba(15,23,42,0.06);
+      color: #475569;
+      font-size: 14px;
+      font-weight: 700;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .auth-close-circle:hover { background: rgba(15,23,42,0.11); }
+    .auth-hero {
+      text-align: center;
+      display: grid;
+      justify-items: center;
+      gap: 8px;
+      padding-top: 2px;
+    }
+    .auth-hero img {
+      width: 64px;
+      height: 64px;
+      border-radius: 16px;
+      box-shadow: 0 10px 24px rgba(79, 70, 229, 0.24);
+    }
+    .auth-hero h2 {
+      margin: 2px 0 0;
+      font-size: 20px;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.01em;
+    }
+    .auth-hero p {
+      margin: 0;
+      font-size: 12.5px;
+      color: #64748b;
+    }
+    .auth-field {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      height: 46px;
+      padding: 0 14px;
+      background: #f8fafc;
+      border: 1.2px solid #e2e8f0;
+      border-radius: 12px;
+      transition: all 0.16s ease;
+    }
+    .auth-field:focus-within {
+      background: #ffffff;
+      border-color: #4f46e5;
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+    }
+    .auth-field input {
+      border: none !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      outline: none !important;
+      flex: 1;
+      padding: 0 !important;
+      font-size: 14px;
+      color: #0f172a;
+    }
+    .auth-cta-btn {
+      width: 100%;
+      height: 46px;
+      border: none;
+      border-radius: 13px;
+      background: linear-gradient(92deg, #3879f9 0%, #7c4dff 100%);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 10px 22px rgba(79, 70, 229, 0.26);
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+    }
+    .auth-cta-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 26px rgba(79, 70, 229, 0.34); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="brand-logo"><img src="/icon.png" alt="TraceTodo" /></div>
+      <h1>TraceTodo</h1>
+      <span class="pill" id="engineStatus">Loading...</span>
+    </div>
+
+    <div class="header-search-wrap">
+      <span style="color:#94a3b8;">🔍</span>
+      <input id="quickNoteInput" placeholder="一句话极速录入待办或记忆（如：明天必须修复微信支付超时 bug）..." onkeydown="if(event.key==='Enter') recordQuickNote()" />
+      <button type="button" id="quickNoteBtn" class="primary" style="padding:5px 12px;border-radius:8px;font-size:12px;" onclick="recordQuickNote(this)">AI 录入</button>
+    </div>
+
+    <div class="top-actions">
+      <button type="button" class="duodo-btn" onclick="openTaskSheet(null)">+ 新建任务</button>
+      <span id="spaceWrap" style="display:inline-flex;align-items:center;gap:4px;">
+        <label style="font-size:12px;color:#64748b;">Space:</label>
+        <input id="spaceInput" value="default" style="width:92px;padding:5px 8px;background:#f8fafc;" onchange="reloadAll()" />
+      </span>
+      <button type="button" id="accountBtn" class="ghost-dark" onclick="openAuthModal()">🔐 登录 / 账号</button>
+      <button type="button" class="ghost-dark" onclick="seedDemo(this)">✨ 演示</button>
+      <button type="button" class="ghost-dark" onclick="exportMarkdown(this)">📂 导出</button>
+      <button type="button" class="ghost-dark" id="syncMdBtn" onclick="syncMarkdown(this)">🔄 同步</button>
+      <button type="button" class="ghost-dark" onclick="runDream(this)">🌙 Dream</button>
+    </div>
+  </header>
+
+  <div class="workspace-shell">
+    <aside class="left-rail">
+      <div class="tabs" id="mainTabs">
+        <button type="button" class="tab-btn active" data-tab="tasks" onclick="switchTab('tasks', this)"><span class="tab-ico">📊</span><span>概览</span></button>
+        <button type="button" class="tab-btn" data-tab="supervision" onclick="switchTab('supervision', this)"><span class="tab-ico">👥</span><span>监工</span></button>
+        <button type="button" class="tab-btn" data-tab="memories" onclick="switchTab('memories', this)"><span class="tab-ico">🗂️</span><span>记忆</span></button>
+        <button type="button" class="tab-btn" data-tab="graph" onclick="switchTab('graph', this)"><span class="tab-ico">🕸️</span><span>图谱</span></button>
+        <button type="button" class="tab-btn" data-tab="ask" onclick="switchTab('ask', this)"><span class="tab-ico">💬</span><span>问答</span></button>
+        <button type="button" class="tab-btn" id="adminTabBtn" data-tab="admin" style="display:none;" onclick="switchTab('admin', this)"><span class="tab-ico">🛡️</span><span>后台</span></button>
+      </div>
+      <div class="rail-tip-box">
+        <div class="rail-tip-title">TIP</div>
+        <div style="font-size:16px;">💡</div>
+        <div class="rail-tip-card" id="railTipText">记录想法，AI 自动归类四象限</div>
+      </div>
+    </aside>
+
+    <div class="container">
+      <!-- TAB 1: SUMMARY DASHBOARD & EISENHOWER 4-QUADRANT MATRIX -->
+      <section id="panel-tasks" class="panel active">
+        <div class="summary-header">
+          <div class="summary-title">SUMMARY</div>
+          <div style="font-size:12px;color:#64748b;">个人记忆与四象限执行概览</div>
+        </div>
+        <div class="kpi-grid" id="taskKpis"></div>
+
+        <div class="analytics-row">
+          <div class="analytic-card">
+            <h4>TOP FOCUS · 优先聚焦</h4>
+            <div id="topFocusList"></div>
+          </div>
+          <div class="analytic-card">
+            <h4>TASK INSIGHTS · 分布洞察</h4>
+            <div id="taskInsightsBody"></div>
+          </div>
+        </div>
+
+        <div class="diag-box">
+          <h3>🧭 艾森豪威尔四象限 · 记忆驱动负载诊断与优先建议</h3>
+          <ul class="diag-list" id="diagList"></ul>
+        </div>
+
+        <div class="toolbar">
+          <div class="btn-group">
+            <button type="button" id="viewBtnMatrix" class="active" onclick="setTaskView('matrix')">田 四象限矩阵视图</button>
+            <button type="button" id="viewBtnList" onclick="setTaskView('list')">☰ 优先级排序列表</button>
+          </div>
+          <div class="btn-group">
+            <label style="font-size:12px;color:var(--muted);">排序依据:</label>
+            <select id="taskSortSelect" onchange="loadTasks()">
+              <option value="priority">综合优先级得分 (默认)</option>
+              <option value="urgency">紧急程度 / 截止时间</option>
+              <option value="importance">重要程度</option>
+              <option value="updated">最近更新时间</option>
+            </select>
+            <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px;">
+              <input type="checkbox" id="includeDoneCheck" onchange="loadTasks()" /> 显示已完成/已取消
+            </label>
+          </div>
+        </div>
+
+        <div id="matrixContainer" class="matrix-grid"></div>
+        <div id="listContainer" class="list-stack" style="display:none;"></div>
+      </section>
+
+    <!-- TAB 2: MULTIPLAYER & FRIEND SUPERVISION BOARD -->
+    <section id="panel-supervision" class="panel">
+      <div class="card-box" style="margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+          <div>
+            <h3>👥 好友监工小队 & 多人协作看板</h3>
+            <p style="font-size:12.5px;color:var(--muted);">
+              仅展示开启「好友监督」或「多人任务」的事项；未开启监督的私人任务严格仅自己可见。
+            </p>
+          </div>
+          <div class="btn-group">
+            <input id="friendNickInput" placeholder="我的昵称 (如：小明)" value="监工好友" style="width:130px;" />
+            <select id="supAssigneeFilter" onchange="loadSupervisionBoard()">
+              <option value="">全部成员</option>
+            </select>
+            <button type="button" class="duodo-btn" style="padding:7px 14px;font-size:12.5px;" onclick="copySupervisionLink()">🔗 复制监督链接</button>
+            <button type="button" style="padding:7px 12px;font-size:12.5px;color:#b91c1c;" onclick="revokeAllSupervisionLinks()">🚫 撤销分享</button>
+          </div>
+        </div>
+        <div id="supervisionKpis" class="kpi-grid" style="margin-top:14px;margin-bottom:0;"></div>
+      </div>
+      <div id="supervisionList" class="list-stack"></div>
+    </section>
+
+    <!-- TAB 3: MEMORIES & HYBRID VECTOR SEARCH -->
+    <section id="panel-memories" class="panel">
+      <div class="toolbar">
+        <div class="btn-group" style="flex:1;">
+          <input id="memSearchInput" style="flex:1;max-width:440px;" placeholder="输入关键词或跨字面语义查询（如：线上结算隐患 / 居住城市 / 咖啡习惯）..." onkeydown="if(event.key==='Enter') loadMemories()" />
+          <select id="memTypeFilter" onchange="loadMemories()">
+            <option value="">全部四类记忆</option>
+            <option value="task">任务 (task)</option>
+            <option value="preference">偏好 (preference)</option>
+            <option value="semantic">语义事实 (semantic)</option>
+            <option value="episodic">情景经历 (episodic)</option>
+          </select>
+          <button type="button" id="memSearchBtn" class="primary" onclick="loadMemories(this)">BM25 + 向量 RRF 检索</button>
+          <button type="button" class="duodo-btn" onclick="openNewMemoryModal()">+ 新建记忆</button>
+        </div>
+      </div>
+      <div id="memoriesList" class="list-stack"></div>
+    </section>
+
+    <!-- TAB 4: GRAPH CONTEXT -->
+    <section id="panel-graph" class="panel">
+      <div class="toolbar">
+        <div class="btn-group" style="flex:1;">
+          <input id="graphSeedInput" style="flex:1;max-width:420px;" placeholder="输入种子 memory:// 链接或主题（留空展示当前空间全部节点与双链边）..." onkeydown="if(event.key==='Enter') loadGraph()" />
+          <button type="button" id="graphLoadBtn" class="primary" onclick="loadGraph(this)">展开双链上下文</button>
+        </div>
+      </div>
+      <div class="two-col">
+        <div class="card-box">
+          <h3>🔗 双链有向关系边 (Relations & Forward References)</h3>
+          <div id="graphEdges" class="list-stack"></div>
+        </div>
+        <div class="card-box">
+          <h3>📍 图谱节点与预算状态</h3>
+          <div id="graphNodes" class="list-stack"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: ASK & TRACE -->
+    <section id="panel-ask" class="panel">
+      <div class="two-col">
+        <div class="card-box">
+          <h3>💬 结合记忆与原话的证据问答 (`/ask`)</h3>
+          <div style="display:flex;gap:8px;">
+            <input id="askInput" style="flex:1;" placeholder="试着问：我现在住在哪里？ / 我以前的居住历史变迁？ / 最近有什么结算风险？" onkeydown="if(event.key==='Enter') askQuestion()" />
+            <button type="button" id="askSubmitBtn" class="primary" onclick="askQuestion(this)">提问</button>
+          </div>
+          <div id="askResult"></div>
+        </div>
+        <div class="card-box">
+          <h3>🔍 全链路可观测审计日志 (`trace_runs` & 原始记录)</h3>
+          <div id="traceList" class="list-stack"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 6: ADMIN CONSOLE (visible for role='admin') -->
+    <section id="panel-admin" class="panel">
+      <div class="summary-header" style="margin-bottom:12px;">
+        <div class="summary-title">ADMINISTRATION · 运营后台与低成本防线</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button type="button" onclick="adminRunMaintenance(this)">🧹 WAL 检查点维护</button>
+          <button type="button" class="primary" onclick="loadAdminConsole(this)">🔄 刷新后台</button>
+        </div>
+      </div>
+
+      <div class="kpi-grid" id="adminKpis"></div>
+
+      <div class="two-col" style="margin-bottom:16px;">
+        <div class="card-box">
+          <h3>🛡️ 低成本防线 & 全局配额设置</h3>
+          <div style="display:grid;gap:10px;font-size:13px;">
+            <label style="display:flex;justify-content:space-between;align-items:center;">
+              <span>允许公开自助注册 (`allow_registration`)</span>
+              <input type="checkbox" id="admAllowReg" />
+            </label>
+            <label style="display:flex;justify-content:space-between;align-items:center;">
+              <span>开启零成本本地水话/乱码规则拦截</span>
+              <input type="checkbox" id="admNoiseFilter" />
+            </label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div><label style="font-size:11.5px;color:var(--muted);">单条最大字数</label><input type="number" id="admMaxChars" style="width:100%;" /></div>
+              <div><label style="font-size:11.5px;color:var(--muted);">最短有效字符数</label><input type="number" id="admMinChars" style="width:100%;" /></div>
+              <div><label style="font-size:11.5px;color:var(--muted);">每分钟请求限流</label><input type="number" id="admRateLimit" style="width:100%;" /></div>
+              <div><label style="font-size:11.5px;color:var(--muted);">重复防抖窗口(秒)</label><input type="number" id="admDupWin" style="width:100%;" /></div>
+              <div><label style="font-size:11.5px;color:var(--muted);">默认每日录入上限</label><input type="number" id="admNoteLimit" style="width:100%;" /></div>
+              <div><label style="font-size:11.5px;color:var(--muted);">默认每日 AI 调用上限</label><input type="number" id="admLlmLimit" style="width:100%;" /></div>
+            </div>
+            <div><label style="font-size:11.5px;color:var(--muted);">默认每日 Token 上限</label><input type="number" id="admTokLimit" style="width:100%;" /></div>
+            <button type="button" class="duodo-btn" onclick="saveAdminSettings(this)">💾 保存防线与配额配置</button>
+          </div>
+        </div>
+
+        <div class="card-box">
+          <h3>👤 管理员手动开通账号</h3>
+          <div style="display:grid;gap:8px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <input id="admNewUser" placeholder="用户名 (3-32位)" />
+              <input id="admNewDisplay" placeholder="显示昵称 (可选)" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <input id="admNewPass" type="password" placeholder="初始密码 (≥6位)" />
+              <select id="admNewRole">
+                <option value="user">普通用户 (user)</option>
+                <option value="admin">管理员 (admin)</option>
+              </select>
+            </div>
+            <button type="button" class="primary" onclick="adminCreateUser(this)">+ 创建账号</button>
+          </div>
+          <h4 style="margin:14px 0 6px;font-size:12.5px;color:var(--muted);">📊 近 7 日消耗与防线拦截趋势</h4>
+          <div id="adminDailySeries" class="list-stack" style="gap:6px;"></div>
+        </div>
+      </div>
+
+      <div class="card-box" style="margin-bottom:16px;">
+        <h3>👥 用户列表与配额状态</h3>
+        <div id="adminUsersList" class="list-stack"></div>
+      </div>
+
+      <div class="two-col">
+        <div class="card-box">
+          <h3>🚨 安全审计与防线拦截日志 (`security_audit_logs`)</h3>
+          <div id="adminAuditList" class="list-stack"></div>
+        </div>
+        <div class="card-box">
+          <h3>🤖 全站最近 AI 调用轨迹 (`trace_runs`)</h3>
+          <div id="adminTracesList" class="list-stack"></div>
+        </div>
+      </div>
+    </section>
+    </div>
+
+    <aside class="right-timeline-rail">
+      <div class="timeline-header">
+        <h2>TASKS · 待办流</h2>
+        <div class="timeline-tabs">
+          <button type="button" class="timeline-tab active" id="tlTabTodo" onclick="setTimelineTab('todo')">待办 (<span id="tlCntTodo">0</span>)</button>
+          <button type="button" class="timeline-tab" id="tlTabSup" onclick="setTimelineTab('sup')">监督 (<span id="tlCntSup">0</span>)</button>
+          <button type="button" class="timeline-tab" id="tlTabDone" onclick="setTimelineTab('done')">已完 (<span id="tlCntDone">0</span>)</button>
+        </div>
+      </div>
+      <div class="timeline-body" id="timelineBody"></div>
+    </aside>
+  </div>
+
+  <button type="button" class="mobile-fab" onclick="openTaskSheet(null)" title="新建任务">+</button>
+
+  <!-- DuoDo Style Create / Edit Task Bottom Sheet Modal -->
+  <div class="modal-backdrop" id="taskSheetModal" onclick="if(event.target===this) closeTaskSheet()">
+    <div class="duodo-sheet">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:0 4px;">
+        <strong id="sheetHeading" style="font-size:15px;">✨ 新建任务卡片</strong>
+        <button onclick="closeTaskSheet()" style="border-radius:999px;padding:4px 12px;font-size:12px;">取消</button>
+      </div>
+
+      <!-- Top Macaron Theme Color Card -->
+      <div class="duodo-header-card bg-sky" id="sheetHeaderCard">
+        <input class="duodo-title-input" id="tsTitle" placeholder="请输入任务内容 ✍️" />
+        <input class="duodo-sub-input" id="tsSummary" placeholder="可选补充备注 / 验收标准..." />
+        <div class="color-dots" id="colorDotsRow">
+          <div class="color-dot" data-color="lavender" style="background:#d8b4fe;" onclick="selectSheetColor('lavender')"></div>
+          <div class="color-dot" data-color="pink" style="background:#fbcfe8;" onclick="selectSheetColor('pink')"></div>
+          <div class="color-dot selected" data-color="sky" style="background:#7dd3fc;" onclick="selectSheetColor('sky')">✓</div>
+          <div class="color-dot" data-color="butter" style="background:#fde68a;" onclick="selectSheetColor('butter')"></div>
+          <div class="color-dot" data-color="mint" style="background:#86efac;" onclick="selectSheetColor('mint')"></div>
+          <div class="color-dot" data-color="peach" style="background:#fdba74;" onclick="selectSheetColor('peach')"></div>
+        </div>
+      </div>
+
+      <!-- Personal vs Multiplayer Mode + Schedule Card -->
+      <div class="duodo-card">
+        <div class="seg-tabs">
+          <button type="button" class="seg-tab active" id="modeBtnPersonal" onclick="setTaskMode('personal')">个人任务</button>
+          <button type="button" class="seg-tab" id="modeBtnMulti" onclick="setTaskMode('multiplayer')">多人任务</button>
+        </div>
+        <div class="privacy-pill" id="privacyNotice">ⓘ 若未开启监督，个人任务仅自己可见</div>
+        <div id="assigneeRow" class="setting-row" style="display:none;">
+          <span class="setting-label">👤 负责人 / 协作人</span>
+          <div class="setting-ctrl">
+            <input id="tsAssignee" value="self" placeholder="例如：self 或 小王" style="width:150px;" />
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <span class="setting-label">📅 日期</span>
+          <div class="setting-ctrl">
+            <button type="button" class="chip-btn" onclick="quickDate('today')">今天</button>
+            <button type="button" class="chip-btn" onclick="quickDate('tomorrow')">明天</button>
+            <button type="button" class="chip-btn" onclick="quickDate('saturday')">本周六</button>
+            <button type="button" class="chip-btn" onclick="quickDate('clear')">无日期</button>
+            <input type="date" id="tsDate" />
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <span class="setting-label">🕒 时间</span>
+          <div class="setting-ctrl">
+            <label style="display:flex;align-items:center;gap:4px;font-size:12.5px;cursor:pointer;">
+              <input type="checkbox" id="tsAllDay" checked onchange="toggleAllDayInput()" /> 全天
+            </label>
+            <input type="time" id="tsTime" value="18:00" style="display:none;" />
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <span class="setting-label">🔁 重复</span>
+          <div class="setting-ctrl">
+            <select id="tsRepeat">
+              <option value="never">永不</option>
+              <option value="daily">每天</option>
+              <option value="weekdays">工作日</option>
+              <option value="weekly">每周</option>
+              <option value="monthly">每月</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <span class="setting-label">🔔 提醒</span>
+          <div class="setting-ctrl">
+            <select id="tsReminder" onchange="requestNotifIfEnabled()">
+              <option value="">无提醒</option>
+              <option value="0">准时提醒</option>
+              <option value="15">提前 15 分钟</option>
+              <option value="60">提前 1 小时</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Checklist & AI Decompose Card -->
+      <div class="duodo-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-weight:700;font-size:14px;">📋 清单 <span style="color:#8b5cf6;font-size:12px;" id="subtaskCountBadge"></span></span>
+          <button type="button" class="ai-pill" id="aiDecomposeBtn" onclick="runAiDecompose()">✨ AI 拆解</button>
+        </div>
+        <div id="aiMemoryContextHint" style="display:none;font-size:11.5px;color:#6d28d9;background:#f5f3ff;padding:6px 10px;border-radius:8px;"></div>
+        <div id="sheetSubtasksList" style="display:grid;gap:6px;"></div>
+        <button type="button" onclick="addBlankSubtask()" style="border:none;background:transparent;color:#7c3aed;text-align:left;padding:4px 2px;font-weight:600;">⊕ 添加子步骤</button>
+      </div>
+
+      <!-- Focus Lock, Friend Supervision & Auto-Rollover Cards -->
+      <div class="duodo-card">
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">🚫 超时专注 / 锁屏模式</div>
+            <div style="font-size:11.5px;color:var(--muted);">开启后支持沉浸倒计时锁屏专注，未完成退出需填写中断原因</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="tsFocusLock" onchange="document.getElementById('focusDurRow').style.display=this.checked?'flex':'none'" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="setting-row" id="focusDurRow" style="display:none;">
+          <span class="setting-label" style="font-size:12.5px;color:var(--muted);">专注时长</span>
+          <div class="setting-ctrl">
+            <select id="tsFocusMinutes">
+              <option value="15">15 分钟</option>
+              <option value="25" selected>25 分钟 (番茄钟)</option>
+              <option value="45">45 分钟 (深度工作)</option>
+              <option value="60">60 分钟</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="duodo-card">
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">👥 好友监督</div>
+            <div style="font-size:11.5px;color:var(--muted);">开启后好友可在「监工小队」页查看并催办/点赞此任务</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="tsSupervision" onchange="updatePrivacyHint()" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">↻ 顺延任务</div>
+            <div style="font-size:11.5px;color:var(--muted);">开启后，跨日未完成会自动顺延至「今天」（连续顺延 ≥3 天触发 AI 提醒）</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="tsRollover" checked />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <details class="duodo-card" style="padding:10px 16px;">
+        <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#475569;">🎯 四象限重要/紧急度微调</summary>
+        <div style="display:grid;gap:8px;margin-top:10px;">
+          <div class="setting-row">
+            <span>重要度 (1-5)</span>
+            <input type="range" id="tsImportance" min="1" max="5" value="4" oninput="document.getElementById('tsImpVal').textContent=this.value" />
+            <strong id="tsImpVal">4</strong>
+          </div>
+          <div class="setting-row">
+            <span>基础紧急度 (1-5)</span>
+            <input type="range" id="tsUrgency" min="1" max="5" value="3" oninput="document.getElementById('tsUrgVal').textContent=this.value" />
+            <strong id="tsUrgVal">3</strong>
+          </div>
+          <div class="setting-row">
+            <span>象限锁定</span>
+            <select id="tsQuadrant">
+              <option value="">自动计算（随截止时间动态提权）</option>
+              <option value="Q1_do_first">手动锁定 Q1 重要且紧急</option>
+              <option value="Q2_schedule">手动锁定 Q2 重要不紧急</option>
+              <option value="Q3_delegate">手动锁定 Q3 紧急不重要</option>
+              <option value="Q4_eliminate">手动锁定 Q4 稍后/精简</option>
+            </select>
+          </div>
+        </div>
+      </details>
+
+      <button type="button" class="duodo-btn" id="tsSubmitBtn" style="padding:13px;font-size:15px;" onclick="submitTaskSheet()">创建新任务</button>
+    </div>
+  </div>
+
+  <!-- Detail / Provenance / Memory & Markdown Editor Modal -->
+  <div class="modal-backdrop" id="detailModal" onclick="if(event.target===this) closeModal()">
+    <div class="modal" style="max-width:780px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <h3 id="modalTitle">记忆详情与编辑</h3>
+        <button type="button" onclick="closeModal()">关闭</button>
+      </div>
+      <div id="modalBody" style="font-size:13px;display:grid;gap:12px;"></div>
+    </div>
+  </div>
+
+  <!-- Immersive Focus Lock-Screen Overlay -->
+  <div class="focus-overlay" id="focusOverlay">
+    <div class="focus-card">
+      <div style="font-size:12px;letter-spacing:1.2px;color:#c4b5fd;font-weight:700;">🔒 沉浸专注锁屏模式 · DEEP WORK</div>
+      <h2 id="focusTaskTitle" style="font-size:21px;line-height:1.35;">任务名称</h2>
+      <div class="focus-timer" id="focusTimerText">25:00</div>
+      <div class="focus-progress-track">
+        <div class="focus-progress-bar" id="focusProgressBar" style="width:0%;"></div>
+      </div>
+      <div class="focus-sublist" id="focusSubtasksBox" style="display:none;"></div>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:4px;">
+        <button type="button" class="duodo-btn" onclick="completeFocusAndTask()">✅ 完成任务并结束</button>
+        <button type="button" onclick="promptAbortFocus()" style="background:rgba(255,255,255,0.12);color:#e2e8f0;border:1px solid rgba(255,255,255,0.2);">提前退出专注</button>
+      </div>
+      <div id="focusAbortBox" style="display:none;background:rgba(15,23,42,0.75);padding:14px;border-radius:14px;text-align:left;gap:10px;">
+        <div style="font-size:13px;font-weight:600;color:#fca5a5;">⚠️ 专注尚未结束，请记录中断原因：</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button type="button" class="chip-btn" onclick="document.getElementById('focusAbortReason').value='临时紧急插入'">临时紧急插入</button>
+          <button type="button" class="chip-btn" onclick="document.getElementById('focusAbortReason').value='需要补充资料'">需要补充资料</button>
+          <button type="button" class="chip-btn" onclick="document.getElementById('focusAbortReason').value='休息调整'">休息调整</button>
+        </div>
+        <input id="focusAbortReason" placeholder="填写中断原因..." style="width:100%;background:#1e293b;color:#fff;border-color:#475569;" />
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button type="button" onclick="document.getElementById('focusAbortBox').style.display='none'" style="background:transparent;color:#cbd5e1;border-color:#475569;">继续专注</button>
+          <button type="button" onclick="confirmAbortFocus()" style="background:#dc2626;color:#fff;border:none;">确认退出并记录</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Account Auth / Profile Modal -->
+  <div class="modal-backdrop" id="authModal" onclick="if(event.target===this && !authLockOpen) closeAuthModal()">
+    <div class="auth-sheet">
+      <button type="button" class="auth-close-circle" id="authCloseBtn" onclick="closeAuthModal()" title="关闭">✕</button>
+
+      <div id="authGuestPane" style="display:grid;gap:14px;">
+        <div class="auth-hero">
+          <img src="/icon.png" alt="TraceTodo" />
+          <h2 id="authModalTitle">欢迎回到 TraceTodo</h2>
+          <p>AI 长期记忆驱动的四象限待办与执行中心</p>
+        </div>
+
+        <div id="bootstrapAdminBanner" style="display:none;background:#eff6ff;color:#1d4ed8;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.45;">
+          🌱 首次部署引导：首个注册的账号将自动成为系统管理员，并接管默认空间数据。
+        </div>
+
+        <div class="seg-tabs" style="background:#edf1f8;padding:4px;border-radius:12px;">
+          <button type="button" class="seg-tab active" id="authModeLoginBtn" onclick="setAuthMode('login')">登录账号</button>
+          <button type="button" class="seg-tab" id="authModeRegBtn" onclick="setAuthMode('register')">注册新账号</button>
+        </div>
+
+        <div style="display:grid;gap:11px;">
+          <div class="auth-field">
+            <span style="font-size:15px;opacity:0.65;">👤</span>
+            <input id="authUsername" autocomplete="username" placeholder="用户名（字母 / 数字 / 中文）" />
+          </div>
+          <div class="auth-field" id="authDisplayRow" style="display:none;">
+            <span style="font-size:15px;opacity:0.65;">✨</span>
+            <input id="authDisplayName" placeholder="显示昵称（选填，如 Xander）" />
+          </div>
+          <div class="auth-field">
+            <span style="font-size:15px;opacity:0.65;">🔒</span>
+            <input id="authPassword" type="password" autocomplete="current-password" placeholder="密码（至少 6 位）" onkeydown="if(event.key==='Enter') submitAuthForm()" />
+            <button type="button" onclick="const p=document.getElementById('authPassword');p.type=p.type==='password'?'text':'password';this.textContent=p.type==='password'?'👁️':'🙈';" style="border:none;background:transparent;padding:2px 4px;font-size:14px;cursor:pointer;">👁️</button>
+          </div>
+        </div>
+
+        <div id="authErrBox" style="display:none;color:#dc2626;font-size:12.5px;background:#fef2f2;padding:9px 12px;border-radius:10px;"></div>
+        <button type="button" id="authSubmitBtn" class="auth-cta-btn" onclick="submitAuthForm(this)">立即登录</button>
+      </div>
+
+      <div id="authProfilePane" style="display:none;gap:12px;padding-top:4px;">
+        <div style="font-size:17px;font-weight:800;color:#0f172a;">👤 我的账号与今日配额</div>
+        <div class="duodo-card" style="display:grid;gap:6px;font-size:13px;">
+          <div><strong>账号</strong>：<span id="profUsername"></span> <span class="tag" id="profRole"></span></div>
+          <div><strong>隔离空间 Space</strong>：<code id="profSpace"></code></div>
+          <div><strong>今日录入</strong>：<span id="profQuotaNotes"></span> · <strong>防线已拦截水话</strong>：<span id="profBlocked"></span></div>
+          <div><strong>今日 AI 调用</strong>：<span id="profQuotaLlm"></span> · <strong>Token</strong>：<span id="profQuotaTok"></span></div>
+        </div>
+        <div class="duodo-card" style="display:grid;gap:8px;">
+          <div style="font-size:12.5px;font-weight:700;">📱 客户端 / 桌面小组件 Token</div>
+          <div style="display:flex;gap:8px;">
+            <input id="profTokenInput" readonly style="flex:1;font-family:monospace;font-size:11.5px;" />
+            <button type="button" onclick="copyCurrentToken()">复制 Token</button>
+          </div>
+          <div style="font-size:12.5px;font-weight:700;margin-top:4px;">🤖 云端 MCP 接入配置（同步电脑端 Agent）</div>
+          <textarea id="profMcpConfigBox" readonly rows="5" style="width:100%;font-family:monospace;font-size:11px;background:#f8fafc;"></textarea>
+          <button type="button" onclick="copyMcpConfig()">📋 复制 MCP 接入配置 JSON</button>
+        </div>
+        <div class="duodo-card" style="display:grid;gap:8px;">
+          <div style="font-size:12.5px;font-weight:700;">🔑 修改密码</div>
+          <input id="profOldPw" type="password" placeholder="当前密码" />
+          <input id="profNewPw" type="password" placeholder="新密码（至少 6 位）" />
+          <button type="button" onclick="changeMyPassword(this)">更新密码</button>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button type="button" onclick="logoutAccount()" style="color:#dc2626;">退出登录</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    let currentTaskView = 'matrix';
+    let cachedTasksById = {};
+    let editingMemoryId = null;
+    let editingVersion = null;
+    let sheetColor = 'sky';
+    let sheetMode = 'personal';
+    let sheetSubtasks = [];
+    let focusState = null;
+
+    let authToken = localStorage.getItem('tm_auth_token') || '';
+    let currentUser = null;
+    let currentQuota = null;
+    let authRequiredFlag = false;
+    let hasUsersFlag = true;
+    let allowRegFlag = true;
+    let authMode = 'login';
+    let authLockOpen = false;
+    let activeShareToken = '';
+
+    const REPEAT_LABELS = {
+      never: '永不', daily: '每天', weekdays: '工作日', weekly: '每周', monthly: '每月'
+    };
+
+    function space() {
+      if (currentUser && currentUser.role !== 'admin') {
+        return currentUser.space_id;
+      }
+      return document.getElementById('spaceInput').value.trim() || 'default';
+    }
+
+    function authHeaders(extra = {}) {
+      const h = { ...extra };
+      if (authToken) h['Authorization'] = `Bearer ${authToken}`;
+      return h;
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.style.display = 'block';
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => { el.style.display = 'none'; }, 3600);
+    }
+
+    async function parseApiResponse(res) {
+      const text = await res.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch (e) {
+        data = { error: text || `HTTP ${res.status}` };
+      }
+      if (!res.ok && !data.error) {
+        data.error = data.detail || `HTTP ${res.status}`;
+      }
+      data._httpStatus = res.status;
+      if (res.status === 401 && !activeShareToken) {
+        if (authToken) {
+          authToken = '';
+          localStorage.removeItem('tm_auth_token');
+          currentUser = null;
+          updateAccountUi();
+        }
+        if (authRequiredFlag) {
+          openAuthModal(true, data.error || '登录状态已失效，请重新登录');
+        }
+      }
+      return data;
+    }
+
+    async function apiGet(path) {
+      let sep = path.includes('?') ? '&' : '?';
+      let url = `${path}${sep}space_id=${encodeURIComponent(space())}`;
+      if (activeShareToken && path.startsWith('/api/supervision/')) {
+        url += `&share_token=${encodeURIComponent(activeShareToken)}`;
+      }
+      const res = await fetch(url, { headers: authHeaders() });
+      return parseApiResponse(res);
+    }
+
+    async function apiPost(path, data = {}) {
+      const bodyObj = { ...data, space_id: space() };
+      if (activeShareToken && path.startsWith('/api/supervision/')) {
+        bodyObj.share_token = activeShareToken;
+      }
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(bodyObj),
+      });
+      return parseApiResponse(res);
+    }
+
+    async function withBtnBusy(btn, busyLabel, fn) {
+      const prevText = btn ? btn.textContent : '';
+      if (btn) {
+        btn.disabled = true;
+        if (busyLabel) btn.textContent = busyLabel;
+      }
+      try {
+        return await fn();
+      } catch (err) {
+        showToast(`请求失败: ${err?.message || err}`);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          if (busyLabel) btn.textContent = prevText;
+        }
+      }
+    }
+
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function switchTab(name, btn, opts) {
+      const targetBtn = btn || document.querySelector(`.tab-btn[data-tab="${name}"]`);
+      const targetPanel = document.getElementById(`panel-${name}`);
+      if (!targetPanel) return;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      if (targetBtn) targetBtn.classList.add('active');
+      targetPanel.classList.add('active');
+      if (!opts?.preserveScroll) window.scrollTo(0, 0);
+
+      const handleErr = (err) => showToast(`加载失败: ${err?.message || err}`);
+      if (name === 'tasks') loadTasks().catch(handleErr);
+      if (name === 'supervision') loadSupervisionBoard().catch(handleErr);
+      if (name === 'memories') loadMemories().catch(handleErr);
+      if (name === 'graph') loadGraph().catch(handleErr);
+      if (name === 'ask') loadTraces().catch(handleErr);
+      if (name === 'admin') loadAdminConsole().catch(handleErr);
+    }
+
+    function setTaskView(mode) {
+      currentTaskView = mode;
+      document.getElementById('viewBtnMatrix').classList.toggle('active', mode === 'matrix');
+      document.getElementById('viewBtnList').classList.toggle('active', mode === 'list');
+      document.getElementById('matrixContainer').style.display = mode === 'matrix' ? 'grid' : 'none';
+      document.getElementById('listContainer').style.display = mode === 'list' ? 'flex' : 'none';
+    }
+
+    function renderTaskCard(t) {
+      cachedTasksById[t.memory_id] = t;
+      const p = t.payload || {};
+      const isDone = p.task_status === 'done';
+      const quad = p.quadrant || 'Q4_eliminate';
+      const theme = p.color_theme || 'sky';
+      const subs = Array.isArray(p.subtasks) ? p.subtasks : [];
+      const doneSubs = subs.filter(s => s.done).length;
+      const pct = subs.length ? Math.round((doneSubs / subs.length) * 100) : 0;
+
+      const dueBadge = p.due_at
+        ? `<span class="tag" style="${p.is_overdue ? 'background:#fee2e2;color:#b91c1c;font-weight:600;' : ''}">⏰ ${esc(p.due_at.slice(0, p.is_all_day ? 10 : 16).replace('T', ' '))}${p.is_overdue ? ' (已逾期)' : ''}</span>`
+        : '';
+      const repeatBadge = p.repeat_rule && p.repeat_rule !== 'never'
+        ? `<span class="tag">🔁 ${esc(REPEAT_LABELS[p.repeat_rule] || p.repeat_rule)}</span>`
+        : '';
+      const remBadge = p.reminder_offset_minutes !== null && p.reminder_offset_minutes !== undefined
+        ? `<span class="tag">🔔 提醒</span>`
+        : '';
+      const rc = Number(p.rollover_count || 0);
+      const rollBadge = rc > 0
+        ? `<span class="tag ${rc >= 3 ? 'rollover-warn' : 'rollover-ok'}">↻ 已顺延 ${rc} 天</span>`
+        : '';
+      const supBadge = (p.supervision_enabled || p.task_mode === 'multiplayer')
+        ? `<span class="tag supervise">👥 ${p.task_mode === 'multiplayer' ? '多人' : '监督中'}${p.assignee && p.assignee !== 'self' ? ' · ' + esc(p.assignee) : ''}</span>`
+        : '';
+      const nudges = Array.isArray(p.nudges) ? p.nudges : [];
+      const nudgeBadge = nudges.length
+        ? `<span class="tag" style="background:#fef3c7;color:#92400e;">⚡/👍 ${nudges.length} 条互动</span>`
+        : '';
+      const lockBadge = t.user_locked ? `<span class="tag lock">🔒 锁定</span>` : '';
+
+      const checklistHtml = subs.length ? `
+        <div class="card-checklist">
+          <div style="display:flex;justify-content:space-between;font-size:11.5px;color:#475569;font-weight:600;">
+            <span>📋 子步骤清单</span>
+            <span>${doneSubs}/${subs.length} 已完成</span>
+          </div>
+          <div class="chk-progress-bar"><div class="chk-progress-fill" style="width:${pct}%"></div></div>
+          ${subs.map(s => `
+            <label class="chk-row ${s.done ? 'is-done' : ''}">
+              <input type="checkbox" ${s.done ? 'checked' : ''} data-mem-id="${esc(t.memory_id)}" data-sub-id="${esc(s.id)}" data-ver="${Number(t.version) || 1}" onchange="toggleCardSubtaskEl(this)" />
+              <span>${esc(s.title)}</span>
+            </label>
+          `).join('')}
+        </div>
+      ` : '';
+
+      return `
+        <div class="task-card theme-${esc(theme)} ${isDone ? 'done' : ''}">
+          <div class="task-top">
+            <div class="task-title" onclick="openTaskSheet('${t.memory_id}')" title="点击编辑任务卡片">${esc(t.title)}</div>
+            <span class="badge badge-${esc(quad)}">${esc(quad.slice(0, 2))} · ${esc(p.priority_score)}分</span>
+          </div>
+          <div style="font-size:12.5px;color:#475569;">${esc(p.priority_reason || t.summary)}</div>
+          ${checklistHtml}
+          <div class="meta-row">
+            <span class="tag">重要 ${'★'.repeat(p.importance || 3)}</span>
+            <span class="tag">紧急 ${'⚡'.repeat(p.effective_urgency || 3)}</span>
+            ${dueBadge}
+            ${repeatBadge}
+            ${remBadge}
+            ${rollBadge}
+            ${supBadge}
+            ${nudgeBadge}
+            ${lockBadge}
+            <span class="tag">v${t.version}</span>
+          </div>
+          <div class="card-actions">
+            ${!isDone
+              ? `<button onclick="transitionTask('${t.memory_id}', 'complete_task', ${t.version})">✅ 完成</button>
+                 <button onclick="openFocusLock('${t.memory_id}')">🎯 专注</button>
+                 <button onclick="openTaskSheet('${t.memory_id}')">✏️ 编辑</button>
+                 <button onclick="transitionTask('${t.memory_id}', 'cancel_task', ${t.version})">✕ 取消</button>`
+              : `<button onclick="transitionTask('${t.memory_id}', 'reopen_task', ${t.version})">↩️ 重新开启</button>`
+            }
+            <select onchange="changeQuadrant('${t.memory_id}', ${t.version}, this.value)">
+              <option value="" disabled selected>调整象限...</option>
+              <option value="Q1_do_first">移至 Q1 重要且紧急</option>
+              <option value="Q2_schedule">移至 Q2 重要不紧急</option>
+              <option value="Q3_delegate">移至 Q3 紧急不重要</option>
+              <option value="Q4_eliminate">移至 Q4 稍后/精简</option>
+            </select>
+            <button onclick="openDetail('${t.memory_id}')">🔎 溯源</button>
+          </div>
+        </div>
+      `;
+    }
+
+    let currentTimelineTab = 'todo';
+    let lastLoadedTasks = [];
+
+    function setTimelineTab(tab) {
+      currentTimelineTab = tab;
+      document.getElementById('tlTabTodo').classList.toggle('active', tab === 'todo');
+      document.getElementById('tlTabSup').classList.toggle('active', tab === 'sup');
+      document.getElementById('tlTabDone').classList.toggle('active', tab === 'done');
+      if (tab === 'done' && !document.getElementById('includeDoneCheck').checked) {
+        document.getElementById('includeDoneCheck').checked = true;
+        loadTasks();
+        return;
+      }
+      renderTimelineRail();
+    }
+
+    function renderTimelineRail() {
+      const todos = lastLoadedTasks.filter(t => t.payload?.task_status !== 'done');
+      const sups = todos.filter(t => t.payload?.supervision_enabled || t.payload?.task_mode === 'multiplayer');
+      const dones = lastLoadedTasks.filter(t => t.payload?.task_status === 'done');
+      const list = currentTimelineTab === 'sup' ? sups : (currentTimelineTab === 'done' ? dones : todos);
+      document.getElementById('tlCntSup').textContent = sups.length;
+
+      const body = document.getElementById('timelineBody');
+      if (!list.length) {
+        body.innerHTML = `<div style="text-align:center;color:#94a3b8;font-size:12.5px;padding:30px 10px;">暂无该分组事项</div>`;
+        return;
+      }
+      body.innerHTML = list.map(t => {
+        const p = t.payload || {};
+        const isDone = p.task_status === 'done';
+        const qCode = (p.quadrant || 'Q4').slice(0, 2);
+        const subs = Array.isArray(p.subtasks) ? p.subtasks : [];
+        const timeText = p.rollover_count ? `顺延${p.rollover_count}天` : (p.due_at ? p.due_at.slice(0, 10) : t.updated_at.slice(0, 10));
+        return `
+          <div class="tl-item">
+            <div class="tl-head">
+              <span class="tl-dot" style="border-color:${p.quadrant === 'Q1_do_first' ? '#ef4444' : '#3b82f6'}"></span>
+              <strong style="color:#334155;">${esc(qCode)}</strong>
+              <span style="margin-left:auto;color:${p.is_overdue ? '#dc2626' : '#94a3b8'};">${esc(timeText)}</span>
+            </div>
+            <div class="tl-card">
+              <div style="font-weight:600;font-size:13px;cursor:pointer;${isDone ? 'text-decoration:line-through;color:#94a3b8;' : ''}" onclick="openTaskSheet('${t.memory_id}')">${esc(t.title)}</div>
+              ${subs.length
+                ? subs.slice(0, 3).map(s => `<div style="font-size:11.5px;color:#64748b;">${s.done ? '✓' : '•'} ${esc(s.title)}</div>`).join('')
+                : `<div style="font-size:11.5px;color:#64748b;">${esc(p.priority_reason || t.summary)}</div>`
+              }
+              <div style="display:flex;justify-content:space-between;font-size:11.5px;color:#64748b;border-top:1px solid #f1f5f9;padding-top:6px;">
+                <span>重要度 ${p.importance || 3}★</span>
+                <strong style="color:#0f172a;">${esc(p.priority_score)} 分</strong>
+              </div>
+              <div class="tl-actions">
+                ${!isDone
+                  ? `<button class="tl-btn-ok" onclick="transitionTask('${t.memory_id}', 'complete_task', ${t.version})">✓</button>
+                     <button class="tl-btn-sub" onclick="transitionTask('${t.memory_id}', 'cancel_task', ${t.version})">✕</button>
+                     <button class="tl-btn-sub" onclick="openFocusLock('${t.memory_id}')">🎯</button>`
+                  : `<button class="tl-btn-sub" style="grid-column:span 3;" onclick="transitionTask('${t.memory_id}', 'reopen_task', ${t.version})">↩️ 重新开启</button>`
+                }
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderSvgDonut(c) {
+      const done = c.total_done ?? 0;
+      const q1 = c.Q1_do_first ?? 0;
+      const q2 = c.Q2_schedule ?? 0;
+      const q34 = (c.Q3_delegate ?? 0) + (c.Q4_eliminate ?? 0);
+      const total = done + q1 + q2 + q34;
+      const sum = Math.max(1, total);
+      const r = 48;
+      const circ = 2 * Math.PI * r;
+      const segs = [
+        { label: '已完成', val: done, color: '#8b5cf6' },
+        { label: 'Q1 急事', val: q1, color: '#f43f5e' },
+        { label: 'Q2 规划', val: q2, color: '#3b82f6' },
+        { label: 'Q3 / Q4', val: q34, color: '#14b8a6' },
+      ];
+      let offset = 0;
+      const arcs = segs.filter(s => s.val > 0).map(s => {
+        const len = (s.val / sum) * circ;
+        const arc = `<circle cx="62" cy="62" r="${r}" fill="none" stroke="${s.color}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${Math.max(2, len - 3)} ${circ}" stroke-dashoffset="${-offset}" transform="rotate(-90 62 62)" />`;
+        offset += len;
+        return arc;
+      }).join('');
+
+      const legend = segs.map(s => `
+        <div class="legend-item">
+          <span class="legend-dot" style="background:${s.color}"></span>
+          <div>
+            <div style="color:#64748b;font-size:11.5px;">${s.label}</div>
+            <strong style="font-size:15px;color:#0f172a;">${s.val}</strong>
+          </div>
+        </div>
+      `).join('');
+
+      return `
+        <div class="donut-wrap">
+          <svg width="124" height="124" viewBox="0 0 124 124">
+            <circle cx="62" cy="62" r="${r}" fill="none" stroke="#e2e8f0" stroke-width="12" />
+            ${arcs}
+            <text x="62" y="59" text-anchor="middle" font-size="23" font-weight="700" fill="#0f172a">${total}</text>
+            <text x="62" y="76" text-anchor="middle" font-size="10.5" fill="#64748b">总记录事项</text>
+          </svg>
+          <div class="donut-legend">${legend}</div>
+        </div>
+      `;
+    }
+
+    async function loadTasks() {
+      const sortBy = document.getElementById('taskSortSelect').value;
+      const incDone = document.getElementById('includeDoneCheck').checked;
+      const data = await apiGet(`/api/tasks/matrix?sort_by=${sortBy}&include_done=${incDone}`);
+      const c = data.summary_counts || {};
+      const sorted = data.sorted_tasks || [];
+      lastLoadedTasks = sorted;
+
+      const totalAll = (c.total_todo ?? 0) + (c.total_done ?? 0);
+      const pct = totalAll ? Math.round(((c.total_done ?? 0) / totalAll) * 100) : 0;
+      const focusSessions = sorted.reduce((acc, t) => acc + Number(t.payload?.focus_sessions_completed || 0), 0);
+
+      document.getElementById('taskKpis').innerHTML = `
+        <div class="hero-kpi coral">
+          <div class="label">Q1 重要且紧急</div>
+          <div class="val">${c.Q1_do_first ?? 0} 项</div>
+          <div class="sub"><span>${c.overdue ? '⚠️ ' + c.overdue + ' 项已逾期 ↑' : '✓ 无逾期急事'}</span><span>马上做</span></div>
+          <div class="watermark">🔥</div>
+        </div>
+        <div class="hero-kpi indigo">
+          <div class="label">Q2 重要不紧急</div>
+          <div class="val">${c.Q2_schedule ?? 0} 项</div>
+          <div class="sub"><span>长期规划与成长 ↑</span><span>建议专注时段</span></div>
+          <div class="watermark">📅</div>
+        </div>
+        <div class="hero-kpi teal">
+          <div class="label">待办总览 (TODO)</div>
+          <div class="val">${c.total_todo ?? 0}</div>
+          <div class="sub"><span>Q3 速办 ${c.Q3_delegate ?? 0} ↑</span><span>Q4 精简 ${c.Q4_eliminate ?? 0}</span></div>
+          <div class="watermark">📋</div>
+        </div>
+        <div class="hero-kpi violet">
+          <div class="label">完成率 & 专注</div>
+          <div class="val">${pct}% / ${c.total_done ?? 0}</div>
+          <div class="sub"><span>专注 ${focusSessions} 轮 ↑</span><span>累计已完结 ↑</span></div>
+          <div class="watermark">★</div>
+        </div>
+      `;
+
+      const topTodos = sorted.filter(t => t.payload?.task_status !== 'done').slice(0, 4);
+      document.getElementById('topFocusList').innerHTML = topTodos.length
+        ? topTodos.map((t, idx) => {
+            const subs = Array.isArray(t.payload?.subtasks) ? t.payload.subtasks : [];
+            const prog = subs.length
+              ? Math.round((subs.filter(s => s.done).length / subs.length) * 100)
+              : Math.min(100, Math.max(25, Math.round(Number(t.payload?.priority_score || 50))));
+            return `
+              <div class="focus-row" onclick="openTaskSheet('${t.memory_id}')">
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px;">${idx + 1}. ${esc(t.title)}</span>
+                <span class="tag score" style="flex-shrink:0;">${subs.length ? subs.filter(s => s.done).length + '/' + subs.length : prog + '%'}</span>
+              </div>
+            `;
+          }).join('')
+        : `<div style="color:#94a3b8;font-size:13px;padding:24px 0;text-align:center;">暂无高优待办</div>`;
+
+      document.getElementById('taskInsightsBody').innerHTML = renderSvgDonut(c);
+
+      const diags = data.diagnostics || [];
+      document.getElementById('diagList').innerHTML = diags.map(d => `<li>${esc(d)}</li>`).join('');
+      if (diags.length && document.getElementById('railTipText')) {
+        document.getElementById('railTipText').textContent = diags[0].replace(/^[🎯🔥⚠️💡🧹🧠↻]\s*/, '').slice(0, 48);
+      }
+
+      document.getElementById('tlCntTodo').textContent = c.total_todo ?? 0;
+      document.getElementById('tlCntDone').textContent = c.total_done ?? 0;
+      renderTimelineRail();
+
+      const qOrder = ['Q1_do_first', 'Q2_schedule', 'Q3_delegate', 'Q4_eliminate'];
+      document.getElementById('matrixContainer').innerHTML = qOrder.map(qKey => {
+        const qObj = (data.quadrants || {})[qKey] || { label: qKey, count: 0, tasks: [] };
+        const cards = qObj.tasks.length
+          ? qObj.tasks.map(renderTaskCard).join('')
+          : `<div style="color:var(--muted);font-size:13px;padding:12px 4px;">暂无该象限事项</div>`;
+        return `
+          <div class="quad-box quad-${qKey}">
+            <div class="quad-header">
+              <span>${esc(qObj.label)}</span>
+              <span class="badge badge-${qKey}">${qObj.count} 项待办</span>
+            </div>
+            ${cards}
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('listContainer').innerHTML = sorted.length
+        ? sorted.map(renderTaskCard).join('')
+        : `<div class="card-box" style="color:var(--muted);">暂无符合条件的待办事项</div>`;
+    }
+
+    function toggleCardSubtaskEl(el) {
+      return toggleCardSubtask(
+        el.dataset.memId || '',
+        el.dataset.subId || '',
+        !!el.checked,
+        Number(el.dataset.ver || 0) || null
+      );
+    }
+
+    async function toggleCardSubtask(memId, subId, done, ver) {
+      const res = await apiPost('/api/tasks/subtasks/toggle', {
+        memory_id: memId,
+        subtask_id: subId,
+        done: done,
+        expected_version: ver,
+      });
+      if (res.error) {
+        showToast(`更新子步骤失败: ${res.error}`);
+        loadTasks();
+        return;
+      }
+      if (res.all_subtasks_done) {
+        showToast('🎉 子步骤已全部勾选完成！可点击「✅ 完成」归档主任务');
+      }
+      await loadTasks();
+      if (focusState && focusState.task.memory_id === memId) {
+        focusState.task = res.memory;
+        renderFocusSubtasks();
+      }
+    }
+
+    async function transitionTask(memId, action, ver) {
+      const res = await apiPost('/api/tasks/transition', { memory_id: memId, action, expected_version: ver });
+      if (res.error) return showToast(`操作失败: ${res.error}`);
+      if (res.next_task) {
+        showToast(`✅ 本期已完成，已自动生成下一周期 (${res.next_task.payload?.due_at?.slice(0,10) || ''})`);
+      } else {
+        showToast(`已更新状态 -> v${res.memory?.version}`);
+      }
+      loadTasks();
+      if (document.getElementById('panel-supervision').classList.contains('active')) loadSupervisionBoard();
+    }
+
+    async function changeQuadrant(memId, ver, quadrant) {
+      if (!quadrant) return;
+      const res = await apiPost('/api/tasks/quadrant', { memory_id: memId, expected_version: ver, quadrant });
+      if (res.error) return showToast(`版本冲突或错误: ${res.error}`);
+      showToast(`已切换至 ${quadrant} 并启用手动锁定保护 (v${res.memory?.version})`);
+      loadTasks();
+    }
+
+    // ---------------- DuoDo Task Sheet Logic ----------------
+    function selectSheetColor(c) {
+      sheetColor = c;
+      const hdr = document.getElementById('sheetHeaderCard');
+      hdr.className = `duodo-header-card bg-${c}`;
+      document.querySelectorAll('#colorDotsRow .color-dot').forEach(dot => {
+        const isSel = dot.getAttribute('data-color') === c;
+        dot.classList.toggle('selected', isSel);
+        dot.textContent = isSel ? '✓' : '';
+      });
+    }
+
+    function setTaskMode(mode) {
+      sheetMode = mode;
+      document.getElementById('modeBtnPersonal').classList.toggle('active', mode === 'personal');
+      document.getElementById('modeBtnMulti').classList.toggle('active', mode === 'multiplayer');
+      document.getElementById('assigneeRow').style.display = mode === 'multiplayer' ? 'flex' : 'none';
+      if (mode === 'multiplayer') {
+        document.getElementById('tsSupervision').checked = true;
+      }
+      updatePrivacyHint();
+    }
+
+    function updatePrivacyHint() {
+      const sup = document.getElementById('tsSupervision').checked;
+      const el = document.getElementById('privacyNotice');
+      if (sheetMode === 'multiplayer') {
+        el.textContent = '👥 多人任务将同步展示在「监工小队」协作看板中';
+      } else if (sup) {
+        el.textContent = '👀 已开启好友监督，好友可在「监工小队」看到并督促此任务';
+      } else {
+        el.textContent = 'ⓘ 若未开启监督，个人任务仅自己可见';
+      }
+    }
+
+    function toggleAllDayInput() {
+      const allDay = document.getElementById('tsAllDay').checked;
+      document.getElementById('tsTime').style.display = allDay ? 'none' : 'inline-block';
+    }
+
+    function fmtLocalYMD(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function quickDate(kind) {
+      const el = document.getElementById('tsDate');
+      const d = new Date();
+      if (kind === 'today') {
+        el.value = fmtLocalYMD(d);
+      } else if (kind === 'tomorrow') {
+        d.setDate(d.getDate() + 1);
+        el.value = fmtLocalYMD(d);
+      } else if (kind === 'saturday') {
+        const diff = (6 - d.getDay() + 7) % 7 || 7;
+        d.setDate(d.getDate() + diff);
+        el.value = fmtLocalYMD(d);
+      } else {
+        el.value = '';
+      }
+    }
+
+    function renderSheetSubtasks() {
+      const box = document.getElementById('sheetSubtasksList');
+      document.getElementById('subtaskCountBadge').textContent = sheetSubtasks.length ? `(${sheetSubtasks.length} 步)` : '';
+      box.innerHTML = sheetSubtasks.map((s, idx) => `
+        <div class="subtask-edit-row">
+          <input type="checkbox" ${s.done ? 'checked' : ''} onchange="sheetSubtasks[${idx}].done = this.checked" />
+          <input type="text" value="${esc(s.title)}" placeholder="输入子步骤..." oninput="sheetSubtasks[${idx}].title = this.value" />
+          <button type="button" onclick="sheetSubtasks.splice(${idx}, 1); renderSheetSubtasks()" style="border:none;background:transparent;color:#94a3b8;padding:2px 6px;">✕</button>
+        </div>
+      `).join('');
+    }
+
+    function addBlankSubtask() {
+      sheetSubtasks.push({ id: 'sub_' + Math.random().toString(36).slice(2, 9), title: '', done: false });
+      renderSheetSubtasks();
+    }
+
+    async function runAiDecompose() {
+      const title = document.getElementById('tsTitle').value.trim();
+      if (!title) return showToast('请先在顶部输入任务内容再点 AI 拆解');
+      const btn = document.getElementById('aiDecomposeBtn');
+      btn.disabled = true;
+      btn.textContent = '✨ 拆解中...';
+      try {
+        const res = await apiPost('/api/tasks/decompose', {
+          title,
+          summary: document.getElementById('tsSummary').value.trim(),
+          memory_id: editingMemoryId || '',
+        });
+        if (res.error) return showToast(`AI 拆解失败: ${res.error}`);
+        const newSteps = (res.subtasks || []).map(s => ({ id: s.id, title: s.title, done: false }));
+        sheetSubtasks = [...sheetSubtasks.filter(x => x.title.trim()), ...newSteps];
+        renderSheetSubtasks();
+        const hintEl = document.getElementById('aiMemoryContextHint');
+        if (res.memory_context_used && res.memory_context_used.length) {
+          hintEl.style.display = 'block';
+          hintEl.textContent = `🧠 已结合个人记忆拆解：${res.memory_context_used.join(' · ')}`;
+        } else {
+          hintEl.style.display = 'none';
+        }
+        showToast(`✨ 已拆解出 ${newSteps.length} 条可执行子步骤`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '✨ AI 拆解';
+      }
+    }
+
+    function openTaskSheet(memId) {
+      const t = memId ? cachedTasksById[memId] : null;
+      editingMemoryId = t ? t.memory_id : null;
+      editingVersion = t ? t.version : null;
+
+      document.getElementById('sheetHeading').textContent = t ? `✏️ 编辑任务 (v${t.version})` : '✨ 新建任务卡片';
+      document.getElementById('tsSubmitBtn').textContent = t ? '保存修改' : '创建新任务';
+      document.getElementById('aiMemoryContextHint').style.display = 'none';
+
+      const p = t?.payload || {};
+      document.getElementById('tsTitle').value = t ? t.title : '';
+      document.getElementById('tsSummary').value = t && t.summary !== t.title ? t.summary : '';
+      selectSheetColor(p.color_theme || 'sky');
+      setTaskMode(p.task_mode || 'personal');
+      document.getElementById('tsAssignee').value = p.assignee || 'self';
+      document.getElementById('tsSupervision').checked = Boolean(p.supervision_enabled);
+      updatePrivacyHint();
+
+      if (p.due_at) {
+        document.getElementById('tsDate').value = p.due_at.slice(0, 10);
+        const allDay = p.is_all_day !== false;
+        document.getElementById('tsAllDay').checked = allDay;
+        document.getElementById('tsTime').value = p.due_at.length >= 16 ? p.due_at.slice(11, 16) : '18:00';
+      } else {
+        quickDate('today');
+        document.getElementById('tsAllDay').checked = true;
+        document.getElementById('tsTime').value = '18:00';
+      }
+      toggleAllDayInput();
+
+      document.getElementById('tsRepeat').value = p.repeat_rule || 'never';
+      document.getElementById('tsReminder').value = (p.reminder_offset_minutes !== null && p.reminder_offset_minutes !== undefined)
+        ? String(p.reminder_offset_minutes) : '';
+      document.getElementById('tsFocusLock').checked = Boolean(p.focus_lock_enabled);
+      document.getElementById('focusDurRow').style.display = p.focus_lock_enabled ? 'flex' : 'none';
+      document.getElementById('tsFocusMinutes').value = String(p.focus_minutes || 25);
+      document.getElementById('tsRollover').checked = t ? Boolean(p.auto_rollover) : true;
+
+      const imp = p.importance || 4;
+      const urg = p.urgency || 3;
+      document.getElementById('tsImportance').value = imp;
+      document.getElementById('tsImpVal').textContent = imp;
+      document.getElementById('tsUrgency').value = urg;
+      document.getElementById('tsUrgVal').textContent = urg;
+      document.getElementById('tsQuadrant').value = t && t.user_locked ? (p.quadrant || '') : '';
+
+      sheetSubtasks = Array.isArray(p.subtasks) ? p.subtasks.map(s => ({ ...s })) : [];
+      renderSheetSubtasks();
+
+      document.getElementById('taskSheetModal').classList.add('open');
+      setTimeout(() => document.getElementById('tsTitle').focus(), 80);
+    }
+
+    function closeTaskSheet() {
+      document.getElementById('taskSheetModal').classList.remove('open');
+    }
+
+    function buildIsoDueAt(dateStr, allDay, timeStr) {
+      if (!dateStr) return '';
+      const tzOffsetMin = -new Date().getTimezoneOffset();
+      const sign = tzOffsetMin >= 0 ? '+' : '-';
+      const absM = Math.abs(tzOffsetMin);
+      const hh = String(Math.floor(absM / 60)).padStart(2, '0');
+      const mm = String(absM % 60).padStart(2, '0');
+      const tPart = allDay ? '23:59:59' : `${timeStr || '18:00'}:00`;
+      return `${dateStr}T${tPart}${sign}${hh}:${mm}`;
+    }
+
+    async function submitTaskSheet() {
+      const title = document.getElementById('tsTitle').value.trim();
+      if (!title) return showToast('请输入任务内容');
+      const dateStr = document.getElementById('tsDate').value;
+      const allDay = document.getElementById('tsAllDay').checked;
+      const timeStr = document.getElementById('tsTime').value;
+      const remRaw = document.getElementById('tsReminder').value;
+      const quadVal = document.getElementById('tsQuadrant').value;
+
+      const body = {
+        target_memory_id: editingMemoryId || '',
+        expected_version: editingVersion,
+        title,
+        summary: document.getElementById('tsSummary').value.trim() || title,
+        color_theme: sheetColor,
+        task_mode: sheetMode,
+        supervision_enabled: document.getElementById('tsSupervision').checked,
+        assignee: sheetMode === 'multiplayer' ? (document.getElementById('tsAssignee').value.trim() || 'self') : 'self',
+        due_at: buildIsoDueAt(dateStr, allDay, timeStr),
+        is_all_day: allDay,
+        repeat_rule: document.getElementById('tsRepeat').value,
+        reminder_offset_minutes: remRaw === '' ? null : Number(remRaw),
+        auto_rollover: document.getElementById('tsRollover').checked,
+        focus_lock_enabled: document.getElementById('tsFocusLock').checked,
+        focus_minutes: Number(document.getElementById('tsFocusMinutes').value || 25),
+        importance: Number(document.getElementById('tsImportance').value || 4),
+        urgency: Number(document.getElementById('tsUrgency').value || 3),
+        quadrant: quadVal,
+        lock_for_user: Boolean(quadVal),
+        subtasks: sheetSubtasks.filter(s => s.title && s.title.trim()),
+      };
+
+      const res = await apiPost('/api/tasks/save', body);
+      if (res.error) return showToast(`保存失败: ${res.error}`);
+      closeTaskSheet();
+      showToast(editingMemoryId ? `✅ 任务已更新 (v${res.memory?.version})` : '🎉 新任务已创建并进入四象限');
+      reloadAll();
+    }
+
+    // ---------------- Focus Lock Screen ----------------
+    function playBellChime() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(660, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.25);
+        gain.gain.setValueAtTime(0.18, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(); osc.stop(ctx.currentTime + 0.8);
+      } catch (e) {}
+    }
+
+    function openFocusLock(memId) {
+      const t = cachedTasksById[memId];
+      if (!t) return;
+      const mins = Number(t.payload?.focus_minutes || 25);
+      focusState = {
+        task: t,
+        totalSeconds: mins * 60,
+        remainingSeconds: mins * 60,
+        timer: null,
+      };
+      document.getElementById('focusTaskTitle').textContent = t.title;
+      document.getElementById('focusAbortBox').style.display = 'none';
+      document.getElementById('focusAbortReason').value = '';
+      renderFocusSubtasks();
+      updateFocusTimerUI();
+      document.getElementById('focusOverlay').classList.add('open');
+
+      focusState.timer = setInterval(() => {
+        if (!focusState) return;
+        focusState.remainingSeconds -= 1;
+        updateFocusTimerUI();
+        if (focusState.remainingSeconds <= 0) {
+          clearInterval(focusState.timer);
+          playBellChime();
+          fireBrowserNotification('⏰ 专注时间到！', `《${focusState.task.title}》已完成一轮深度专注`);
+          finishFocusSession(false);
+        }
+      }, 1000);
+    }
+
+    function renderFocusSubtasks() {
+      const box = document.getElementById('focusSubtasksBox');
+      const subs = focusState?.task?.payload?.subtasks || [];
+      if (!subs.length) {
+        box.style.display = 'none';
+        return;
+      }
+      box.style.display = 'grid';
+      box.innerHTML = `<div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">📋 执行清单：</div>` + subs.map(s => `
+        <label>
+          <input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleCardSubtask('${focusState.task.memory_id}', '${esc(s.id)}', this.checked, ${focusState.task.version})" />
+          <span style="${s.done ? 'text-decoration:line-through;color:#94a3b8;' : ''}">${esc(s.title)}</span>
+        </label>
+      `).join('');
+    }
+
+    function updateFocusTimerUI() {
+      if (!focusState) return;
+      const rem = Math.max(0, focusState.remainingSeconds);
+      const m = String(Math.floor(rem / 60)).padStart(2, '0');
+      const s = String(rem % 60).padStart(2, '0');
+      document.getElementById('focusTimerText').textContent = `${m}:${s}`;
+      const pct = Math.round(((focusState.totalSeconds - rem) / focusState.totalSeconds) * 100);
+      document.getElementById('focusProgressBar').style.width = `${pct}%`;
+    }
+
+    async function finishFocusSession(markDone) {
+      if (!focusState) return;
+      clearInterval(focusState.timer);
+      const t = focusState.task;
+      const res = await apiPost('/api/tasks/focus', {
+        memory_id: t.memory_id,
+        event: 'complete_session',
+        expected_version: t.version,
+      });
+      const nextVer = res.memory?.version || t.version;
+      if (markDone) {
+        await transitionTask(t.memory_id, 'complete_task', nextVer);
+      } else {
+        loadTasks();
+      }
+      focusState = null;
+      document.getElementById('focusOverlay').classList.remove('open');
+      showToast('🎉 已记录一轮深度专注');
+    }
+
+    function completeFocusAndTask() {
+      finishFocusSession(true);
+    }
+
+    function promptAbortFocus() {
+      const box = document.getElementById('focusAbortBox');
+      box.style.display = 'grid';
+    }
+
+    async function confirmAbortFocus() {
+      if (!focusState) return;
+      const reason = document.getElementById('focusAbortReason').value.trim();
+      if (!reason) return showToast('请填写或点选一个中断原因');
+      clearInterval(focusState.timer);
+      const elapsed = focusState.totalSeconds - focusState.remainingSeconds;
+      await apiPost('/api/tasks/focus', {
+        memory_id: focusState.task.memory_id,
+        event: 'abort_session',
+        reason,
+        elapsed_seconds: elapsed,
+        expected_version: focusState.task.version,
+      });
+      focusState = null;
+      document.getElementById('focusOverlay').classList.remove('open');
+      showToast(`已记录中断原因：「${reason}」`);
+      loadTasks();
+    }
+
+    // ---------------- Friend Supervision Board ----------------
+    async function loadSupervisionBoard() {
+      const assignee = document.getElementById('supAssigneeFilter').value;
+      const data = await apiGet(`/api/supervision/board?assignee=${encodeURIComponent(assignee)}`);
+      const s = data.summary || {};
+
+      const sel = document.getElementById('supAssigneeFilter');
+      const prevVal = sel.value;
+      sel.innerHTML = `<option value="">全部成员</option>` +
+        (data.assignees || []).map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
+      sel.value = prevVal;
+
+      document.getElementById('supervisionKpis').innerHTML = `
+        <div class="kpi-card"><div class="label">监督中总数</div><div class="val">${s.total_supervised ?? 0}</div></div>
+        <div class="kpi-card"><div class="label" style="color:#059669;">已完成</div><div class="val" style="color:#059669;">${s.done_supervised ?? 0}</div></div>
+        <div class="kpi-card"><div class="label" style="color:#d97706;">待推进</div><div class="val" style="color:#d97706;">${s.todo_supervised ?? 0}</div></div>
+        <div class="kpi-card"><div class="label" style="color:#7c3aed;">当日完成率</div><div class="val" style="color:#7c3aed;">${s.completion_rate ?? 0}%</div></div>
+      `;
+
+      const tasks = data.tasks || [];
+      const box = document.getElementById('supervisionList');
+      if (!tasks.length) {
+        box.innerHTML = `<div class="card-box" style="color:var(--muted);">当前空间暂无开启「好友监督」或「多人任务」的事项。可在新建或编辑任务时开启开关！</div>`;
+        return;
+      }
+
+      box.innerHTML = tasks.map(t => {
+        const p = t.payload || {};
+        const isDone = p.task_status === 'done';
+        const subs = Array.isArray(p.subtasks) ? p.subtasks : [];
+        const doneSubs = subs.filter(x => x.done).length;
+        const nudges = Array.isArray(p.nudges) ? p.nudges : [];
+        const nudgeHtml = nudges.slice(-3).reverse().map(n => `
+          <div style="font-size:12px;background:#f8fafc;padding:5px 9px;border-radius:8px;color:#334155;">
+            <strong>${esc(n.from_user)}</strong>：${esc(n.message)}
+          </div>
+        `).join('');
+
+        return `
+          <div class="task-card theme-${esc(p.color_theme || 'sky')} ${isDone ? 'done' : ''}">
+            <div class="task-top">
+              <div>
+                <div class="task-title" onclick="openTaskSheet('${t.memory_id}')">${esc(t.title)}</div>
+                <div class="meta-row" style="margin-top:4px;">
+                  <span class="tag supervise">👤 ${esc(p.assignee || 'self')}</span>
+                  <span class="tag">${p.task_mode === 'multiplayer' ? '多人协作' : '个人监督公开'}</span>
+                  ${subs.length ? `<span class="tag">📋 ${doneSubs}/${subs.length}</span>` : ''}
+                  ${p.rollover_count ? `<span class="tag rollover-ok">↻ 顺延 ${p.rollover_count} 天</span>` : ''}
+                </div>
+              </div>
+              <span class="badge badge-${esc(p.quadrant || 'Q4_eliminate')}">${isDone ? '已完成' : '进行中'}</span>
+            </div>
+            ${nudgeHtml ? `<div style="display:grid;gap:4px;">${nudgeHtml}</div>` : ''}
+            <div class="card-actions">
+              <button onclick="sendNudge('${t.memory_id}', 'nudge')">⚡ 催一催</button>
+              <button onclick="sendNudge('${t.memory_id}', 'cheer')">👍 点赞鼓励</button>
+              ${!isDone ? `<button onclick="transitionTask('${t.memory_id}', 'complete_task', ${t.version})">✅ 标记完成</button>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function sendNudge(memId, kind) {
+      const fromUser = document.getElementById('friendNickInput').value.trim() || '监工好友';
+      const res = await apiPost('/api/supervision/nudge', {
+        memory_id: memId,
+        kind,
+        from_user: fromUser,
+      });
+      if (res.error) return showToast(res.error);
+      showToast(kind === 'nudge' ? '⚡ 已发送催办提醒！' : '👍 已送上点赞鼓励！');
+      loadSupervisionBoard();
+    }
+
+    async function revokeAllSupervisionLinks() {
+      if (!confirm('确认撤销当前空间所有已发出的好友监督分享链接？撤销后旧链接将立即失效。')) return;
+      const res = await apiPost('/api/supervision/share/revoke', {});
+      if (res.error) return showToast(`撤销失败: ${res.error}`);
+      showToast(`🚫 已撤销 ${res.revoked ?? 0} 条监督分享链接`);
+    }
+
+    async function copySupervisionLink() {
+      let url = `${location.origin}/?tab=supervision&space_id=${encodeURIComponent(space())}`;
+      try {
+        const res = await apiPost('/api/supervision/share', { label: '好友监督看板' });
+        if (res && res.share_token) {
+          url = `${location.origin}/?tab=supervision&share_token=${encodeURIComponent(res.share_token)}`;
+        }
+      } catch (e) {}
+      const okMsg = '🔗 已复制安全监督分享链接（仅限查看公开监督事项与催办/点赞）！';
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(url).then(() => showToast(okMsg)).catch(() => fallbackCopyText(url, okMsg));
+        return;
+      }
+      fallbackCopyText(url, okMsg);
+    }
+
+    function fallbackCopyText(text, okMsg) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        const copied = document.execCommand('copy');
+        document.body.removeChild(ta);
+        showToast(copied ? okMsg : `监督链接：${text}`);
+      } catch (e) {
+        showToast(`监督链接：${text}`);
+      }
+    }
+
+    // ---------------- Notifications & Quick Capture ----------------
+    function requestNotifIfEnabled() {
+      const val = document.getElementById('tsReminder').value;
+      if (val !== '' && 'Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => {});
+      }
+    }
+
+    function fireBrowserNotification(title, body) {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(title, { body });
+      }
+    }
+
+    function checkTaskReminders() {
+      const nowMs = Date.now();
+      const sent = JSON.parse(localStorage.getItem('tm_sent_reminders') || '{}');
+      Object.values(cachedTasksById).forEach(t => {
+        const p = t.payload || {};
+        if (p.task_status !== 'todo' || !p.due_at) return;
+        const offset = p.reminder_offset_minutes;
+        if (offset === null || offset === undefined) return;
+        const dueMs = Date.parse(p.due_at);
+        if (Number.isNaN(dueMs)) return;
+        const triggerMs = dueMs - Number(offset) * 60_000;
+        const key = `${t.memory_id}:${p.due_at}:${offset}`;
+        if (nowMs >= triggerMs && nowMs <= dueMs + 300_000 && !sent[key]) {
+          sent[key] = 1;
+          localStorage.setItem('tm_sent_reminders', JSON.stringify(sent));
+          playBellChime();
+          fireBrowserNotification('🔔 TraceTodo 待办提醒', `${t.title}`);
+          showToast(`🔔 待办提醒：${t.title}`);
+        }
+      });
+    }
+
+    async function recordQuickNote(btn) {
+      const targetBtn = btn || document.getElementById('quickNoteBtn');
+      const input = document.getElementById('quickNoteInput');
+      const content = input.value.trim();
+      if (!content) {
+        showToast('请先输入一句话待办或记忆内容');
+        input.focus();
+        return;
+      }
+      input.value = '';
+      await withBtnBusy(targetBtn, '⏳ 录入中', async () => {
+        try {
+          const res = await apiPost('/api/notes/record', { content });
+          if (res.error) return showToast(`⚠️ ${res.error}`);
+          if (res.extraction_status === 'filtered_noise' || res.filtered) {
+            showToast(`🛡️ 低成本防线已拦截：${res.filter_reason || res.error_message || '无效输入'}（0 Token 消耗）`);
+            syncAuthStatus().catch(() => {});
+            return;
+          }
+          showToast(`原话已落库 (${res.note.note_id})，抽取更新 ${(res.changes || []).length} 条记忆`);
+          reloadAll();
+        } catch (err) {
+          const q = JSON.parse(localStorage.getItem('tm_offline_queue') || '[]');
+          q.push({ content, space_id: space(), ts: Date.now() });
+          localStorage.setItem('tm_offline_queue', JSON.stringify(q));
+          showToast(`📴 当前离线：已暂存至本地待同步队列 (${q.length} 条)，联网后自动同步`);
+        }
+      });
+    }
+
+    async function flushOfflineQueue() {
+      const q = JSON.parse(localStorage.getItem('tm_offline_queue') || '[]');
+      if (!q.length) return;
+      if (authRequiredFlag && !authToken) return;
+      const remaining = [];
+      for (const item of q) {
+        try {
+          const res = await fetch('/api/notes/record', {
+            method: 'POST',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ content: item.content, space_id: item.space_id }),
+          });
+          if (res.status === 401 || res.status === 429) {
+            remaining.push(item);
+          }
+        } catch (e) {
+          remaining.push(item);
+        }
+      }
+      localStorage.setItem('tm_offline_queue', JSON.stringify(remaining));
+      if (remaining.length < q.length) {
+        showToast(`✅ 已自动同步 ${q.length - remaining.length} 条离线记录`);
+      }
+    }
+
+    async function loadMemories(btn) {
+      const targetBtn = btn || document.getElementById('memSearchBtn');
+      return withBtnBusy(targetBtn, '⏳ 检索中...', async () => {
+        const q = document.getElementById('memSearchInput').value.trim();
+        const mtype = document.getElementById('memTypeFilter').value;
+        const res = await apiGet(`/api/memories/search?q=${encodeURIComponent(q)}&memory_type=${mtype}&top_k=30`);
+        if (res.error) return showToast(`检索失败: ${res.error}`);
+        const hits = res.memories || [];
+        const container = document.getElementById('memoriesList');
+        if (!hits.length) {
+          container.innerHTML = `<div class="card-box" style="color:var(--muted);">未找到匹配的生效记忆</div>`;
+          return;
+        }
+        container.innerHTML = hits.map(h => {
+          const m = h.memory;
+          return `
+            <div class="mem-card">
+              <div class="task-top">
+                <div>
+                  <span class="tag" style="font-weight:700;">${esc(m.memory_type)}</span>
+                  <strong style="margin-left:6px;">${esc(m.title)}</strong>
+                  <code style="font-size:12px;color:var(--muted);margin-left:8px;">${esc(m.uri)}</code>
+                </div>
+                <div class="btn-group">
+                  <span class="tag score">RRF: ${h.rrf_score}</span>
+                  ${h.bm25_rank ? `<span class="tag">BM25 #${h.bm25_rank}</span>` : ''}
+                  ${h.vector_rank ? `<span class="tag">Vector #${h.vector_rank} (cos=${h.vector_score})</span>` : ''}
+                </div>
+              </div>
+              <div style="font-size:13.5px;">${esc(m.summary)}</div>
+              ${(m.tags && m.tags.length) ? `<div class="meta-row">${m.tags.map(tg => `<span class="tag">#${esc(tg)}</span>`).join('')}</div>` : ''}
+              <div class="meta-row">
+                <span class="tag ${m.assertion_kind === 'inferred' ? 'inferred' : ''}">${m.assertion_kind === 'inferred' ? '🌙 Dream 推断' : '📝 原话陈述'}</span>
+                ${m.user_locked ? '<span class="tag lock">🔒 用户保护</span>' : ''}
+                <span>版本 v${m.version}</span>
+                <span>证据数: ${(m.evidences || []).length}</span>
+              </div>
+              <div class="card-actions">
+                <button type="button" onclick="openDetail('${m.memory_id}', 'form')">✏️ 编辑记忆</button>
+                <button type="button" onclick="openDetail('${m.memory_id}', 'markdown')">📝 Markdown 编辑</button>
+                <button type="button" onclick="openDetail('${m.memory_id}', 'provenance')">🔎 溯源与版本链</button>
+                ${m.memory_type === 'task' ? `<button type="button" onclick="openTaskSheet('${m.memory_id}')">🎨 待办卡片设置</button>` : ''}
+                <button type="button" onclick="forgetMemory('${m.memory_id}', ${m.version})" style="color:#b91c1c;">🗑️ 遗忘</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      });
+    }
+
+    async function loadGraph(btn) {
+      const targetBtn = btn || document.getElementById('graphLoadBtn');
+      return withBtnBusy(targetBtn, '⏳ 展开中...', async () => {
+        const seed = document.getElementById('graphSeedInput').value.trim();
+        const data = await apiGet(`/api/graph?seed=${encodeURIComponent(seed)}`);
+        if (data.error) return showToast(`图谱加载失败: ${data.error}`);
+        const edges = data.edges || [];
+        const nodes = data.nodes || [];
+
+        document.getElementById('graphEdges').innerHTML = edges.length
+          ? edges.map(e => `
+              <div class="mem-card">
+                <div>
+                  <code>${esc(e.from_memory_id)}</code>
+                  <strong style="color:var(--primary);margin:0 6px;">—[${esc(e.relation_type)}]→</strong>
+                  <code>[[${esc(e.to_target_text)}]]</code>
+                </div>
+                <div class="meta-row">
+                  <span class="tag" style="background:${e.resolved ? '#dcfce7;color:#166534' : '#fef3c7;color:#92400e'};">
+                    ${e.resolved ? '✓ 已解析连线 (' + esc(e.to_memory_id) + ')' : '⏳ 悬空前向引用 (待目标创建自动连线)'}
+                  </span>
+                  ${e.context ? `<span>(${esc(e.context)})</span>` : ''}
+                </div>
+              </div>
+            `).join('')
+          : `<div style="color:var(--muted);font-size:13px;">暂无双链边（可在记录中添加 [[目标固定链接或标题]] 或运行 Dream 归纳自动建立溯源边）</div>`;
+
+        const b = data.budget ? `<div class="tag score" style="margin-bottom:8px;">展开预算: 节点 ${data.budget.used_nodes}/${data.budget.max_nodes} · 字符 ${data.budget.used_chars}/${data.budget.max_chars}</div>` : '';
+        document.getElementById('graphNodes').innerHTML = b + (nodes.length
+          ? nodes.map(n => `
+              <div class="mem-card">
+                <div><span class="tag">Hop ${n.hop}</span> <strong>${esc(n.memory.title)}</strong></div>
+                <div style="font-size:12.5px;color:var(--muted);">${esc(n.memory.uri)} · ${esc(n.memory.summary)}</div>
+              </div>
+            `).join('')
+          : `<div style="color:var(--muted);font-size:13px;">当前空间暂无图谱节点</div>`);
+      });
+    }
+
+    function renderMarkdownHtml(text) {
+      const formatInline = (s) => esc(s)
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>');
+
+      const lines = String(text || '').split(/\r?\n/);
+      const out = [];
+      let inUl = false;
+      let inOl = false;
+      const closeLists = () => {
+        if (inUl) { out.push('</ul>'); inUl = false; }
+        if (inOl) { out.push('</ol>'); inOl = false; }
+      };
+
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line) {
+          closeLists();
+          continue;
+        }
+        const hMatch = line.match(/^#{1,4}\s+(.+)$/);
+        if (hMatch) {
+          closeLists();
+          out.push(`<h4>${formatInline(hMatch[1])}</h4>`);
+          continue;
+        }
+        const olMatch = line.match(/^(\d+)\.\s+(.+)$/);
+        if (olMatch) {
+          if (inUl) { out.push('</ul>'); inUl = false; }
+          if (!inOl) { out.push('<ol>'); inOl = true; }
+          out.push(`<li>${formatInline(olMatch[2])}</li>`);
+          continue;
+        }
+        const ulMatch = line.match(/^[-*•]\s+(.+)$/);
+        if (ulMatch) {
+          if (inOl) { out.push('</ol>'); inOl = false; }
+          if (!inUl) { out.push('<ul>'); inUl = true; }
+          out.push(`<li>${formatInline(ulMatch[1])}</li>`);
+          continue;
+        }
+        closeLists();
+        out.push(`<p style="margin:4px 0;">${formatInline(line)}</p>`);
+      }
+      closeLists();
+      return out.join('');
+    }
+
+    async function askQuestion(btn) {
+      const targetBtn = btn || document.getElementById('askSubmitBtn');
+      const q = document.getElementById('askInput').value.trim();
+      if (!q) {
+        showToast('请输入想要提问的问题');
+        document.getElementById('askInput').focus();
+        return;
+      }
+      await withBtnBusy(targetBtn, '⏳ 思考中...', async () => {
+        const res = await apiPost('/api/ask', { question: q });
+        if (res.error) return showToast(`问答失败: ${res.error}`);
+        const memCites = ((res.citations || {}).memories || []).map(m => `<button type="button" class="chip-btn" onclick="openDetail('${esc(m.memory_id)}')">🧠 ${esc(m.title)}</button>`).join(' ');
+        const noteCites = ((res.citations || {}).notes || []).map(n => `<span class="tag">📝 ${esc(n.event_time?.slice(0,10) || '')} “${esc(n.content.slice(0, 40))}”</span>`).join(' ');
+        const modeText = res.query_mode === 'history' ? '🕰️ 历史演进追溯' : '📍 当前状态检索';
+        document.getElementById('askResult').innerHTML = `
+          <div style="margin-top:10px;" class="meta-row">
+            <span class="tag score">${modeText}</span>
+            <span class="tag" style="background:${res.has_sufficient_evidence ? '#dcfce7;color:#166534' : '#fef3c7;color:#92400e'}">${res.has_sufficient_evidence ? '✓ 证据充分' : '⚠️ 证据不足安全拒答'}</span>
+            <span class="tag">Trace: ${esc(res.trace_id)}</span>
+          </div>
+          <div class="answer-box">${renderMarkdownHtml(res.answer)}</div>
+          <div style="margin-top:8px;font-size:12px;display:grid;gap:6px;">
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><strong>引用记忆卡:</strong> ${memCites || '<span style="color:var(--muted);">无</span>'}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><strong>支撑原话:</strong> ${noteCites || '<span style="color:var(--muted);">无</span>'}</div>
+          </div>
+        `;
+        loadTraces();
+      });
+    }
+
+    async function loadTraces() {
+      const data = await apiGet('/api/traces');
+      const traces = data.traces || [];
+      document.getElementById('traceList').innerHTML = traces.map(t => `
+        <div class="mem-card">
+          <div class="task-top">
+            <strong>[${esc(t.operation)}] ${esc(t.input_summary)}</strong>
+            <span class="tag">${t.duration_ms} ms · ${t.tokens_used} tok</span>
+          </div>
+          <div style="font-size:12px;color:var(--muted);">${esc(JSON.stringify(t.details))}</div>
+        </div>
+      `).join('');
+    }
+
+    let activeDetailState = null;
+
+    function switchDetailTab(tabName) {
+      if (!activeDetailState) return;
+      activeDetailState.tab = tabName;
+      renderDetailModalContent();
+    }
+
+    function renderDetailModalContent() {
+      const st = activeDetailState;
+      if (!st) return;
+      const m = st.memory;
+      const p = m.payload || {};
+      const tab = st.tab || 'provenance';
+
+      const tabBar = `
+        <div class="seg-tabs" style="grid-template-columns:repeat(3, 1fr);">
+          <button type="button" class="seg-tab ${tab === 'form' ? 'active' : ''}" onclick="switchDetailTab('form')">✏️ 结构化编辑</button>
+          <button type="button" class="seg-tab ${tab === 'markdown' ? 'active' : ''}" onclick="switchDetailTab('markdown')">📝 Markdown 源码</button>
+          <button type="button" class="seg-tab ${tab === 'provenance' ? 'active' : ''}" onclick="switchDetailTab('provenance')">📜 溯源与版本 (${(st.history || []).length})</button>
+        </div>
+      `;
+
+      let panelHtml = '';
+      if (tab === 'form') {
+        let extraFields = '';
+        if (m.memory_type === 'semantic') {
+          extraFields = `
+            <div class="two-col" style="grid-template-columns:1fr 1fr;gap:10px;">
+              <div><label style="font-size:12px;color:var(--muted);">主体 Subject</label><input id="meSubject" value="${esc(p.subject || 'user')}" style="width:100%;margin-top:4px;" /></div>
+              <div><label style="font-size:12px;color:var(--muted);">谓词 Predicate</label><input id="mePredicate" value="${esc(p.predicate || '')}" style="width:100%;margin-top:4px;" /></div>
+            </div>
+            <div><label style="font-size:12px;color:var(--muted);">当前事实值 Value</label><input id="meValue" value="${esc(p.value || '')}" style="width:100%;margin-top:4px;" /></div>
+          `;
+        } else if (m.memory_type === 'preference') {
+          const conds = Array.isArray(p.conditions) ? p.conditions.join('；') : '';
+          const excs = Array.isArray(p.exceptions) ? p.exceptions.join('；') : '';
+          extraFields = `
+            <div class="two-col" style="grid-template-columns:1fr 1fr;gap:10px;">
+              <div><label style="font-size:12px;color:var(--muted);">偏好对象 Target</label><input id="meTarget" value="${esc(p.target || '')}" style="width:100%;margin-top:4px;" /></div>
+              <div><label style="font-size:12px;color:var(--muted);">极性 Polarity</label>
+                <select id="mePolarity" style="width:100%;margin-top:4px;">
+                  <option value="positive" ${p.polarity === 'positive' ? 'selected' : ''}>positive (正面/偏好)</option>
+                  <option value="negative" ${p.polarity === 'negative' ? 'selected' : ''}>negative (负面/回避)</option>
+                  <option value="neutral" ${p.polarity === 'neutral' ? 'selected' : ''}>neutral (中性)</option>
+                </select>
+              </div>
+            </div>
+            <div><label style="font-size:12px;color:var(--muted);">适用条件（分号分隔）</label><input id="meConditions" value="${esc(conds)}" style="width:100%;margin-top:4px;" /></div>
+            <div><label style="font-size:12px;color:var(--muted);">例外限制（分号分隔）</label><input id="meExceptions" value="${esc(excs)}" style="width:100%;margin-top:4px;" /></div>
+          `;
+        } else if (m.memory_type === 'episodic') {
+          extraFields = `
+            <div><label style="font-size:12px;color:var(--muted);">事件摘要 Event Summary</label><input id="meEventSummary" value="${esc(p.event_summary || m.summary)}" style="width:100%;margin-top:4px;" /></div>
+            <div><label style="font-size:12px;color:var(--muted);">发生时间</label><input id="meOccurredAt" value="${esc(p.occurred_at || m.event_time || '')}" style="width:100%;margin-top:4px;" /></div>
+          `;
+        }
+        panelHtml = `
+          <div style="display:grid;gap:10px;">
+            <div class="meta-row"><code>${esc(m.uri)}</code> · <span class="tag">${esc(m.memory_type)}</span> · <span class="tag">当前 v${m.version}</span></div>
+            <div><label style="font-size:12px;color:var(--muted);">记忆标题</label><input id="meTitle" value="${esc(m.title)}" style="width:100%;margin-top:4px;" /></div>
+            <div><label style="font-size:12px;color:var(--muted);">记忆摘要 Summary</label><textarea id="meSummary" rows="3" style="width:100%;margin-top:4px;">${esc(m.summary)}</textarea></div>
+            ${extraFields}
+            <div><label style="font-size:12px;color:var(--muted);">追加标签（逗号分隔）</label><input id="meTags" value="${esc((m.tags || []).join(', '))}" style="width:100%;margin-top:4px;" /></div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:#475569;cursor:pointer;">
+              <input type="checkbox" id="meLock" checked /> 🔒 启用用户锁定保护（防止后续 Dream / AI 抽取自动覆盖此手工修订）
+            </label>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;">
+              <button type="button" onclick="forgetMemory('${m.memory_id}', ${m.version})" style="color:#b91c1c;">🗑️ 遗忘此记忆</button>
+              <button type="button" class="duodo-btn" onclick="saveMemoryForm(this)">💾 保存修改 (CAS v${m.version})</button>
+            </div>
+          </div>
+        `;
+      } else if (tab === 'markdown') {
+        panelHtml = `
+          <div style="display:grid;gap:8px;">
+            <div style="font-size:12px;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+              <span>直接编辑 Obsidian 格式 Markdown（支持修改标题、Summary、Observations 属性与 <code>[[双链]]</code>）</span>
+              <code>${esc(m.permalink)}.md</code>
+            </div>
+            <textarea id="meMarkdownText" rows="16" style="width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.5;background:#0f172a;color:#e2e8f0;padding:12px;">${esc(st.markdown || '')}</textarea>
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+              <button type="button" class="duodo-btn" onclick="saveMemoryMarkdown(this)">💾 保存 Markdown 并回流同步</button>
+            </div>
+          </div>
+        `;
+      } else {
+        const sourcesHtml = (st.sources || []).map(s =>
+          `<div class="mem-card"><strong>原话 ${esc(s.note_id)} (引用 rev ${s.cited_revision})</strong><div>“${esc(s.visible_content)}”</div></div>`
+        ).join('') || '<div style="color:var(--muted);">无关联原话</div>';
+
+        const histHtml = (st.history || []).map(h =>
+          `<div class="mem-card"><strong>v${h.version} · ${esc(h.status)} · ${esc(h.origin)}</strong><div>${esc(h.summary)}</div><div style="color:var(--muted);font-size:12px;">原因: ${esc(h.change_reason)} (${esc(h.created_at)})</div></div>`
+        ).join('');
+
+        panelHtml = `
+          <div><code>${esc(m.uri)}</code> · 类型: <strong>${esc(m.memory_type)}</strong> · 断言: <strong>${esc(m.assertion_kind)}</strong></div>
+          <pre class="answer-box">${esc(JSON.stringify(m.payload, null, 2))}</pre>
+          <h4>📝 支撑原话证据 (Ground-Truth RawNotes)</h4>
+          ${sourcesHtml}
+          <h4>📜 版本演进审计链 (MemoryVersions)</h4>
+          ${histHtml}
+        `;
+      }
+
+      document.getElementById('modalBody').innerHTML = `${tabBar}${panelHtml}`;
+    }
+
+    async function openDetail(memId, initialTab = 'provenance') {
+      const data = await apiGet(`/api/memories/detail?id=${encodeURIComponent(memId)}`);
+      if (data.error) return showToast(data.error);
+      const m = data.memory;
+      document.getElementById('modalTitle').textContent = `${m.title} (v${m.version})`;
+      activeDetailState = {
+        memory: m,
+        sources: data.sources || [],
+        history: data.history || [],
+        markdown: data.markdown || '',
+        tab: initialTab,
+      };
+      renderDetailModalContent();
+      document.getElementById('detailModal').classList.add('open');
+    }
+
+    async function saveMemoryForm(btn) {
+      if (!activeDetailState?.memory) return;
+      const m = activeDetailState.memory;
+      const title = document.getElementById('meTitle').value.trim();
+      const summary = document.getElementById('meSummary').value.trim();
+      if (!title && !summary) return showToast('标题和摘要不能同时为空');
+
+      const payloadPatch = { ...(m.payload || {}) };
+      if (m.memory_type === 'semantic') {
+        payloadPatch.subject = document.getElementById('meSubject').value.trim() || 'user';
+        payloadPatch.predicate = document.getElementById('mePredicate').value.trim();
+        payloadPatch.value = document.getElementById('meValue').value.trim();
+      } else if (m.memory_type === 'preference') {
+        payloadPatch.target = document.getElementById('meTarget').value.trim();
+        payloadPatch.polarity = document.getElementById('mePolarity').value;
+        payloadPatch.conditions = document.getElementById('meConditions').value.split(/[；;]/).map(s => s.trim()).filter(Boolean);
+        payloadPatch.exceptions = document.getElementById('meExceptions').value.split(/[；;]/).map(s => s.trim()).filter(Boolean);
+      } else if (m.memory_type === 'episodic') {
+        payloadPatch.event_summary = document.getElementById('meEventSummary').value.trim();
+        payloadPatch.occurred_at = document.getElementById('meOccurredAt').value.trim();
+      }
+      const tags = document.getElementById('meTags').value.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+
+      await withBtnBusy(btn, '⏳ 保存中...', async () => {
+        const res = await apiPost('/api/memories/propose', {
+          action: 'update',
+          memory_type: m.memory_type,
+          target_memory_id: m.memory_id,
+          expected_version: m.version,
+          title: title || m.title,
+          summary: summary || title,
+          payload: payloadPatch,
+          tags,
+          lock_for_user: document.getElementById('meLock').checked,
+          reason: 'Web UI 手动编辑记忆',
+        });
+        if (res.error) return showToast(`保存失败: ${res.error}`);
+        showToast(`✅ 记忆已更新至 v${res.memory?.version}`);
+        await openDetail(m.memory_id, 'form');
+        reloadAll();
+      });
+    }
+
+    async function saveMemoryMarkdown(btn) {
+      if (!activeDetailState?.memory) return;
+      const m = activeDetailState.memory;
+      const mdText = document.getElementById('meMarkdownText').value;
+      if (!mdText.trim()) return showToast('Markdown 内容不能为空');
+      await withBtnBusy(btn, '⏳ 同步中...', async () => {
+        const res = await apiPost('/api/memories/markdown/save', {
+          memory_id: m.memory_id,
+          expected_version: m.version,
+          markdown: mdText,
+        });
+        if (res.error) return showToast(`保存失败: ${res.error}`);
+        showToast(`✅ Markdown 回流成功，已升级至 v${res.memory?.version}`);
+        await openDetail(m.memory_id, 'markdown');
+        reloadAll();
+      });
+    }
+
+    async function forgetMemory(memId, expectedVer) {
+      if (!confirm('确认彻底遗忘此条记忆？将同步清除仅关联该记忆的原始证据、向量/全文索引、历史明文及衍生洞察（不可恢复）。')) return;
+      const res = await apiPost('/api/memories/propose', {
+        action: 'forget',
+        target_memory_id: memId,
+        expected_version: expectedVer,
+        reason: 'Web UI 用户手动遗忘',
+      });
+      if (res.error) return showToast(`遗忘失败: ${res.error}`);
+      closeModal();
+      showToast('🗑️ 已彻底遗忘该记忆及关联证据与索引');
+      reloadAll();
+    }
+
+    function openNewMemoryModal() {
+      activeDetailState = null;
+      document.getElementById('modalTitle').textContent = '✨ 新建长期记忆';
+      document.getElementById('modalBody').innerHTML = `
+        <div style="display:grid;gap:10px;">
+          <div>
+            <label style="font-size:12px;color:var(--muted);">记忆类型</label>
+            <select id="nmType" style="width:100%;margin-top:4px;" onchange="toggleNewMemoryFields()">
+              <option value="semantic">语义事实 (semantic) — 客观状态/属性/时间节点</option>
+              <option value="preference">个人偏好 (preference) — 习惯/喜好与例外</option>
+              <option value="episodic">情景经历 (episodic) — 参会/复盘/事件经历</option>
+            </select>
+          </div>
+          <div><label style="font-size:12px;color:var(--muted);">记忆标题</label><input id="nmTitle" placeholder="例如：常驻办公地点 / 饮食忌口" style="width:100%;margin-top:4px;" /></div>
+          <div><label style="font-size:12px;color:var(--muted);">记忆摘要 Summary（支持 [[双链]] 引用）</label><textarea id="nmSummary" rows="3" placeholder="详细描述这条记忆内容..." style="width:100%;margin-top:4px;"></textarea></div>
+          <div id="nmTypeFields"></div>
+          <div><label style="font-size:12px;color:var(--muted);">标签（逗号分隔）</label><input id="nmTags" placeholder="例如：personal, work" style="width:100%;margin-top:4px;" /></div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px;">
+            <button type="button" onclick="closeModal()">取消</button>
+            <button type="button" class="duodo-btn" onclick="submitNewMemory(this)">✨ 创建并写入长期记忆</button>
+          </div>
+        </div>
+      `;
+      toggleNewMemoryFields();
+      document.getElementById('detailModal').classList.add('open');
+    }
+
+    function toggleNewMemoryFields() {
+      const t = document.getElementById('nmType')?.value;
+      const box = document.getElementById('nmTypeFields');
+      if (!box) return;
+      if (t === 'semantic') {
+        box.innerHTML = `
+          <div class="two-col" style="grid-template-columns:1fr 1fr;gap:10px;">
+            <div><label style="font-size:12px;color:var(--muted);">主体 Subject</label><input id="nmSubj" value="user" style="width:100%;margin-top:4px;" /></div>
+            <div><label style="font-size:12px;color:var(--muted);">谓词 Predicate</label><input id="nmPred" placeholder="如：residence / skill" style="width:100%;margin-top:4px;" /></div>
+          </div>
+          <div style="margin-top:8px;"><label style="font-size:12px;color:var(--muted);">值 Value</label><input id="nmVal" placeholder="如：上海" style="width:100%;margin-top:4px;" /></div>
+        `;
+      } else if (t === 'preference') {
+        box.innerHTML = `
+          <div class="two-col" style="grid-template-columns:1fr 1fr;gap:10px;">
+            <div><label style="font-size:12px;color:var(--muted);">偏好对象 Target</label><input id="nmTarget" placeholder="如：美式咖啡" style="width:100%;margin-top:4px;" /></div>
+            <div><label style="font-size:12px;color:var(--muted);">极性</label>
+              <select id="nmPol" style="width:100%;margin-top:4px;">
+                <option value="positive">positive (偏好)</option>
+                <option value="negative">negative (回避)</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top:8px;"><label style="font-size:12px;color:var(--muted);">例外限制（分号分隔）</label><input id="nmExc" placeholder="如：晚上八点后不喝" style="width:100%;margin-top:4px;" /></div>
+        `;
+      } else {
+        box.innerHTML = `<div><label style="font-size:12px;color:var(--muted);">事件经过 Event Summary</label><input id="nmEv" placeholder="如：参加了线下架构讨论会" style="width:100%;margin-top:4px;" /></div>`;
+      }
+    }
+
+    async function submitNewMemory(btn) {
+      const mtype = document.getElementById('nmType').value;
+      const title = document.getElementById('nmTitle').value.trim();
+      const summary = document.getElementById('nmSummary').value.trim();
+      if (!title || !summary) return showToast('请填写标题和记忆摘要');
+
+      const payload = {};
+      if (mtype === 'semantic') {
+        payload.subject = document.getElementById('nmSubj').value.trim() || 'user';
+        payload.predicate = document.getElementById('nmPred').value.trim() || 'fact';
+        payload.value = document.getElementById('nmVal').value.trim() || summary;
+      } else if (mtype === 'preference') {
+        payload.target = document.getElementById('nmTarget').value.trim() || title;
+        payload.polarity = document.getElementById('nmPol').value;
+        payload.conditions = [];
+        payload.exceptions = document.getElementById('nmExc').value.split(/[；;]/).map(s => s.trim()).filter(Boolean);
+      } else {
+        payload.event_summary = document.getElementById('nmEv').value.trim() || summary;
+      }
+      const tags = document.getElementById('nmTags').value.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+
+      await withBtnBusy(btn, '⏳ 创建中...', async () => {
+        const res = await apiPost('/api/memories/propose', {
+          action: 'create',
+          memory_type: mtype,
+          title,
+          summary,
+          payload,
+          tags,
+          lock_for_user: true,
+          reason: 'Web UI 用户手动创建记忆',
+        });
+        if (res.error) return showToast(`创建失败: ${res.error}`);
+        closeModal();
+        showToast('🎉 新记忆已创建并建立向量索引');
+        reloadAll();
+      });
+    }
+
+    function closeModal() {
+      document.getElementById('detailModal').classList.remove('open');
+    }
+
+    function setAuthMode(mode) {
+      authMode = mode;
+      document.getElementById('authModeLoginBtn').classList.toggle('active', mode === 'login');
+      document.getElementById('authModeRegBtn').classList.toggle('active', mode === 'register');
+      document.getElementById('authDisplayRow').style.display = mode === 'register' ? 'flex' : 'none';
+      document.getElementById('authModalTitle').textContent = !hasUsersFlag
+        ? '初始化 TraceTodo 管理员'
+        : (mode === 'register' ? '创建你的 TraceTodo 账号' : '欢迎回到 TraceTodo');
+      document.getElementById('authSubmitBtn').textContent = mode === 'register' ? '注册并进入空间' : '立即登录';
+      document.getElementById('authErrBox').style.display = 'none';
+    }
+
+    function updateAccountUi() {
+      const btn = document.getElementById('accountBtn');
+      const spaceWrap = document.getElementById('spaceWrap');
+      const adminTab = document.getElementById('adminTabBtn');
+      const syncBtn = document.getElementById('syncMdBtn');
+
+      if (currentUser) {
+        const usedNotes = currentQuota?.notes_count ?? 0;
+        const limNotes = currentUser.daily_note_limit ?? 60;
+        const roleTag = currentUser.role === 'admin' ? '👑' : '👤';
+        btn.textContent = `${roleTag} ${currentUser.display_name || currentUser.username} · ${usedNotes}/${limNotes}`;
+        if (currentUser.role === 'admin') {
+          spaceWrap.style.display = 'inline-flex';
+          adminTab.style.display = 'flex';
+          if (syncBtn) syncBtn.style.display = 'inline-block';
+        } else {
+          document.getElementById('spaceInput').value = currentUser.space_id;
+          spaceWrap.style.display = 'none';
+          adminTab.style.display = 'none';
+          if (syncBtn) syncBtn.style.display = 'none';
+        }
+      } else {
+        btn.textContent = authRequiredFlag ? '🔐 请登录' : '🔐 登录 / 账号';
+        spaceWrap.style.display = 'inline-flex';
+        adminTab.style.display = 'none';
+        if (syncBtn) syncBtn.style.display = 'inline-block';
+      }
+      syncHeaderHeight();
+    }
+
+    function openAuthModal(forceLock = false, errText = '') {
+      authLockOpen = !!forceLock;
+      const modal = document.getElementById('authModal');
+      document.getElementById('authCloseBtn').style.display = authLockOpen ? 'none' : 'inline-flex';
+      const errEl = document.getElementById('authErrBox');
+      if (errText) {
+        errEl.textContent = errText;
+        errEl.style.display = 'block';
+      } else {
+        errEl.style.display = 'none';
+      }
+
+      if (currentUser) {
+        document.getElementById('authModalTitle').textContent = '👤 我的账号与今日配额';
+        document.getElementById('authGuestPane').style.display = 'none';
+        document.getElementById('authProfilePane').style.display = 'grid';
+        document.getElementById('profUsername').textContent = `${currentUser.username} (${currentUser.display_name})`;
+        document.getElementById('profRole').textContent = currentUser.role === 'admin' ? '管理员 admin' : '普通用户';
+        document.getElementById('profSpace').textContent = currentUser.space_id;
+        document.getElementById('profQuotaNotes').textContent = `${currentQuota?.notes_count ?? 0} / ${currentUser.daily_note_limit}`;
+        document.getElementById('profBlocked').textContent = `${currentQuota?.blocked_noise_count ?? 0} 次`;
+        document.getElementById('profQuotaLlm').textContent = `${currentQuota?.llm_calls ?? 0} / ${currentUser.daily_llm_limit}`;
+        document.getElementById('profQuotaTok').textContent = `${currentQuota?.tokens_used ?? 0} / ${currentUser.daily_token_limit}`;
+        document.getElementById('profTokenInput').value = authToken || '';
+        const mcpSnippet = {
+          "trace-memory": {
+            "url": `${location.origin}/mcp`,
+            "headers": { "Authorization": `Bearer ${authToken || ''}` },
+            "stdio_bridge": `python3 -m trace_memory mcp --remote ${location.origin} --token ${authToken || ''}`
+          }
+        };
+        document.getElementById('profMcpConfigBox').value = JSON.stringify(mcpSnippet, null, 2);
+      } else {
+        document.getElementById('authModalTitle').textContent = hasUsersFlag ? '🔐 登录或注册 TraceTodo' : '🌱 初始化管理员账号';
+        document.getElementById('authGuestPane').style.display = 'grid';
+        document.getElementById('authProfilePane').style.display = 'none';
+        document.getElementById('bootstrapAdminBanner').style.display = hasUsersFlag ? 'none' : 'block';
+        document.getElementById('authModeRegBtn').style.display = (allowRegFlag || !hasUsersFlag) ? 'block' : 'none';
+        setAuthMode(hasUsersFlag ? authMode : 'register');
+      }
+      modal.classList.add('open');
+    }
+
+    function closeAuthModal() {
+      if (authLockOpen) return;
+      document.getElementById('authModal').classList.remove('open');
+    }
+
+    function copyCurrentToken() {
+      const tok = document.getElementById('profTokenInput').value;
+      if (!tok) return;
+      fallbackCopyText(tok, '✅ 已复制 Bearer Token，可粘贴到 iOS/macOS 或桌面小组件');
+    }
+
+    function copyMcpConfig() {
+      const cfg = document.getElementById('profMcpConfigBox').value;
+      if (!cfg) return;
+      fallbackCopyText(cfg, '✅ 已复制云端 MCP 配置与 stdio 桥接命令');
+    }
+
+    async function submitAuthForm(btn) {
+      const username = document.getElementById('authUsername').value.trim();
+      const password = document.getElementById('authPassword').value;
+      const displayName = document.getElementById('authDisplayName').value.trim();
+      const errEl = document.getElementById('authErrBox');
+      errEl.style.display = 'none';
+
+      const endpoint = authMode === 'register' ? '/api/auth/register' : '/api/auth/login';
+      await withBtnBusy(btn || document.getElementById('authSubmitBtn'), '⏳ 提交中...', async () => {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username,
+            password,
+            display_name: displayName,
+            device_label: 'web',
+          }),
+        });
+        const data = await parseApiResponse(res);
+        if (data.error || !data.token) {
+          errEl.textContent = data.error || '认证失败';
+          errEl.style.display = 'block';
+          return;
+        }
+        authToken = data.token;
+        localStorage.setItem('tm_auth_token', authToken);
+        currentUser = data.user;
+        currentQuota = data.quota || null;
+        if (currentUser?.space_id) {
+          document.getElementById('spaceInput').value = currentUser.space_id;
+        }
+        authLockOpen = false;
+        document.getElementById('authModal').classList.remove('open');
+        document.getElementById('authPassword').value = '';
+        updateAccountUi();
+        showToast(`✅ 欢迎回来，${currentUser.display_name || currentUser.username}`);
+        reloadAll();
+      });
+    }
+
+    async function changeMyPassword(btn) {
+      const oldPassword = document.getElementById('profOldPw').value;
+      const newPassword = document.getElementById('profNewPw').value;
+      await withBtnBusy(btn, '⏳ 更新中', async () => {
+        const res = await apiPost('/api/auth/change-password', {
+          old_password: oldPassword,
+          new_password: newPassword,
+          device_label: 'web',
+        });
+        if (res.error) return showToast(`❌ ${res.error}`);
+        if (res.token) {
+          authToken = res.token;
+          localStorage.setItem('tm_auth_token', authToken);
+          updateAccountUi();
+        }
+        document.getElementById('profOldPw').value = '';
+        document.getElementById('profNewPw').value = '';
+        showToast(`✅ 密码已更新，已注销 ${res.revoked_sessions ?? 0} 个旧会话并签发新凭证`);
+      });
+    }
+
+    async function logoutAccount() {
+      try { await apiPost('/api/auth/logout'); } catch (e) {}
+      authToken = '';
+      localStorage.removeItem('tm_auth_token');
+      currentUser = null;
+      currentQuota = null;
+      document.getElementById('authModal').classList.remove('open');
+      updateAccountUi();
+      if (document.getElementById('panel-admin').classList.contains('active')) {
+        switchTab('tasks');
+      }
+      showToast('已退出登录');
+      reloadAll();
+    }
+
+    async function syncAuthStatus() {
+      const res = await fetch('/api/auth/status', { headers: authHeaders() });
+      const data = await parseApiResponse(res);
+      authRequiredFlag = !!data.auth_required;
+      hasUsersFlag = data.has_users !== false;
+      allowRegFlag = data.allow_registration !== false;
+      if (data.authenticated && data.user) {
+        currentUser = data.user;
+        currentQuota = data.quota || null;
+        if (currentUser.role !== 'admin') {
+          document.getElementById('spaceInput').value = currentUser.space_id;
+        } else if (!new URLSearchParams(location.search).get('space_id') && document.getElementById('spaceInput').value === 'default') {
+          document.getElementById('spaceInput').value = currentUser.space_id;
+        }
+      } else {
+        if (authToken && data._httpStatus === 200) {
+          authToken = '';
+          localStorage.removeItem('tm_auth_token');
+        }
+        currentUser = null;
+        currentQuota = null;
+      }
+      updateAccountUi();
+      if (authRequiredFlag && !currentUser && !activeShareToken) {
+        openAuthModal(true);
+      }
+    }
+
+    // ---------------- Admin Console ----------------
+    async function loadAdminConsole(btn) {
+      return withBtnBusy(btn, '⏳ 加载中', async () => {
+        const [ov, usersRes] = await Promise.all([
+          apiGet('/api/admin/overview'),
+          apiGet('/api/admin/users'),
+        ]);
+        if (ov.error) return showToast(`后台加载失败: ${ov.error}`);
+
+        const u = ov.users || {};
+        const c = ov.content || {};
+        const t = ov.today_usage || {};
+        const rt = ov.runtime || {};
+        const dbMb = ((rt.db_size_bytes || 0) / (1024 * 1024)).toFixed(2);
+
+        document.getElementById('adminKpis').innerHTML = `
+          <div class="kpi-card"><div class="label">注册用户 (活跃/禁用)</div><div class="val">${u.total ?? 0}</div><div class="sub">活跃 ${u.active ?? 0} · 禁用 ${u.disabled ?? 0}</div></div>
+          <div class="kpi-card"><div class="label">今日有效录入 / 待办</div><div class="val">${t.notes_count ?? 0}</div><div class="sub">未完待办 ${c.open_tasks ?? 0} · 记忆 ${c.active_memories ?? 0}</div></div>
+          <div class="kpi-card"><div class="label" style="color:#059669;">🛡️ 今日防线拦截省费</div><div class="val" style="color:#059669;">${t.blocked_noise_count ?? 0}</div><div class="sub">0 Token 挡掉水话/刷屏</div></div>
+          <div class="kpi-card"><div class="label" style="color:#7c3aed;">今日 AI 调用 / Token</div><div class="val" style="color:#7c3aed;">${t.llm_calls ?? 0}</div><div class="sub">${t.tokens_used ?? 0} tokens · DB ${dbMb} MB</div></div>
+        `;
+
+        const st = ov.settings || {};
+        document.getElementById('admAllowReg').checked = !!st.allow_registration;
+        document.getElementById('admNoiseFilter').checked = !!st.noise_filter_enabled;
+        document.getElementById('admMaxChars').value = st.max_note_chars ?? 2000;
+        document.getElementById('admMinChars').value = st.min_meaningful_chars ?? 3;
+        document.getElementById('admRateLimit').value = st.rate_limit_per_minute ?? 25;
+        document.getElementById('admDupWin').value = st.duplicate_window_seconds ?? 120;
+        document.getElementById('admNoteLimit').value = st.default_daily_note_limit ?? 60;
+        document.getElementById('admLlmLimit').value = st.default_daily_llm_limit ?? 80;
+        document.getElementById('admTokLimit').value = st.default_daily_token_limit ?? 100000;
+
+        document.getElementById('adminDailySeries').innerHTML = (ov.daily_series || []).map(d => `
+          <div class="mem-card" style="padding:8px 10px;font-size:12px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+            <strong>${esc(d.date)}</strong>
+            <span>录入 ${d.notes_count} · 🛡️拦截 ${d.blocked_noise_count} · LLM ${d.llm_calls} · ${d.tokens_used} tok</span>
+          </div>
+        `).join('') || '<div style="color:var(--muted);font-size:12.5px;">暂无历史数据</div>';
+
+        const users = usersRes.users || [];
+        document.getElementById('adminUsersList').innerHTML = users.map(item => {
+          const tu = item.today_usage || {};
+          const cnt = item.counts || {};
+          const isDis = item.status === 'disabled';
+          return `
+            <div class="mem-card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+              <div style="display:grid;gap:4px;">
+                <div>
+                  <strong>${esc(item.username)}</strong>
+                  <span style="color:var(--muted);">(${esc(item.display_name)})</span>
+                  <span class="tag">${esc(item.role)}</span>
+                  <span class="tag" style="background:${isDis ? '#fee2e2;color:#b91c1c' : '#dcfce7;color:#166534'}">${isDis ? '已禁用' : '正常'}</span>
+                  <code style="font-size:11.5px;">${esc(item.space_id)}</code>
+                </div>
+                <div style="font-size:12px;color:var(--muted);">
+                  今日：录入 ${tu.notes_count ?? 0}/${item.daily_note_limit} · AI ${tu.llm_calls ?? 0}/${item.daily_llm_limit} · Token ${tu.tokens_used ?? 0}/${item.daily_token_limit} · 🛡️拦截 ${tu.blocked_noise_count ?? 0}
+                  ｜ 累计：原文 ${cnt.notes_total ?? 0} · 记忆 ${cnt.memories_total ?? 0} · 待办 ${cnt.open_tasks ?? 0}
+                </div>
+              </div>
+              <div class="card-actions">
+                <button type="button" onclick="adminToggleUserStatus('${item.user_id}', '${isDis ? 'active' : 'disabled'}')">${isDis ? '✅ 启用' : '🚫 停用'}</button>
+                <button type="button" onclick="adminToggleUserRole('${item.user_id}', '${item.role === 'admin' ? 'user' : 'admin'}')">${item.role === 'admin' ? '降为普通用户' : '设为管理员'}</button>
+                <button type="button" onclick="adminAdjustQuota('${item.user_id}', ${item.daily_note_limit}, ${item.daily_llm_limit})">📊 调额</button>
+                <button type="button" data-uid="${esc(item.user_id)}" data-uname="${esc(item.username)}" onclick="adminResetUserPwEl(this)">🔑 重置密码</button>
+              </div>
+            </div>
+          `;
+        }).join('') || '<div style="color:var(--muted);">暂无注册用户</div>';
+
+        document.getElementById('adminAuditList').innerHTML = (ov.audit_logs || []).map(a => `
+          <div class="mem-card" style="padding:8px 10px;font-size:12px;">
+            <div style="display:flex;justify-content:space-between;gap:6px;">
+              <strong>[${esc(a.action)}] · ${esc(a.status)}</strong>
+              <span style="color:var(--muted);">${esc((a.created_at || '').slice(0, 19).replace('T', ' '))} · ${esc(a.client_ip)}</span>
+            </div>
+            <div style="color:var(--muted);">${esc(JSON.stringify(a.detail))}</div>
+          </div>
+        `).join('') || '<div style="color:var(--muted);font-size:12.5px;">暂无安全审计日志</div>';
+
+        document.getElementById('adminTracesList').innerHTML = (ov.recent_traces || []).map(tr => `
+          <div class="mem-card" style="padding:8px 10px;font-size:12px;">
+            <div style="display:flex;justify-content:space-between;gap:6px;">
+              <strong>[${esc(tr.operation)}] (${esc(tr.space_id)})</strong>
+              <span class="tag">${tr.duration_ms} ms · ${tr.llm_calls} call · ${tr.tokens_used} tok</span>
+            </div>
+            <div style="color:var(--muted);">${esc(tr.input_summary)}</div>
+          </div>
+        `).join('') || '<div style="color:var(--muted);font-size:12.5px;">暂无运行日志</div>';
+      });
+    }
+
+    async function saveAdminSettings(btn) {
+      await withBtnBusy(btn, '⏳ 保存中', async () => {
+        const res = await apiPost('/api/admin/settings', {
+          allow_registration: document.getElementById('admAllowReg').checked,
+          noise_filter_enabled: document.getElementById('admNoiseFilter').checked,
+          max_note_chars: Number(document.getElementById('admMaxChars').value),
+          min_meaningful_chars: Number(document.getElementById('admMinChars').value),
+          rate_limit_per_minute: Number(document.getElementById('admRateLimit').value),
+          duplicate_window_seconds: Number(document.getElementById('admDupWin').value),
+          default_daily_note_limit: Number(document.getElementById('admNoteLimit').value),
+          default_daily_llm_limit: Number(document.getElementById('admLlmLimit').value),
+          default_daily_token_limit: Number(document.getElementById('admTokLimit').value),
+        });
+        if (res.error) return showToast(`保存失败: ${res.error}`);
+        showToast('✅ 防线参数与默认配额已实时生效');
+        loadAdminConsole();
+      });
+    }
+
+    async function adminCreateUser(btn) {
+      const username = document.getElementById('admNewUser').value.trim();
+      const display_name = document.getElementById('admNewDisplay').value.trim();
+      const password = document.getElementById('admNewPass').value;
+      const role = document.getElementById('admNewRole').value;
+      await withBtnBusy(btn, '⏳ 创建中', async () => {
+        const res = await apiPost('/api/admin/users/create', { username, display_name, password, role });
+        if (res.error) return showToast(`创建失败: ${res.error}`);
+        document.getElementById('admNewUser').value = '';
+        document.getElementById('admNewDisplay').value = '';
+        document.getElementById('admNewPass').value = '';
+        showToast(`✅ 已开通账号 ${username}`);
+        loadAdminConsole();
+      });
+    }
+
+    async function adminToggleUserStatus(userId, nextStatus) {
+      const res = await apiPost('/api/admin/users/update', { user_id: userId, status: nextStatus });
+      if (res.error) return showToast(`操作失败: ${res.error}`);
+      showToast(nextStatus === 'disabled' ? '🚫 已停用该账号并踢出登录态' : '✅ 已重新启用该账号');
+      loadAdminConsole();
+    }
+
+    async function adminToggleUserRole(userId, nextRole) {
+      const res = await apiPost('/api/admin/users/update', { user_id: userId, role: nextRole });
+      if (res.error) return showToast(`操作失败: ${res.error}`);
+      showToast(`已切换角色为 ${nextRole}`);
+      loadAdminConsole();
+    }
+
+    async function adminAdjustQuota(userId, curNotes, curLlm) {
+      const nRaw = prompt('设置该用户每日录入上限：', String(curNotes));
+      if (nRaw === null) return;
+      const lRaw = prompt('设置该用户每日 AI 调用上限：', String(curLlm));
+      if (lRaw === null) return;
+      const res = await apiPost('/api/admin/users/update', {
+        user_id: userId,
+        daily_note_limit: Number(nRaw) || curNotes,
+        daily_llm_limit: Number(lRaw) || curLlm,
+      });
+      if (res.error) return showToast(`调额失败: ${res.error}`);
+      showToast('✅ 用户每日配额已更新');
+      loadAdminConsole();
+    }
+
+    function adminResetUserPwEl(el) {
+      return adminResetUserPw(el.dataset.uid || '', el.dataset.uname || '');
+    }
+
+    async function adminResetUserPw(userId, uname) {
+      const np = prompt(`为 ${uname} 输入新密码（至少 6 位）：`);
+      if (!np) return;
+      const res = await apiPost('/api/admin/users/update', { user_id: userId, new_password: np });
+      if (res.error) return showToast(`重置失败: ${res.error}`);
+      showToast(`🔑 已重置 ${uname} 的密码`);
+    }
+
+    async function adminRunMaintenance(btn) {
+      await withBtnBusy(btn, '⏳ 清理中', async () => {
+        const res = await apiPost('/api/admin/maintenance');
+        if (res.error) return showToast(`维护失败: ${res.error}`);
+        showToast('✅ SQLite WAL 检查点已同步清理');
+        loadAdminConsole();
+      });
+    }
+
+    async function seedDemo(btn) {
+      await withBtnBusy(btn, '⏳ 载入中', async () => {
+        showToast('✨ 正在载入演示数据...');
+        const res = await apiPost('/api/seed-demo');
+        if (res.error) return showToast(`载入失败: ${res.error}`);
+        showToast(`已载入 ${res.seeded_notes ?? 0} 条多场景演示记录`);
+        reloadAll();
+      });
+    }
+
+    async function exportMarkdown(btn) {
+      await withBtnBusy(btn, '⏳ 导出中', async () => {
+        const res = await apiGet('/api/markdown/bundle');
+        if (res.error) return showToast(`导出失败: ${res.error}`);
+        const files = res.files || [];
+        const combined = files.map(f => `<!-- FILE: ${f.path} -->\n\n${f.markdown}`).join('\n\n---\n\n');
+        const blob = new Blob([combined], { type: 'text/markdown;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `tracetodo-${res.space_id || space()}-memories.md`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+        showToast(`已导出打包 ${res.count ?? files.length} 篇 Markdown`);
+      });
+    }
+
+    async function syncMarkdown(btn) {
+      await withBtnBusy(btn, '⏳ 同步中', async () => {
+        const res = await apiPost('/api/markdown/sync');
+        if (res.error) return showToast(`同步失败: ${res.error}`);
+        showToast(`Markdown 回流完成：应用 ${(res.applied || []).length} 项，冲突保护 ${(res.conflicts || []).length} 项`);
+        reloadAll();
+      });
+    }
+
+    async function runDream(btn) {
+      await withBtnBusy(btn, '⏳ 归纳中', async () => {
+        showToast('🌙 正在执行 Dream 记忆归纳，请稍候...');
+        const res = await apiPost('/api/dream');
+        if (res.error) return showToast(`Dream 失败: ${res.error}`);
+        showToast(`Dream 归纳完成：生成/更新 ${res.insights_processed ?? 0} 条推断洞察 (消耗 ${res.budget?.used_tokens ?? 0} tokens)`);
+        reloadAll();
+      });
+    }
+
+    function syncHeaderHeight() {
+      const hdr = document.querySelector('header');
+      if (hdr) {
+        document.documentElement.style.setProperty('--header-h', `${Math.ceil(hdr.getBoundingClientRect().height)}px`);
+      }
+    }
+    syncHeaderHeight();
+    window.addEventListener('resize', syncHeaderHeight);
+    if ('ResizeObserver' in window) {
+      const hdr = document.querySelector('header');
+      if (hdr) new ResizeObserver(syncHeaderHeight).observe(hdr);
+    }
+
+    async function reloadAll() {
+      try {
+        await syncAuthStatus();
+        if (authRequiredFlag && !currentUser && !activeShareToken) {
+          document.getElementById('engineStatus').textContent = '🔐 待登录';
+          return;
+        }
+        await flushOfflineQueue();
+        const health = await apiGet('/api/health');
+        document.getElementById('engineStatus').textContent =
+          `Vector: ${health.vector_backend} | LLM: ${health.llm_provider}`;
+      } catch (e) {
+        document.getElementById('engineStatus').textContent = '📴 离线缓存模式';
+      }
+      if (activeShareToken) {
+        loadSupervisionBoard().catch(() => {});
+        return;
+      }
+      await loadTasks();
+      checkTaskReminders();
+      if (document.getElementById('panel-supervision').classList.contains('active')) loadSupervisionBoard();
+      if (document.getElementById('panel-memories').classList.contains('active')) loadMemories();
+      if (document.getElementById('panel-graph').classList.contains('active')) loadGraph();
+      if (document.getElementById('panel-ask').classList.contains('active')) loadTraces();
+      if (document.getElementById('panel-admin').classList.contains('active')) loadAdminConsole();
+    }
+
+    // Handle shared link query parameters (?tab=supervision&share_token=... or space_id=...)
+    (function initFromQuery() {
+      const params = new URLSearchParams(location.search);
+      const qShare = params.get('share_token');
+      if (qShare) activeShareToken = qShare.trim();
+      const qSpace = params.get('space_id');
+      if (qSpace) document.getElementById('spaceInput').value = qSpace;
+      const qTab = params.get('tab');
+      if (qTab) {
+        const btn = document.querySelector(`.tab-btn[data-tab="${qTab}"]`);
+        if (btn) {
+          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+          document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+          btn.classList.add('active');
+          document.getElementById(`panel-${qTab}`)?.classList.add('active');
+        }
+      }
+    })();
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+    window.addEventListener('online', reloadAll);
+    setInterval(checkTaskReminders, 30_000);
+    reloadAll();
+  </script>
+</body>
+</html>

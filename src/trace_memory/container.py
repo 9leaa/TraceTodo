@@ -1,0 +1,237 @@
+"""Application Composition Root (`AppContainer`) wiring config, storage, vector store, LLM, and services."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from trace_memory.config import TraceMemoryConfig
+from trace_memory.llm.mock_provider import DeterministicLLMProvider, SemanticHashEmbedder
+from trace_memory.llm.openai_compat import OpenAICompatEmbedder, OpenAICompatLLMProvider
+from trace_memory.llm.protocol import EmbeddingProvider, LLMProvider
+from trace_memory.services.ask_service import AskService
+from trace_memory.services.auth_service import AdminService, AuthService
+from trace_memory.services.change_service import ChangeService
+from trace_memory.services.dream_service import DreamService
+from trace_memory.services.guard_service import (
+    InputGuardService,
+    RateLimitAndQuotaService,
+    SystemSettingsStore,
+)
+from trace_memory.services.ingest_service import IngestService
+from trace_memory.services.markdown_sync import MarkdownSyncService
+from trace_memory.services.retrieval_service import RetrievalService
+from trace_memory.services.task_matrix_service import TaskMatrixService
+from trace_memory.storage.database import Database
+from trace_memory.storage.hybrid_search import HybridSearchIndex
+from trace_memory.storage.repositories import (
+    MemoryRepository,
+    NoteRepository,
+    RelationRepository,
+    TraceRepository,
+)
+from trace_memory.storage.vector_store import (
+    QdrantVectorStore,
+    SQLiteVectorStore,
+    VectorLifecycleService,
+    VectorStore,
+)
+
+
+@dataclass
+class AppContainer:
+    """Single explicit dependency container shared across CLI, MCP, Web API, and tests."""
+
+    config: TraceMemoryConfig
+    db: Database
+    note_repo: NoteRepository
+    memory_repo: MemoryRepository
+    relation_repo: RelationRepository
+    trace_repo: TraceRepository
+    vector_store: VectorStore
+    embedder: EmbeddingProvider
+    llm: LLMProvider
+    vector_lifecycle: VectorLifecycleService
+    search_index: HybridSearchIndex
+    change_service: ChangeService
+    ingest_service: IngestService
+    task_matrix_service: TaskMatrixService
+    retrieval_service: RetrievalService
+    ask_service: AskService
+    dream_service: DreamService
+    markdown_sync: MarkdownSyncService
+    settings_store: SystemSettingsStore
+    input_guard: InputGuardService
+    quota_service: RateLimitAndQuotaService
+    auth_service: AuthService
+    admin_service: AdminService
+
+    @classmethod
+    def build(
+        cls,
+        config: TraceMemoryConfig | None = None,
+        llm_override: LLMProvider | None = None,
+        embedder_override: EmbeddingProvider | None = None,
+        vector_store_override: VectorStore | None = None,
+    ) -> AppContainer:
+        cfg = config or TraceMemoryConfig.from_env()
+        db = Database(cfg.sqlite_path)
+
+        note_repo = NoteRepository(db)
+        memory_repo = MemoryRepository(db)
+        relation_repo = RelationRepository(db, memory_repo)
+        trace_repo = TraceRepository(db)
+
+        if embedder_override is not None:
+            embedder = embedder_override
+        elif cfg.llm_provider == "openai" and cfg.openai_api_key:
+            embedder = OpenAICompatEmbedder(
+                base_url=cfg.openai_base_url,
+                api_key=cfg.openai_api_key,
+                model=cfg.embedding_model,
+                dimension=cfg.embedding_dim,
+                timeout_seconds=cfg.llm_timeout_seconds,
+            )
+        else:
+            embedder = SemanticHashEmbedder(dimension=cfg.embedding_dim)
+
+        if llm_override is not None:
+            llm = llm_override
+        elif cfg.llm_provider == "openai" and cfg.openai_api_key:
+            llm = OpenAICompatLLMProvider(
+                base_url=cfg.openai_base_url,
+                api_key=cfg.openai_api_key,
+                model=cfg.llm_model,
+                timeout_seconds=cfg.llm_timeout_seconds,
+            )
+        else:
+            llm = DeterministicLLMProvider()
+
+        if vector_store_override is not None:
+            vector_store = vector_store_override
+        elif cfg.vector_backend == "qdrant":
+            vector_store = QdrantVectorStore(
+                embedding_dim=cfg.embedding_dim,
+                path=cfg.qdrant_path,
+                url=cfg.qdrant_url,
+                api_key=cfg.qdrant_api_key,
+            )
+        else:
+            vector_store = SQLiteVectorStore(db)
+
+        vector_lifecycle = VectorLifecycleService(vector_store=vector_store, embedder=embedder)
+        search_index = HybridSearchIndex(
+            note_repo=note_repo,
+            memory_repo=memory_repo,
+            vector_store=vector_store,
+            embedder=embedder,
+        )
+        settings_store = SystemSettingsStore(db=db, config=cfg)
+        input_guard = InputGuardService(settings=settings_store)
+        quota_service = RateLimitAndQuotaService(db=db, settings=settings_store)
+        auth_service = AuthService(
+            db=db,
+            config=cfg,
+            settings=settings_store,
+            guard=quota_service,
+        )
+        admin_service = AdminService(
+            db=db,
+            config=cfg,
+            settings=settings_store,
+            auth=auth_service,
+            guard=quota_service,
+        )
+        change_service = ChangeService(
+            note_repo=note_repo,
+            memory_repo=memory_repo,
+            relation_repo=relation_repo,
+            trace_repo=trace_repo,
+            vector_lifecycle=vector_lifecycle,
+        )
+        ingest_service = IngestService(
+            note_repo=note_repo,
+            memory_repo=memory_repo,
+            relation_repo=relation_repo,
+            trace_repo=trace_repo,
+            vector_lifecycle=vector_lifecycle,
+            change_service=change_service,
+            llm=llm,
+            input_guard=input_guard,
+            quota_service=quota_service,
+        )
+        retrieval_service = RetrievalService(
+            note_repo=note_repo,
+            memory_repo=memory_repo,
+            relation_repo=relation_repo,
+            trace_repo=trace_repo,
+            search_index=search_index,
+            default_max_hops=cfg.graph_max_hops,
+            default_max_nodes=cfg.graph_max_nodes,
+            default_max_chars=cfg.graph_max_chars,
+        )
+        task_matrix_service = TaskMatrixService(
+            memory_repo=memory_repo,
+            change_service=change_service,
+            note_repo=note_repo,
+            vector_lifecycle=vector_lifecycle,
+            llm=llm,
+            retrieval_service=retrieval_service,
+            trace_repo=trace_repo,
+        )
+        ask_service = AskService(
+            note_repo=note_repo,
+            memory_repo=memory_repo,
+            trace_repo=trace_repo,
+            search_index=search_index,
+            retrieval_service=retrieval_service,
+            llm=llm,
+            input_guard=input_guard,
+            quota_service=quota_service,
+        )
+        dream_service = DreamService(
+            memory_repo=memory_repo,
+            trace_repo=trace_repo,
+            change_service=change_service,
+            llm=llm,
+            default_max_calls=cfg.dream_max_llm_calls,
+            default_max_tokens=cfg.dream_max_tokens,
+            quota_service=quota_service,
+        )
+        markdown_sync = MarkdownSyncService(
+            knowledge_root=cfg.knowledge_dir,
+            note_repo=note_repo,
+            memory_repo=memory_repo,
+            relation_repo=relation_repo,
+            trace_repo=trace_repo,
+            vector_lifecycle=vector_lifecycle,
+            change_service=change_service,
+        )
+
+        return cls(
+            config=cfg,
+            db=db,
+            note_repo=note_repo,
+            memory_repo=memory_repo,
+            relation_repo=relation_repo,
+            trace_repo=trace_repo,
+            vector_store=vector_store,
+            embedder=embedder,
+            llm=llm,
+            vector_lifecycle=vector_lifecycle,
+            search_index=search_index,
+            change_service=change_service,
+            ingest_service=ingest_service,
+            task_matrix_service=task_matrix_service,
+            retrieval_service=retrieval_service,
+            ask_service=ask_service,
+            dream_service=dream_service,
+            markdown_sync=markdown_sync,
+            settings_store=settings_store,
+            input_guard=input_guard,
+            quota_service=quota_service,
+            auth_service=auth_service,
+            admin_service=admin_service,
+        )
+
+    def close(self) -> None:
+        self.db.close()

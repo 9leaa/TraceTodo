@@ -1,0 +1,1256 @@
+"""REST API Router, FastAPI adapter, and zero-dependency HTTP server for Trace-Memory Console."""
+
+from __future__ import annotations
+
+import hashlib
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+from pathlib import Path
+from typing import Any
+from urllib.parse import parse_qs, urlparse
+
+try:
+    from fastapi import FastAPI, Request, Response
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import HTMLResponse, JSONResponse
+
+    _HAS_FASTAPI = True
+except ImportError:  # pragma: no cover
+    FastAPI = Any  # type: ignore[misc,assignment]
+    Request = Any  # type: ignore[misc,assignment]
+    Response = Any  # type: ignore[misc,assignment]
+    CORSMiddleware = Any  # type: ignore[misc,assignment]
+    HTMLResponse = Any  # type: ignore[misc,assignment]
+    JSONResponse = Any  # type: ignore[misc,assignment]
+    _HAS_FASTAPI = False
+
+
+PWA_ICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#0f172a"/>
+  <rect x="64" y="64" width="176" height="176" rx="36" fill="#ef4444"/>
+  <rect x="272" y="64" width="176" height="176" rx="36" fill="#3b82f6"/>
+  <rect x="64" y="272" width="176" height="176" rx="36" fill="#f59e0b"/>
+  <rect x="272" y="272" width="176" height="176" rx="36" fill="#475569"/>
+  <path d="M116 154l26 26 54-56" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>"""
+
+PWA_MANIFEST_JSON = json.dumps(
+    {
+        "name": "TraceTodo · 四象限记忆待办",
+        "short_name": "TraceTodo",
+        "description": "AI 记忆驱动的艾森豪威尔四象限待办与长期记忆中心",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#0f172a",
+        "theme_color": "#0f172a",
+        "icons": [
+            {"src": "/icon.png", "sizes": "256x256", "type": "image/png", "purpose": "any maskable"},
+            {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"},
+        ],
+    },
+    ensure_ascii=False,
+)
+
+PWA_SW_JS = """const CACHE_NAME = 'trace-todo-shell-v3';
+self.addEventListener('install', (e) => {
+  e.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(['/', '/manifest.webmanifest', '/icon.png', '/icon.svg'])));
+  self.skipWaiting();
+});
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+self.addEventListener('fetch', (e) => {
+  if (e.request.method !== 'GET') return;
+  const url = new URL(e.request.url);
+  if (url.pathname === '/' || url.pathname === '/manifest.webmanifest' || url.pathname === '/icon.png' || url.pathname === '/icon.svg') {
+    e.respondWith(fetch(e.request).then((res) => {
+      const clone = res.clone();
+      caches.open(CACHE_NAME).then((c) => c.put(e.request, clone));
+      return res;
+    }).catch(() => caches.match(e.request)));
+  }
+});
+"""
+
+from trace_memory.container import AppContainer
+from trace_memory.domain.memories import MemoryEvidence
+from trace_memory.domain.notes import RawNote, new_id, utc_now_iso
+from trace_memory.domain.proposals import (
+    ChangeProposal,
+    NotFoundError,
+    PermissionDeniedError,
+    QuotaExceededError,
+    RateLimitError,
+    TraceMemoryError,
+    UnauthorizedError,
+    ValidationError,
+    VersionConflictError,
+)
+from trace_memory.services.auth_service import UserAccount
+
+
+DASHBOARD_HTML_PATH = Path(__file__).with_name("dashboard.html")
+APP_ICON_PNG_PATH = Path(__file__).with_name("app_icon.png")
+
+
+def _extract_token(
+    query_params: dict[str, list[str]],
+    headers: dict[str, str] | None = None,
+) -> str:
+    """Extract Bearer/X-Auth-Token strictly from HTTP headers (never URL query strings)."""
+    _ = query_params
+    if headers:
+        lowered = {str(k).lower(): str(v) for k, v in headers.items()}
+        auth = lowered.get("authorization", "").strip()
+        if auth.lower().startswith("bearer "):
+            return auth[7:].strip()
+        x_tok = lowered.get("x-auth-token", "").strip()
+        if x_tok:
+            return x_tok
+    return ""
+
+
+def _resolve_client_ip(
+    headers: dict[str, str] | None,
+    direct_ip: str,
+    trust_proxy_headers: bool,
+) -> str:
+    """Only trust X-Forwarded-For / X-Real-IP when explicitly behind a trusted reverse proxy."""
+    fallback = (direct_ip or "127.0.0.1").strip() or "127.0.0.1"
+    if not trust_proxy_headers or not headers:
+        return fallback
+    lowered = {str(k).lower(): str(v) for k, v in headers.items()}
+    xff = lowered.get("x-forwarded-for", "").strip()
+    if xff:
+        first = xff.split(",")[0].strip()
+        if first:
+            return first
+    x_real = lowered.get("x-real-ip", "").strip()
+    if x_real:
+        return x_real
+    return fallback
+
+
+def _safe_int(
+    raw: Any,
+    *,
+    name: str,
+    default: int | None = None,
+    min_val: int | None = None,
+    max_val: int | None = None,
+) -> int | None:
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return default
+    try:
+        val = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(f"参数 {name} 必须为整数") from exc
+    if min_val is not None and val < min_val:
+        val = min_val
+    if max_val is not None and val > max_val:
+        val = max_val
+    return val
+
+
+class ApiDispatcher:
+    """Framework-neutral JSON API controller shared by FastAPI and built-in HTTP server."""
+
+    _PUBLIC_PATHS = frozenset(
+        {
+            "/api/health",
+            "/api/auth/status",
+            "/api/auth/login",
+            "/api/auth/register",
+        }
+    )
+
+    def __init__(self, container: AppContainer) -> None:
+        self.container = container
+
+    def _requested_space(self, query_params: dict[str, list[str]], body: dict[str, Any] | None = None) -> str:
+        if body and body.get("space_id"):
+            return str(body["space_id"]).strip()
+        vals = query_params.get("space_id")
+        if vals and vals[0].strip():
+            return vals[0].strip()
+        return ""
+
+    def _space(self, query_params: dict[str, list[str]], body: dict[str, Any] | None = None) -> str:
+        return self._requested_space(query_params, body) or self.container.config.default_space
+
+    def _resolve_auth_and_space(
+        self,
+        path: str,
+        qp: dict[str, list[str]],
+        payload: dict[str, Any],
+        token: str,
+    ) -> tuple[UserAccount | None, str, dict[str, Any] | None]:
+        req_space = self._requested_space(qp, payload)
+        share_token = str(payload.get("share_token") or (qp.get("share_token") or [""])[0] or "").strip()
+
+        if path in ("/api/supervision/board", "/api/supervision/nudge") and share_token:
+            share_info = self.container.auth_service.resolve_supervision_share(share_token)
+            if share_info is None:
+                raise UnauthorizedError("好友监督分享链接无效或已失效")
+            return None, share_info["space_id"], share_info
+
+        user: UserAccount | None = None
+        if token:
+            user = self.container.auth_service.authenticate(token)
+            if user is None and path not in self._PUBLIC_PATHS:
+                raise UnauthorizedError("登录会话已过期或失效，请重新登录")
+
+        must_auth = (
+            self.container.config.auth_required
+            or path.startswith("/api/admin/")
+            or path
+            in (
+                "/api/auth/me",
+                "/api/auth/logout",
+                "/api/auth/change-password",
+                "/api/supervision/share",
+                "/api/supervision/shares",
+                "/api/supervision/share/revoke",
+            )
+        )
+        if must_auth and path not in self._PUBLIC_PATHS and user is None:
+            raise UnauthorizedError("请先登录账号")
+
+        if user is not None:
+            if user.role == "admin":
+                eff_space = req_space or user.space_id
+            else:
+                if req_space and req_space != user.space_id:
+                    raise PermissionDeniedError("无权访问其他用户的记忆空间")
+                eff_space = user.space_id
+            return user, eff_space, None
+
+        return None, req_space or self.container.config.default_space, None
+
+    def _check_rate_limit(
+        self,
+        *,
+        user: UserAccount | None,
+        space_id: str,
+        client_ip: str,
+    ) -> None:
+        bucket = f"usr:{user.user_id}" if user else f"ip:{client_ip}:sp:{space_id}"
+        self.container.quota_service.check_rate_limit(bucket, action_label="操作请求")
+
+    def _check_daily_quota(
+        self,
+        *,
+        user: UserAccount | None,
+        space_id: str,
+        require_note_slot: bool = False,
+        require_llm_slot: bool = False,
+    ) -> None:
+        if not require_note_slot and not require_llm_slot:
+            return
+        note_lim = user.daily_note_limit if user else None
+        llm_lim = user.daily_llm_limit if user else None
+        tok_lim = user.daily_token_limit if user else None
+        self.container.quota_service.check_daily_quota(
+            f"space:{space_id}",
+            note_limit=note_lim,
+            llm_limit=llm_lim,
+            token_limit=tok_lim,
+            require_note_slot=require_note_slot,
+            require_llm_slot=require_llm_slot,
+        )
+
+    def _enforce_rate_and_quota(
+        self,
+        *,
+        user: UserAccount | None,
+        space_id: str,
+        client_ip: str,
+        require_note_slot: bool = False,
+        require_llm_slot: bool = False,
+    ) -> None:
+        self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+        self._check_daily_quota(
+            user=user,
+            space_id=space_id,
+            require_note_slot=require_note_slot,
+            require_llm_slot=require_llm_slot,
+        )
+
+    def dispatch(
+        self,
+        method: str,
+        path: str,
+        query_params: dict[str, list[str]] | None = None,
+        body: dict[str, Any] | None = None,
+        auth_token: str = "",
+        headers: dict[str, str] | None = None,
+        client_ip: str = "127.0.0.1",
+    ) -> tuple[int, dict[str, Any]]:
+        qp = query_params or {}
+        payload = body or {}
+        eff_token = auth_token.strip() or _extract_token(qp, headers)
+
+        try:
+            user, space_id, share_info = self._resolve_auth_and_space(path, qp, payload, eff_token)
+
+            if method == "GET" and path == "/api/health":
+                settings = self.container.settings_store.get_all()
+                return 200, {
+                    "status": "ok",
+                    "default_space": self.container.config.default_space,
+                    "vector_backend": self.container.vector_store.backend_name,
+                    "llm_provider": self.container.llm.provider_name,
+                    "auth_required": bool(self.container.config.auth_required),
+                    "allow_registration": bool(settings["allow_registration"]),
+                    "has_users": self.container.auth_service.has_users(),
+                    "noise_filter_enabled": bool(settings["noise_filter_enabled"]),
+                }
+
+            if method == "GET" and path == "/api/auth/status":
+                settings = self.container.settings_store.get_all()
+                quota = (
+                    self.container.quota_service.get_usage(f"space:{user.space_id}")
+                    if user is not None
+                    else None
+                )
+                return 200, {
+                    "auth_required": bool(self.container.config.auth_required),
+                    "allow_registration": bool(settings["allow_registration"]),
+                    "has_users": self.container.auth_service.has_users(),
+                    "authenticated": user is not None,
+                    "user": user.to_dict() if user is not None else None,
+                    "quota": quota,
+                    "defense": {
+                        "noise_filter_enabled": bool(settings["noise_filter_enabled"]),
+                        "max_note_chars": int(settings["max_note_chars"]),
+                        "rate_limit_per_minute": int(settings["rate_limit_per_minute"]),
+                    },
+                }
+
+            if method == "POST" and path == "/api/auth/register":
+                out = self.container.auth_service.register(
+                    username=str(payload.get("username", "")),
+                    password=str(payload.get("password", "")),
+                    display_name=str(payload.get("display_name", "")),
+                    device_label=str(payload.get("device_label", "web")),
+                    client_ip=client_ip,
+                )
+                return 200, out
+
+            if method == "POST" and path == "/api/auth/login":
+                out = self.container.auth_service.login(
+                    username=str(payload.get("username", "")),
+                    password=str(payload.get("password", "")),
+                    device_label=str(payload.get("device_label", "web")),
+                    client_ip=client_ip,
+                )
+                return 200, out
+
+            if method == "POST" and path == "/api/auth/logout":
+                revoked = self.container.auth_service.logout(eff_token)
+                return 200, {"logged_out": revoked}
+
+            if method == "GET" and path == "/api/auth/me":
+                assert user is not None
+                return 200, {
+                    "user": user.to_dict(),
+                    "quota": self.container.quota_service.get_usage(f"space:{user.space_id}"),
+                }
+
+            if method == "POST" and path == "/api/auth/change-password":
+                assert user is not None
+                out = self.container.auth_service.change_password(
+                    user,
+                    old_password=str(payload.get("old_password", "")),
+                    new_password=str(payload.get("new_password", "")),
+                    device_label=str(payload.get("device_label", "web")),
+                    client_ip=client_ip,
+                )
+                return 200, out
+
+            if method == "POST" and path == "/api/supervision/share":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                owner_id = user.user_id if user else ""
+                share = self.container.auth_service.create_supervision_share(
+                    space_id=space_id,
+                    owner_user_id=owner_id,
+                    label=str(payload.get("label", "好友监督")),
+                )
+                share["share_query"] = f"?tab=supervision&share_token={share['share_token']}"
+                return 200, share
+
+            if method == "GET" and path == "/api/supervision/shares":
+                shares = self.container.auth_service.list_supervision_shares(space_id=space_id)
+                return 200, {"shares": shares}
+
+            if method == "POST" and path == "/api/supervision/share/revoke":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                revoked_cnt = self.container.auth_service.revoke_supervision_share(
+                    space_id=space_id,
+                    share_id=str(payload.get("share_id", "")),
+                )
+                return 200, {"revoked": revoked_cnt}
+
+            # Admin Management Endpoints (strictly requires role='admin')
+            if method == "GET" and path == "/api/admin/overview":
+                return 200, self.container.admin_service.get_overview(user)
+
+            if method == "GET" and path == "/api/admin/users":
+                return 200, {"users": self.container.admin_service.list_users(user)}
+
+            if method == "POST" and path == "/api/admin/users/create":
+                created = self.container.admin_service.create_user(
+                    user,
+                    username=str(payload.get("username", "")),
+                    password=str(payload.get("password", "")),
+                    display_name=str(payload.get("display_name", "")),
+                    role=str(payload.get("role", "user")),
+                    daily_note_limit=payload.get("daily_note_limit"),
+                    daily_llm_limit=payload.get("daily_llm_limit"),
+                    daily_token_limit=payload.get("daily_token_limit"),
+                )
+                return 200, {"user": created}
+
+            if method == "POST" and path == "/api/admin/users/update":
+                updated = self.container.admin_service.update_user(
+                    user,
+                    target_user_id=str(payload.get("user_id", "")),
+                    patch=payload,
+                )
+                return 200, {"user": updated}
+
+            if method == "GET" and path == "/api/admin/settings":
+                self.container.admin_service.require_admin(user)
+                return 200, {"settings": self.container.settings_store.get_all()}
+
+            if method == "POST" and path == "/api/admin/settings":
+                updated_settings = self.container.admin_service.update_settings(user, payload)
+                return 200, {"settings": updated_settings}
+
+            if method == "POST" and path == "/api/admin/maintenance":
+                return 200, self.container.admin_service.run_maintenance(user)
+
+            if method == "GET" and path == "/api/tasks/matrix":
+                inc_done = qp.get("include_done", ["false"])[0].lower() == "true"
+                sort_by = qp.get("sort_by", ["priority"])[0]
+                matrix = self.container.task_matrix_service.build_matrix_analysis(
+                    space_id=space_id, include_done=inc_done
+                )
+                if sort_by != "priority":
+                    matrix["sorted_tasks"] = self.container.task_matrix_service.list_sorted_tasks(
+                        space_id=space_id,
+                        task_status="all" if inc_done else "todo",
+                        sort_by=sort_by,
+                    )
+                return 200, matrix
+
+            if method == "POST" and path == "/api/tasks/transition":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                mem_id = str(payload.get("memory_id", ""))
+                action = str(payload.get("action", "complete_task"))
+                exp_ver = _safe_int(payload.get("expected_version"), name="expected_version", min_val=1)
+                out = self.container.task_matrix_service.transition_task_state_with_repeat(
+                    space_id=space_id,
+                    memory_id=mem_id,
+                    action=action,
+                    expected_version=exp_ver,
+                )
+                return 200, out
+
+            if method == "POST" and path == "/api/tasks/quadrant":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                mem_id = str(payload.get("memory_id", ""))
+                exp_ver = _safe_int(payload.get("expected_version"), name="expected_version", min_val=1)
+                imp_v = _safe_int(payload.get("importance"), name="importance", min_val=1, max_val=5)
+                urg_v = _safe_int(payload.get("urgency"), name="urgency", min_val=1, max_val=5)
+                res = self.container.task_matrix_service.update_task_quadrant_or_priority(
+                    space_id=space_id,
+                    memory_id=mem_id,
+                    expected_version=exp_ver,
+                    importance=imp_v,
+                    urgency=urg_v,
+                    quadrant=payload.get("quadrant"),
+                    due_at=payload.get("due_at"),
+                )
+                return 200, res.to_dict()
+
+            if method == "POST" and path == "/api/tasks/save":
+                self._enforce_rate_and_quota(
+                    user=user, space_id=space_id, client_ip=client_ip, require_note_slot=True
+                )
+                res = self.container.task_matrix_service.save_task_card(
+                    space_id=space_id,
+                    data=payload,
+                    actor_id=str(payload.get("actor_id", user.username if user else "user")),
+                )
+                if res.status != "idempotent_replay":
+                    self.container.quota_service.record_usage(
+                        f"space:{space_id}", notes=1, embed_calls=2
+                    )
+                return 200, res.to_dict()
+
+            if method == "POST" and path == "/api/tasks/decompose":
+                self._enforce_rate_and_quota(
+                    user=user, space_id=space_id, client_ip=client_ip, require_llm_slot=True
+                )
+                title_str = str(payload.get("title", "")).strip()
+                summary_str = str(payload.get("summary", "")).strip()
+                guard_dec = self.container.input_guard.inspect_note(title_str)
+                if not guard_dec.allowed:
+                    raise ValidationError(guard_dec.reason)
+                out = self.container.task_matrix_service.decompose_task_with_memory(
+                    space_id=space_id,
+                    title=title_str,
+                    summary=summary_str,
+                    memory_id=str(payload.get("memory_id", "")),
+                )
+                self.container.quota_service.record_usage(
+                    f"space:{space_id}",
+                    llm_calls=int(out.get("llm_calls", 0) or 0),
+                    tokens_used=int(out.get("tokens_used", 0) or 0),
+                )
+                return 200, out
+
+            if method == "POST" and path == "/api/tasks/subtasks/toggle":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                exp_ver = _safe_int(payload.get("expected_version"), name="expected_version", min_val=1)
+                out = self.container.task_matrix_service.toggle_subtask(
+                    space_id=space_id,
+                    memory_id=str(payload.get("memory_id", "")),
+                    subtask_id=str(payload.get("subtask_id", "")),
+                    done=bool(payload.get("done", False)),
+                    expected_version=exp_ver,
+                )
+                return 200, out
+
+            if method == "POST" and path == "/api/tasks/rollover":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                rolled = self.container.task_matrix_service.apply_auto_rollover(space_id=space_id)
+                return 200, {"rolled_over": rolled, "count": len(rolled)}
+
+            if method == "POST" and path == "/api/tasks/focus":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                exp_ver = _safe_int(payload.get("expected_version"), name="expected_version", min_val=1)
+                elapsed_s = _safe_int(
+                    payload.get("elapsed_seconds", 0), name="elapsed_seconds", default=0, min_val=0, max_val=86400
+                )
+                res = self.container.task_matrix_service.record_focus_event(
+                    space_id=space_id,
+                    memory_id=str(payload.get("memory_id", "")),
+                    event=str(payload.get("event", "complete_session")),
+                    reason=str(payload.get("reason", ""))[:200],
+                    elapsed_seconds=int(elapsed_s or 0),
+                    expected_version=exp_ver,
+                )
+                return 200, res.to_dict()
+
+            if method == "GET" and path == "/api/supervision/board":
+                assignee = qp.get("assignee", [""])[0]
+                board = self.container.task_matrix_service.build_supervision_board(
+                    space_id=space_id, assignee_filter=assignee
+                )
+                if share_info is not None:
+                    board["shared_mode"] = True
+                    board["share_label"] = share_info.get("label", "好友监督")
+                return 200, board
+
+            if method == "POST" and path == "/api/supervision/nudge":
+                self._enforce_rate_and_quota(user=user, space_id=space_id, client_ip=client_ip)
+                res = self.container.task_matrix_service.add_supervision_nudge(
+                    space_id=space_id,
+                    memory_id=str(payload.get("memory_id", "")),
+                    kind=str(payload.get("kind", "cheer")),
+                    from_user=str(payload.get("from_user", "监工好友"))[:32],
+                    message=str(payload.get("message", ""))[:120],
+                )
+                return 200, res.to_dict()
+
+            if method == "POST" and path == "/api/notes/record":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                content = str(payload.get("content", "")).strip()
+                if not content:
+                    raise ValidationError("content is required")
+                idem = str(payload.get("idempotency_key", "")).strip()
+                actor_name = str(payload.get("actor_id") or (user.username if user else "user"))
+
+                # Fast length & noise check BEFORE consuming note/LLM quota
+                guard_res = self.container.input_guard.inspect_note(content)
+                if guard_res.allowed and not idem:
+                    is_dup, dup_reason = self.container.quota_service.check_duplicate_note(space_id, content)
+                    if is_dup:
+                        self.container.quota_service.record_usage(f"space:{space_id}", blocked_noise=1)
+                        self.container.quota_service.log_security_event(
+                            action="ingest_duplicate_blocked",
+                            status="duplicate",
+                            actor_user_id=user.user_id if user else actor_name,
+                            space_id=space_id,
+                            detail={"preview": content[:40]},
+                            client_ip=client_ip,
+                        )
+                        return 200, {
+                            "note": RawNote(
+                                note_id="filtered_duplicate",
+                                space_id=space_id,
+                                content=content,
+                                source_type="web",
+                                actor_id=actor_name,
+                            ).to_dict(),
+                            "extraction_status": "filtered_noise",
+                            "filtered": True,
+                            "filter_reason": dup_reason,
+                            "changes": [],
+                            "error_message": dup_reason,
+                            "trace_id": "",
+                        }
+
+                if guard_res.allowed:
+                    self._check_daily_quota(
+                        user=user,
+                        space_id=space_id,
+                        require_note_slot=True,
+                        require_llm_slot=True,
+                    )
+
+                res_ing = self.container.ingest_service.record_note(
+                    space_id=space_id,
+                    content=content,
+                    source_type="web",
+                    actor_id=actor_name,
+                    event_time=str(payload.get("event_time", "")),
+                    idempotency_key=idem,
+                )
+                return 200, res_ing.to_dict()
+
+            if method == "POST" and path == "/api/notes/forget":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                note_id = str(payload.get("note_id", ""))
+                span = str(payload.get("span", ""))
+                out = self.container.ingest_service.forget_note(
+                    space_id=space_id, note_id=note_id, span_to_forget=span
+                )
+                return 200, out
+
+            if method == "GET" and path == "/api/memories/search":
+                q = qp.get("q", [""])[0][:500]
+                mtype = qp.get("memory_type", [""])[0]
+                top_k = _safe_int(
+                    qp.get("top_k", ["20"])[0], name="top_k", default=20, min_val=1, max_val=100
+                )
+                return 200, self.container.retrieval_service.search(
+                    space_id=space_id, query=q, memory_type=mtype, top_k=int(top_k or 20)
+                )
+
+            if method == "GET" and path == "/api/memories/detail":
+                ident = qp.get("id", [""])[0]
+                detail = self.container.retrieval_service.read_memory_detail(space_id, ident)
+                try:
+                    detail["markdown"] = self.container.markdown_sync.render_memory_markdown(
+                        space_id, ident
+                    )["markdown"]
+                except TraceMemoryError:
+                    detail["markdown"] = ""
+                return 200, detail
+
+            if method == "GET" and path == "/api/memories/markdown":
+                ident = qp.get("id", [""])[0]
+                return 200, self.container.markdown_sync.render_memory_markdown(space_id, ident)
+
+            if method == "POST" and path == "/api/memories/markdown/save":
+                self._enforce_rate_and_quota(
+                    user=user, space_id=space_id, client_ip=client_ip, require_note_slot=True
+                )
+                mem_id = str(payload.get("memory_id", "")).strip()
+                md_text = str(payload.get("markdown", ""))
+                if not mem_id or not md_text.strip():
+                    raise ValidationError("memory_id and markdown are required")
+                exp_v = _safe_int(payload.get("expected_version"), name="expected_version", min_val=1)
+                can_export_disk = (not self.container.config.auth_required) or (
+                    user is not None and user.role == "admin"
+                )
+                res = self.container.markdown_sync.apply_markdown_edit(
+                    space_id=space_id,
+                    identifier=mem_id,
+                    markdown_text=md_text,
+                    expected_version=exp_v,
+                    actor_id=str(payload.get("actor_id", user.username if user else "markdown_editor")),
+                    export_to_disk=can_export_disk,
+                )
+                self.container.quota_service.record_usage(f"space:{space_id}", notes=1, embed_calls=2)
+                return 200, res.to_dict()
+
+            if method == "POST" and path == "/api/memories/propose":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                action = str(payload.get("action", "update"))
+                if action not in ("create", "update", "forget", "approve", "reject"):
+                    raise ValidationError(f"不支持的操作类型: {action}")
+                title_txt = str(payload.get("title", "")).strip()
+                raw_summary = str(payload.get("summary", "")).strip()
+                summary_txt = raw_summary or title_txt or f"Web {action}"
+                cfg = self.container.settings_store.get_all()
+                max_chars = int(cfg.get("max_note_chars", 2000))
+                if len(title_txt) > 200 or len(raw_summary) > max_chars:
+                    raise ValidationError(f"标题或摘要超出长度上限（摘要上限 {max_chars} 字）")
+                evidences: tuple[MemoryEvidence, ...] = ()
+                if action != "forget":
+                    self._check_daily_quota(
+                        user=user, space_id=space_id, require_note_slot=True, require_llm_slot=False
+                    )
+                    src_note = RawNote(
+                        note_id=new_id("note"),
+                        space_id=space_id,
+                        content=f"[Web Edit] {summary_txt}",
+                        source_type="web",
+                        actor_id=user.username if user else "user",
+                    )
+                    self.container.note_repo.save(src_note)
+                    self.container.vector_lifecycle.sync_note(src_note)
+                    evidences = (
+                        MemoryEvidence(note_id=src_note.note_id, note_revision=1, quote=summary_txt[:160]),
+                    )
+                exp_v = _safe_int(payload.get("expected_version"), name="expected_version", min_val=1)
+                raw_tags = payload.get("tags") or []
+                clean_tags = tuple(str(t).strip()[:32] for t in raw_tags[:20] if str(t).strip())
+                prop = ChangeProposal(
+                    space_id=space_id,
+                    action=action,
+                    memory_type=str(payload.get("memory_type", "semantic")),
+                    target_memory_id=str(payload.get("target_memory_id", "")),
+                    expected_version=exp_v,
+                    idempotency_key=str(payload.get("idempotency_key", "")),
+                    actor_id=user.username if user else "user",
+                    origin="user_direct",
+                    title=title_txt,
+                    summary=raw_summary,
+                    payload=dict(payload.get("payload") or {}),
+                    permalink=str(payload.get("permalink", ""))[:120],
+                    canonical_key=str(payload.get("canonical_key", ""))[:120],
+                    tags=clean_tags,
+                    lock_for_user=bool(payload.get("lock_for_user", True)),
+                    evidences=evidences,
+                    reason=str(payload.get("reason", "Web console mutation"))[:200],
+                )
+                res = self.container.change_service.apply(prop)
+                if action != "forget" and res.status != "idempotent_replay":
+                    self.container.quota_service.record_usage(
+                        f"space:{space_id}", notes=1, embed_calls=2
+                    )
+                return 200, res.to_dict()
+
+            if method == "GET" and path == "/api/graph":
+                seed = qp.get("seed", [""])[0]
+                if seed:
+                    return 200, self.container.retrieval_service.build_graph_context(
+                        space_id=space_id, seed_identifier_or_query=seed
+                    )
+                all_mems = [
+                    m.to_dict()
+                    for m in self.container.memory_repo.list_memories(
+                        space_id=space_id, status="active", limit=100
+                    )
+                ]
+                all_rels = [
+                    r.to_dict()
+                    for r in self.container.relation_repo.list_all(space_id)
+                    if r.to_target_text != "[FORGOTTEN]"
+                ]
+                return 200, {"nodes": [{"memory": m, "hop": 0} for m in all_mems], "edges": all_rels}
+
+            if method == "POST" and path == "/api/ask":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                question = str(payload.get("question", "")).strip()
+                if not question:
+                    raise ValidationError("question is required")
+                guard_ask = self.container.input_guard.inspect_ask(question)
+                if guard_ask.allowed:
+                    self._check_daily_quota(
+                        user=user, space_id=space_id, require_llm_slot=True
+                    )
+                return 200, self.container.ask_service.ask(space_id=space_id, question=question)
+
+            if method == "POST" and path == "/api/dream":
+                self._enforce_rate_and_quota(
+                    user=user, space_id=space_id, client_ip=client_ip, require_llm_slot=True
+                )
+                max_calls = payload.get("max_llm_calls")
+                max_tokens = payload.get("max_tokens")
+                return 200, self.container.dream_service.run_dream(
+                    space_id=space_id,
+                    max_llm_calls=int(max_calls) if max_calls is not None else None,
+                    max_tokens=int(max_tokens) if max_tokens is not None else None,
+                )
+
+            if method == "GET" and path == "/api/markdown/bundle":
+                mems = self.container.memory_repo.list_memories(
+                    space_id=space_id, status="active", limit=500
+                )
+                files = [
+                    {
+                        "path": f"{m.permalink}.md",
+                        "title": m.title,
+                        "memory_type": m.memory_type,
+                        "markdown": self.container.markdown_sync.render_memory_markdown(
+                            space_id, m.memory_id
+                        )["markdown"],
+                    }
+                    for m in mems
+                ]
+                return 200, {"space_id": space_id, "count": len(files), "files": files}
+
+            if method == "POST" and path == "/api/markdown/export":
+                if self.container.config.auth_required and (user is None or user.role != "admin"):
+                    raise PermissionDeniedError("多租户模式下服务器本地目录导出仅限管理员，请使用「打包下载 Markdown」")
+                return 200, self.container.markdown_sync.export_space(space_id)
+
+            if method == "POST" and path == "/api/markdown/sync":
+                if self.container.config.auth_required and (user is None or user.role != "admin"):
+                    raise PermissionDeniedError("多租户模式下服务器磁盘同步仅限管理员，普通用户请直接在线编辑 Markdown")
+                return 200, self.container.markdown_sync.sync_external_edits(space_id)
+
+            if method == "GET" and path == "/api/traces":
+                traces = self.container.trace_repo.list_traces(space_id=space_id, limit=30)
+                notes = [
+                    n.to_dict()
+                    for n in self.container.note_repo.list_notes(space_id=space_id, limit=30)
+                ]
+                return 200, {"traces": traces, "recent_notes": notes}
+
+            if method == "POST" and path == "/api/seed-demo":
+                self._enforce_rate_and_quota(
+                    user=user,
+                    space_id=space_id,
+                    client_ip=client_ip,
+                    require_note_slot=True,
+                    require_llm_slot=True,
+                )
+                return 200, self._seed_demo_data(space_id)
+
+            return 404, {"error": f"Endpoint not found: {method} {path}"}
+
+        except UnauthorizedError as exc:
+            return 401, {"error": str(exc), "code": "UNAUTHORIZED"}
+        except RateLimitError as exc:
+            return 429, {
+                "error": str(exc),
+                "code": "RATE_LIMIT_EXCEEDED",
+                "retry_after": exc.retry_after_seconds,
+            }
+        except QuotaExceededError as exc:
+            return 429, {"error": str(exc), "code": "QUOTA_EXCEEDED"}
+        except PermissionDeniedError as exc:
+            return 403, {"error": str(exc), "code": "PERMISSION_DENIED"}
+        except NotFoundError as exc:
+            return 404, {"error": str(exc), "code": "NOT_FOUND"}
+        except VersionConflictError as exc:
+            return 409, {
+                "error": str(exc),
+                "code": "VERSION_CONFLICT",
+                "expected": exc.expected,
+                "actual": exc.actual,
+            }
+        except ValidationError as exc:
+            return 400, {"error": str(exc), "code": "VALIDATION_ERROR"}
+        except TraceMemoryError as exc:
+            return 400, {"error": str(exc)}
+
+    def _seed_demo_data(self, space_id: str) -> dict[str, Any]:
+        demo_inputs = [
+            ("我平时很喜欢喝美式咖啡，但是晚上八点以后不喝咖啡。", ""),
+            ("我非常偏好高可靠架构演进与向量检索性能优化。", ""),
+            ("2025年3月我住在杭州。", "2025-03-10T10:00:00+00:00"),
+            ("我现在搬到上海定居了。", "2026-10-01T10:00:00+00:00"),
+            ("明天必须修复线上微信支付回调超时 bug [[facts/当前居住城市]]", ""),
+            ("今天下午完成 Agent 融合记忆项目核心面试复盘", ""),
+            ("下个月规划向量检索索引与双链图谱架构演进方案 [[preferences/关于高可靠架构演进与向量检索性能优化的偏好]]", ""),
+            ("今天下午帮同事转发技术分享会议通知链接", ""),
+            ("有空的时候顺便整理去年的电影片单与书架", ""),
+            ("上周参加了云栖技术架构交流复盘会，收获很多。", ""),
+        ]
+        created = 0
+        for text, ev_time in demo_inputs:
+            key = "demo:" + hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
+            res = self.container.ingest_service.record_note(
+                space_id=space_id,
+                content=text,
+                source_type="web",
+                event_time=ev_time,
+                idempotency_key=key,
+            )
+            if res.extraction_status != "idempotent_replay":
+                created += 1
+
+        # Seed one rich DuoDo-style checklist + supervised demo task idempotently
+        from datetime import datetime
+
+        today_due = datetime.now().astimezone().replace(hour=21, minute=0, second=0, microsecond=0).isoformat()
+        rich_res = self.container.task_matrix_service.save_task_card(
+            space_id=space_id,
+            data={
+                "title": "完成周六技术分享 PPT 与现场 Demo 联调",
+                "summary": "结合高可靠架构偏好准备分享材料，并提前测试离线与真机演示",
+                "importance": 5,
+                "urgency": 4,
+                "due_at": today_due,
+                "is_all_day": False,
+                "color_theme": "lavender",
+                "task_mode": "multiplayer",
+                "supervision_enabled": True,
+                "assignee": "self",
+                "repeat_rule": "never",
+                "reminder_offset_minutes": 15,
+                "auto_rollover": True,
+                "focus_lock_enabled": True,
+                "focus_minutes": 25,
+                "subtasks": [
+                    {"id": "demo_sub_1", "title": "梳理四象限与长期记忆架构主线", "done": True},
+                    {"id": "demo_sub_2", "title": "录制 Mac + iPhone 局域网同步演示", "done": False},
+                    {"id": "demo_sub_3", "title": "核对 Q&A 关键数据与溯源证据链路", "done": False},
+                ],
+                "idempotency_key": "demo:duodo_rich_task_v1",
+            },
+        )
+        if rich_res.status != "idempotent_replay":
+            created += 1
+        return {"seeded_notes": created, "space_id": space_id}
+
+    def dispatch_mcp_http(
+        self,
+        raw_bytes: bytes,
+        query_params: dict[str, list[str]] | None = None,
+        headers: dict[str, str] | None = None,
+        client_ip: str = "127.0.0.1",
+    ) -> tuple[int, Any]:
+        """Handle authenticated Streamable HTTP JSON-RPC 2.0 MCP requests (`/mcp`)."""
+        from trace_memory.mcp_server.server import MCPToolDispatcher, handle_jsonrpc_message
+
+        qp = query_params or {}
+        token = _extract_token(qp, headers)
+        try:
+            user, space_id, _ = self._resolve_auth_and_space("/mcp", qp, {}, token)
+        except UnauthorizedError as exc:
+            return 401, {"jsonrpc": "2.0", "id": None, "error": {"code": -32001, "message": str(exc)}}
+        except PermissionDeniedError as exc:
+            return 403, {"jsonrpc": "2.0", "id": None, "error": {"code": -32003, "message": str(exc)}}
+
+        if not raw_bytes.strip():
+            return 400, {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Empty body"}}
+
+        try:
+            parsed = json.loads(raw_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return 400, {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}}
+
+        mcp_disp = MCPToolDispatcher(
+            self.container,
+            trusted_space_id=space_id,
+            actor_id=user.username if user else "mcp_client",
+            actor_user_id=user.user_id if user else "",
+            enforce_remote_guards=True,
+            client_ip=client_ip,
+            daily_note_limit=user.daily_note_limit if user else None,
+            daily_llm_limit=user.daily_llm_limit if user else None,
+            daily_token_limit=user.daily_token_limit if user else None,
+        )
+
+        if isinstance(parsed, list):
+            if len(parsed) > 10:
+                return 400, {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": -32600, "message": "Batch size exceeds maximum of 10 requests"},
+                }
+            responses = []
+            for item in parsed:
+                if isinstance(item, dict):
+                    res = handle_jsonrpc_message(mcp_disp, item)
+                    if res is not None:
+                        responses.append(res)
+                else:
+                    responses.append(
+                        {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
+                    )
+            if not responses:
+                return 202, None
+            return 200, responses
+
+        if not isinstance(parsed, dict):
+            return 400, {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
+
+        resp = handle_jsonrpc_message(mcp_disp, parsed)
+        if resp is None:
+            return 202, None
+        return 200, resp
+
+
+def create_fastapi_app(container: AppContainer) -> Any:
+    """Create a FastAPI ASGI app when `fastapi` is installed in the environment."""
+    if not _HAS_FASTAPI:
+        raise RuntimeError("FastAPI is not installed")
+
+    dispatcher = ApiDispatcher(container)
+    app = FastAPI(title="Trace-Memory Console & API", version="0.1.0")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    @app.get("/", response_class=HTMLResponse)
+    @app.get("/console", response_class=HTMLResponse)
+    async def index() -> HTMLResponse:
+        return HTMLResponse(
+            DASHBOARD_HTML_PATH.read_text(encoding="utf-8"),
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    @app.get("/manifest.webmanifest")
+    async def manifest() -> Response:
+        return Response(content=PWA_MANIFEST_JSON, media_type="application/manifest+json")
+
+    @app.get("/icon.png")
+    @app.get("/apple-touch-icon.png")
+    @app.get("/favicon.ico")
+    async def icon_png() -> Response:
+        if APP_ICON_PNG_PATH.is_file():
+            return Response(content=APP_ICON_PNG_PATH.read_bytes(), media_type="image/png")
+        return Response(content=PWA_ICON_SVG, media_type="image/svg+xml")
+
+    @app.get("/icon.svg")
+    async def icon_svg() -> Response:
+        return Response(content=PWA_ICON_SVG, media_type="image/svg+xml")
+
+    @app.get("/sw.js")
+    async def service_worker() -> Response:
+        return Response(content=PWA_SW_JS, media_type="application/javascript")
+
+    @app.get("/mcp")
+    async def mcp_info() -> JSONResponse:
+        return JSONResponse(
+            content={
+                "name": "trace-memory-mcp",
+                "transport": "streamable-http-jsonrpc",
+                "endpoint": "/mcp",
+                "auth_required": bool(container.config.auth_required),
+                "auth_header": "Authorization: Bearer <token>",
+            },
+            status_code=200,
+        )
+
+    @app.post("/mcp")
+    async def mcp_entry(request: Request) -> Response:
+        qp: dict[str, list[str]] = {}
+        for k, v in request.query_params.multi_items():
+            qp.setdefault(k, []).append(v)
+        hdrs = {k: v for k, v in request.headers.items()}
+        direct_ip = request.client.host if request.client else "127.0.0.1"
+        client_ip = _resolve_client_ip(hdrs, direct_ip, container.config.trust_proxy_headers)
+
+        raw_bytes = await request.body()
+        max_bytes = max(1024, int(container.config.max_request_body_bytes))
+        if len(raw_bytes) > max_bytes:
+            return JSONResponse(
+                content={"jsonrpc": "2.0", "id": None, "error": {"code": -32000, "message": "Payload too large"}},
+                status_code=413,
+            )
+        code, resp_obj = dispatcher.dispatch_mcp_http(
+            raw_bytes, query_params=qp, headers=hdrs, client_ip=client_ip
+        )
+        if code == 202 and resp_obj is None:
+            return Response(status_code=202)
+        return JSONResponse(content=resp_obj, status_code=code)
+
+    @app.api_route("/api/{rest_of_path:path}", methods=["GET", "POST"])
+    async def api_entry(request: Request, rest_of_path: str) -> JSONResponse:
+        qp: dict[str, list[str]] = {}
+        for k, v in request.query_params.multi_items():
+            qp.setdefault(k, []).append(v)
+        hdrs = {k: v for k, v in request.headers.items()}
+        direct_ip = request.client.host if request.client else "127.0.0.1"
+        client_ip = _resolve_client_ip(hdrs, direct_ip, container.config.trust_proxy_headers)
+
+        body: dict[str, Any] = {}
+        if request.method == "POST":
+            raw_bytes = await request.body()
+            max_bytes = max(1024, int(container.config.max_request_body_bytes))
+            if len(raw_bytes) > max_bytes:
+                return JSONResponse(
+                    content={"error": f"请求体过大（上限 {max_bytes} 字节）", "code": "PAYLOAD_TOO_LARGE"},
+                    status_code=413,
+                )
+            if raw_bytes.strip():
+                try:
+                    body = json.loads(raw_bytes.decode("utf-8"))
+                except json.JSONDecodeError:
+                    return JSONResponse(content={"error": "Invalid JSON body"}, status_code=400)
+                if not isinstance(body, dict):
+                    return JSONResponse(content={"error": "JSON body must be an object"}, status_code=400)
+        status_code, payload = dispatcher.dispatch(
+            request.method,
+            f"/api/{rest_of_path}",
+            qp,
+            body,
+            headers=hdrs,
+            client_ip=client_ip,
+        )
+        return JSONResponse(content=payload, status_code=status_code)
+
+    return app
+
+
+def run_web_server(container: AppContainer, host: str = "127.0.0.1", port: int = 18090) -> None:
+    """Start FastAPI/Uvicorn if installed, otherwise start built-in ThreadingHTTPServer."""
+    try:
+        import uvicorn
+
+        app = create_fastapi_app(container)
+        uvicorn.run(app, host=host, port=port)
+        return
+    except ImportError:
+        pass
+
+    dispatcher = ApiDispatcher(container)
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_OPTIONS(self) -> None:  # noqa: N802
+            self.send_response(HTTPStatus.NO_CONTENT)
+            self._send_cors()
+            self.end_headers()
+
+        def do_GET(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            if parsed.path in ("/", "/index.html", "/console"):
+                self._write_raw(
+                    200,
+                    "text/html; charset=utf-8",
+                    DASHBOARD_HTML_PATH.read_bytes(),
+                    extra_headers={"Cache-Control": "no-cache"},
+                )
+                return
+            if parsed.path == "/manifest.webmanifest":
+                self._write_raw(200, "application/manifest+json", PWA_MANIFEST_JSON.encode("utf-8"))
+                return
+            if parsed.path in ("/icon.png", "/apple-touch-icon.png", "/favicon.ico"):
+                if APP_ICON_PNG_PATH.is_file():
+                    self._write_raw(200, "image/png", APP_ICON_PNG_PATH.read_bytes())
+                else:
+                    self._write_raw(200, "image/svg+xml", PWA_ICON_SVG.encode("utf-8"))
+                return
+            if parsed.path == "/icon.svg":
+                self._write_raw(200, "image/svg+xml", PWA_ICON_SVG.encode("utf-8"))
+                return
+            if parsed.path == "/sw.js":
+                self._write_raw(200, "application/javascript", PWA_SW_JS.encode("utf-8"))
+                return
+            if parsed.path == "/mcp":
+                self._write_json(
+                    200,
+                    {
+                        "name": "trace-memory-mcp",
+                        "transport": "streamable-http-jsonrpc",
+                        "endpoint": "/mcp",
+                        "auth_required": bool(container.config.auth_required),
+                        "auth_header": "Authorization: Bearer <token>",
+                    },
+                )
+                return
+
+            qp = parse_qs(parsed.query, keep_blank_values=True)
+            hdrs = {k: v for k, v in self.headers.items()}
+            client_ip = _resolve_client_ip(
+                hdrs, str(self.client_address[0]), container.config.trust_proxy_headers
+            )
+            code, resp = dispatcher.dispatch(
+                "GET", parsed.path, qp, None, headers=hdrs, client_ip=client_ip
+            )
+            self._write_json(code, resp)
+
+        def do_POST(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            qp = parse_qs(parsed.query, keep_blank_values=True)
+            hdrs = {k: v for k, v in self.headers.items()}
+            client_ip = _resolve_client_ip(
+                hdrs, str(self.client_address[0]), container.config.trust_proxy_headers
+            )
+            try:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+            except ValueError:
+                self._write_json(400, {"error": "Invalid Content-Length"})
+                return
+            max_bytes = max(1024, int(container.config.max_request_body_bytes))
+            if length > max_bytes:
+                self._write_json(413, {"error": f"请求体过大（上限 {max_bytes} 字节）", "code": "PAYLOAD_TOO_LARGE"})
+                return
+            raw_bytes = self.rfile.read(length) if length > 0 else b""
+            if parsed.path == "/mcp":
+                code, resp_obj = dispatcher.dispatch_mcp_http(
+                    raw_bytes, query_params=qp, headers=hdrs, client_ip=client_ip
+                )
+                if code == 202 and resp_obj is None:
+                    self._write_raw(202, "application/json; charset=utf-8", b"")
+                else:
+                    self._write_raw(
+                        code,
+                        "application/json; charset=utf-8",
+                        json.dumps(resp_obj, ensure_ascii=False).encode("utf-8"),
+                    )
+                return
+
+            raw = raw_bytes.decode("utf-8", errors="replace") if raw_bytes else "{}"
+            try:
+                body = json.loads(raw) if raw.strip() else {}
+            except json.JSONDecodeError:
+                self._write_json(400, {"error": "Invalid JSON body"})
+                return
+            if not isinstance(body, dict):
+                self._write_json(400, {"error": "JSON body must be an object"})
+                return
+            code, resp = dispatcher.dispatch(
+                "POST", parsed.path, qp, body, headers=hdrs, client_ip=client_ip
+            )
+            self._write_json(code, resp)
+
+        def _send_cors(self) -> None:
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header(
+                "Access-Control-Allow-Headers",
+                "Content-Type, Authorization, X-Auth-Token, Mcp-Session-Id",
+            )
+
+        def _write_raw(
+            self,
+            code: int,
+            content_type: str,
+            data: bytes,
+            extra_headers: dict[str, str] | None = None,
+        ) -> None:
+            self.send_response(code)
+            self._send_cors()
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            for k, v in (extra_headers or {}).items():
+                self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _write_json(self, code: int, data: dict[str, Any]) -> None:
+            self._write_raw(
+                code,
+                "application/json; charset=utf-8",
+                json.dumps(data, ensure_ascii=False).encode("utf-8"),
+            )
+
+        def log_message(self, fmt: str, *args: Any) -> None:
+            return
+
+    server = ThreadingHTTPServer((host, port), _Handler)
+    print(f"Trace-Memory Web Console running at http://{host}:{port}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        server.server_close()
