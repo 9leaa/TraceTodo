@@ -16,8 +16,13 @@ from typing import Any
 import urllib.error
 import urllib.request
 
-from trace_memory.domain.memories import MemoryItem
-from trace_memory.domain.notes import RawNote
+from trace_memory.domain.memories import MemoryItem, parse_iso_datetime
+from trace_memory.domain.notes import (
+    RawNote,
+    beijing_now,
+    format_beijing_prompt_clock,
+    to_beijing,
+)
 from trace_memory.domain.proposals import RelationSpec
 from trace_memory.domain.relations import extract_relations_from_markdown, slugify_permalink
 from trace_memory.llm.mock_provider import DeterministicLLMProvider, SemanticHashEmbedder
@@ -30,6 +35,17 @@ from trace_memory.llm.protocol import (
     ExtractionBatch,
     SubtaskSuggestion,
 )
+
+
+def _normalize_beijing_iso(value: str, fallback: str = "") -> str:
+    """Normalize an ISO-8601 / YYYY-MM-DD timestamp string to Beijing Time (+08:00)."""
+    raw = str(value or "").strip()
+    if not raw:
+        return fallback
+    parsed = parse_iso_datetime(raw)
+    if parsed is None:
+        return fallback or raw
+    return to_beijing(parsed).replace(microsecond=0).isoformat()
 
 
 def _post_json_with_retry(
@@ -178,28 +194,37 @@ class OpenAICompatLLMProvider:
             if existing_ctx_lines
             else ""
         )
+        ref_dt = parse_iso_datetime(default_event_time) or beijing_now()
+        ref_iso = to_beijing(ref_dt).replace(microsecond=0).isoformat()
+        clock_anchor = format_beijing_prompt_clock(ref_dt)
         sys_prompt = (
             "你是可追溯个人记忆抽取与状态对账引擎。请从用户原文中抽取结构化记忆候选，输出严格 JSON 对象：\n"
             '{"candidates": [{"memory_type": "task|preference|semantic|episodic", '
             '"title": "...", "summary": "...", "canonical_key": "...", '
             '"mutation_hint": "upsert|complete_task|cancel_task|reopen_task", '
-            '"payload": {...}, "tags": [...], "event_time": "ISO8601", "quote": "原文摘录"}]}\n'
+            '"payload": {...}, "tags": [...], "event_time": "ISO8601(+08:00)", "quote": "原文摘录"}]}\n'
+            "时区与相对时间铁律（极其重要，面向中国大陆用户）：\n"
+            "- 系统统一固定使用**北京时间（Asia/Shanghai，UTC+8，偏移量 +08:00）**。\n"
+            "- 当用户原文出现「今天」「昨天」「前天」「明天」「后天」「今晚」「明早」「本周五」「下周」等相对时间表达时，"
+            "必须严格对照下方给出的【当前北京时间锚点】与【相对日期锚点】换算具体日期，严禁按 UTC 零时区或模型记忆自行猜测日期。\n"
+            "- 所有输出时间字段（event_time、task.due_at、episodic.occurred_at）必须输出带 `+08:00` 后缀的标准 ISO8601 字符串"
+            "（例如 `2026-11-19T18:00:00+08:00`）；若只提到某天未指定具体几点，截止时间 due_at 默认该日 `23:59:59+08:00`。\n"
             "低成本噪音拦截规则（极其重要）：\n"
             "0. 如果原文只是寒暄、感叹、无意义测试、闲聊水话或乱码（例如“你好”“今天天气不错”“哈哈”“在吗”“测试一下”），"
             "且不包含任何可落地的待办事项(task)、明确个人偏好(preference)、客观长期事实(semantic)或值得记住的个人经历(episodic)，"
             "必须直接返回 {\"candidates\": []}，严禁硬凑或编造记忆！严禁在没有明确任务指代时误把现有任务设为 complete_task 或 cancel_task。\n"
             "各类别 payload 必填字段规范：\n"
             "1. task: {\"task_status\": \"todo\"|\"done\", \"importance\": 1-5整数, \"urgency\": 1-5整数, "
-            "\"priority_reason\": \"四象限判定依据\", \"due_at\": \"ISO8601或空字符串\", \"assignee\": \"self\"}\n"
+            "\"priority_reason\": \"四象限判定依据\", \"due_at\": \"北京时间ISO8601(+08:00)或空字符串\", \"assignee\": \"self\"}\n"
             "   注意：当用户表达某事已做完/已修好/已买好时，必须设置 mutation_hint=\"complete_task\" 且 task_status=\"done\"！\n"
             "2. preference: {\"target\": \"偏好对象名\", \"polarity\": \"positive\"|\"negative\"|\"conditional\", "
             "\"conditions\": [], \"exceptions\": [\"例外情况如晚上不喝\"], \"details\": \"补充说明\"}\n"
             "3. semantic: {\"subject\": \"user或实体名\", \"predicate\": \"属性名如residence/workplace\", \"value\": \"当前值\"}\n"
-            "4. episodic: {\"event_summary\": \"事件概述\", \"occurred_at\": \"ISO8601\"}"
+            "4. episodic: {\"event_summary\": \"事件概述\", \"occurred_at\": \"北京时间ISO8601(+08:00)\"}"
         )
         parsed, tokens = self._chat_json(
             sys_prompt,
-            f"默认时间: {default_event_time}{existing_block}\n\n用户最新原文:\n{note_text}",
+            f"当前北京时间锚点: {clock_anchor}\n默认记录时间(北京时间): {ref_iso}{existing_block}\n\n用户最新原文:\n{note_text}",
         )
         type_alias = {"fact": "semantic", "experience": "episodic", "todo": "task", "pref": "preference"}
         items: list[ExtractedCandidate] = []
@@ -232,6 +257,13 @@ class OpenAICompatLLMProvider:
                 raw_payload["value"] = str(raw_payload.get("value") or summary)
             elif mtype == "episodic":
                 raw_payload["event_summary"] = str(raw_payload.get("event_summary") or summary)
+                if raw_payload.get("occurred_at"):
+                    raw_payload["occurred_at"] = _normalize_beijing_iso(
+                        str(raw_payload.get("occurred_at")), fallback=ref_iso
+                    )
+            elif mtype == "task":
+                if raw_payload.get("due_at"):
+                    raw_payload["due_at"] = _normalize_beijing_iso(str(raw_payload.get("due_at")))
 
             ckey = str(raw.get("canonical_key") or "").strip() or (
                 f"{mtype}:{slugify_permalink(mtype, title)}"
@@ -250,7 +282,7 @@ class OpenAICompatLLMProvider:
                     mutation_hint=hint,
                     tags=tuple(str(t) for t in (raw.get("tags") or []) if t),
                     relations=raw_relations,
-                    event_time=str(raw.get("event_time") or default_event_time),
+                    event_time=_normalize_beijing_iso(str(raw.get("event_time") or ""), fallback=ref_iso),
                     quote=str(raw.get("quote") or note_text[:120]),
                 )
             )
@@ -303,17 +335,21 @@ class OpenAICompatLLMProvider:
             for m in memories[:6]
         )
         ctx_note = "\n".join(
-            f"- [{n.note_id}] ({n.event_time}) {n.visible_content()}" for n in notes[:5]
+            f"- [{n.note_id}] ({n.event_time}) {n.visible_content()}" for n in notes[:8]
         )
-        now_str = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M (%A)")
+        clock_anchor = format_beijing_prompt_clock()
         sys_prompt = (
             "你是严格基于证据回答的个人记忆助手。只能依据提供的记忆和原文作答，不得编造。"
+            "系统统一固定使用**北京时间（Asia/Shanghai，UTC+8 / +08:00）**："
+            "用户提问中的「今天」「昨天」「前天」「明天」「后天」「最近」等相对时间均须严格对照提供的北京时间锚点判定，"
+            "回答中提及日期和时间也统一使用北京时间。"
+            "注意：带有 `[刚录入·整理中]` 标记的原始记录属于用户刚刚提交、后台正在异步整理中的最新真实原话，应优先作为最新事实参考。"
             "回答可使用清晰的中文分点结构，务必在 cited_memory_ids 和 cited_note_ids 中准确列出实际引用的 ID。"
             '请输出 JSON: {"answer": "...", "cited_memory_ids": [...], "cited_note_ids": [...], '
             '"has_sufficient_evidence": true|false}'
         )
         user_msg = (
-            f"当前本地时间: {now_str}\n查询模式: {query_mode}\n问题: {question}\n\n"
+            f"当前北京时间: {clock_anchor}\n查询模式: {query_mode}\n问题: {question}\n\n"
             f"候选记忆:\n{ctx_mem}\n\n原始记录:\n{ctx_note}\n\n历史版本:\n{history_versions[:5]}"
         )
         parsed, tokens = self._chat_json(sys_prompt, user_msg)
@@ -343,6 +379,7 @@ class OpenAICompatLLMProvider:
             '"memory_context_used": ["引用到的个人记忆要点简述"]}'
         )
         user_msg = (
+            f"当前北京时间：{format_beijing_prompt_clock()}\n"
             f"任务标题：{task_title}\n"
             f"任务补充说明：{task_summary or task_title}\n\n"
             f"检索到的个人长期记忆背景：\n{ctx_block}"

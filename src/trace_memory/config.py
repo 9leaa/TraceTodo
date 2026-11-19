@@ -87,6 +87,12 @@ class TraceMemoryConfig:
     max_request_body_bytes: int = 131072
     trust_proxy_headers: bool = False
 
+    # Concurrency & Async Ingest Queue settings
+    ingest_worker_count: int = 8
+    llm_max_concurrency: int = 12
+    ingest_max_retries: int = 3
+    api_threadpool_tokens: int = 64
+
     @property
     def sqlite_path(self) -> Path:
         return self.data_dir / "trace_memory.db"
@@ -149,4 +155,8 @@ class TraceMemoryConfig:
             default_daily_token_limit=int(_get("TRACE_MEMORY_DAILY_TOKEN_LIMIT", "100000")),
             max_request_body_bytes=int(_get("TRACE_MEMORY_MAX_REQUEST_BODY_BYTES", "131072")),
             trust_proxy_headers=_as_bool(env.get("TRACE_MEMORY_TRUST_PROXY_HEADERS"), False),
+            ingest_worker_count=max(1, int(_get("TRACE_MEMORY_INGEST_WORKERS", "8"))),
+            llm_max_concurrency=max(1, int(_get("TRACE_MEMORY_LLM_MAX_CONCURRENCY", "12"))),
+            ingest_max_retries=max(1, int(_get("TRACE_MEMORY_INGEST_MAX_RETRIES", "3"))),
+            api_threadpool_tokens=max(8, int(_get("TRACE_MEMORY_API_THREADS", "64"))),
         )

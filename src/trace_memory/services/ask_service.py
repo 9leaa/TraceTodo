@@ -6,9 +6,11 @@ import time
 from typing import Any
 
 from trace_memory.domain.memories import MemoryItem
+from trace_memory.domain.notes import RawNote
 from trace_memory.domain.proposals import ValidationError
 from trace_memory.llm.protocol import LLMProvider
 from trace_memory.services.guard_service import InputGuardService, RateLimitAndQuotaService
+from trace_memory.services.ingest_queue import IngestJobRepository
 from trace_memory.services.retrieval_service import RetrievalService
 from trace_memory.storage.hybrid_search import HybridSearchIndex
 from trace_memory.storage.repositories import MemoryRepository, NoteRepository, TraceRepository
@@ -49,6 +51,7 @@ class AskService:
         llm: LLMProvider,
         input_guard: InputGuardService | None = None,
         quota_service: RateLimitAndQuotaService | None = None,
+        job_repo: IngestJobRepository | None = None,
     ) -> None:
         self.note_repo = note_repo
         self.memory_repo = memory_repo
@@ -58,6 +61,7 @@ class AskService:
         self.llm = llm
         self.input_guard = input_guard
         self.quota_service = quota_service
+        self.job_repo = job_repo
 
     @staticmethod
     def detect_query_mode(question: str) -> str:
@@ -143,6 +147,35 @@ class AskService:
                         candidate_notes.append(src_note)
                         seen_note_ids.add(src_note.note_id)
 
+        # 3b. Read-Your-Own-Writes: inject latest queued/processing RawNotes so immediate Q&A sees just-submitted inputs
+        pending_notes: list[RawNote] = []
+        if self.job_repo is not None:
+            for pid in self.job_repo.list_pending_note_ids(space_id, limit=5):
+                pnote = self.note_repo.get(space_id, pid)
+                if pnote is None or pnote.is_forgotten:
+                    continue
+                tagged = RawNote(
+                    note_id=pnote.note_id,
+                    space_id=pnote.space_id,
+                    content=f"[刚录入·整理中] {pnote.visible_content()}",
+                    source_type=pnote.source_type,
+                    actor_id=pnote.actor_id,
+                    revision=pnote.revision,
+                    is_forgotten=False,
+                    forgotten_spans=(),
+                    event_time=pnote.event_time,
+                    created_at=pnote.created_at,
+                    updated_at=pnote.updated_at,
+                )
+                pending_notes.append(tagged)
+                if pnote.note_id in seen_note_ids:
+                    candidate_notes = [
+                        tagged if n.note_id == pnote.note_id else n for n in candidate_notes
+                    ]
+                else:
+                    candidate_notes.insert(0, tagged)
+                    seen_note_ids.add(pnote.note_id)
+
         # 4. Load version history only when answering historical evolution questions
         history_versions: list[dict[str, Any]] = []
         if query_mode == "history":
@@ -150,11 +183,12 @@ class AskService:
                 for ver in self.memory_repo.get_history(space_id, m.memory_id):
                     history_versions.append(ver.to_dict())
 
+        notes_limit = max(5, min(8, 5 + len(pending_notes)))
         synthesis = self.llm.synthesize_answer(
             question=q_clean,
             query_mode=query_mode,
             memories=candidate_memories[:5],
-            notes=candidate_notes[:5],
+            notes=candidate_notes[:notes_limit],
             history_versions=history_versions,
         )
 
@@ -192,6 +226,7 @@ class AskService:
             "query_mode": query_mode,
             "answer": synthesis.answer,
             "has_sufficient_evidence": synthesis.has_sufficient_evidence,
+            "pending_ingest_count": len(pending_notes),
             "citations": {
                 "memories": [
                     m.to_dict() for m in candidate_memories if m.memory_id in valid_mem_ids

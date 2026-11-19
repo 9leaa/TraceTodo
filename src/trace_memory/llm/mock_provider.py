@@ -14,7 +14,7 @@ import re
 from typing import Any
 
 from trace_memory.domain.memories import MemoryItem, parse_iso_datetime
-from trace_memory.domain.notes import RawNote
+from trace_memory.domain.notes import BEIJING_TZ, RawNote, beijing_now, to_beijing
 from trace_memory.domain.proposals import RelationSpec
 from trace_memory.domain.relations import extract_relations_from_markdown, slugify_permalink
 from trace_memory.llm.protocol import (
@@ -131,34 +131,38 @@ _PREF_NEG_RE = re.compile(r"(?:我)?(?:很|非常)?(?:不喜欢|讨厌|忌口|�
 
 
 def _infer_event_time(clause: str, default_iso: str) -> str:
-    base_dt = parse_iso_datetime(default_iso) or datetime.now(timezone.utc)
+    base_dt = to_beijing(parse_iso_datetime(default_iso) or beijing_now())
     m_full = _DATE_EXPLICIT_RE.search(clause)
     if m_full:
         year = int(m_full.group(1))
         month = max(1, min(12, int(m_full.group(2))))
         day = max(1, min(28, int(m_full.group(3) or 1)))
-        return datetime(year, month, day, 12, 0, tzinfo=timezone.utc).isoformat()
+        return datetime(year, month, day, 12, 0, tzinfo=BEIJING_TZ).isoformat()
     m_year = _YEAR_ONLY_RE.search(clause)
     if m_year:
         year = int(m_year.group(1))
-        return datetime(year, 6, 1, 12, 0, tzinfo=timezone.utc).isoformat()
+        return datetime(year, 6, 1, 12, 0, tzinfo=BEIJING_TZ).isoformat()
+    if "前天" in clause:
+        return (base_dt - timedelta(days=2)).replace(microsecond=0).isoformat()
+    if "昨天" in clause or "昨日" in clause:
+        return (base_dt - timedelta(days=1)).replace(microsecond=0).isoformat()
     if "去年" in clause:
         return (base_dt - timedelta(days=365)).replace(microsecond=0).isoformat()
     if "上个月" in clause:
         return (base_dt - timedelta(days=30)).replace(microsecond=0).isoformat()
     if "三年前" in clause:
         return (base_dt - timedelta(days=365 * 3)).replace(microsecond=0).isoformat()
-    return default_iso
+    return base_dt.replace(microsecond=0).isoformat()
 
 
 def _infer_due_at(clause: str, default_iso: str) -> str:
-    base_dt = parse_iso_datetime(default_iso) or datetime.now(timezone.utc)
+    base_dt = to_beijing(parse_iso_datetime(default_iso) or beijing_now())
     m_full = _DATE_EXPLICIT_RE.search(clause)
     if m_full and any(k in clause for k in ("前", "截止", "之前", "due", "交付")):
         year = int(m_full.group(1))
         month = max(1, min(12, int(m_full.group(2))))
         day = max(1, min(28, int(m_full.group(3) or 28)))
-        return datetime(year, month, day, 18, 0, tzinfo=timezone.utc).isoformat()
+        return datetime(year, month, day, 18, 0, tzinfo=BEIJING_TZ).isoformat()
     if any(k in clause for k in ("今天", "今日", "下午", "今晚", "马上", "立刻")):
         return (base_dt + timedelta(hours=8)).replace(microsecond=0).isoformat()
     if any(k in clause for k in ("明天", "明日")):

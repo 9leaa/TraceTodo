@@ -18,7 +18,7 @@ from trace_memory.domain.memories import (
     compute_next_repeat_due_at,
     parse_iso_datetime,
 )
-from trace_memory.domain.notes import RawNote, new_id, utc_now_iso
+from trace_memory.domain.notes import RawNote, beijing_now, new_id, to_beijing, utc_now_iso
 from trace_memory.domain.proposals import (
     ChangeProposal,
     ChangeResult,
@@ -112,7 +112,7 @@ class TaskMatrixService:
         sort_by: str = "priority",  # "priority" | "urgency" | "importance" | "updated"
         now: datetime | None = None,
     ) -> list[dict[str, Any]]:
-        ref_now = now or datetime.now(timezone.utc)
+        ref_now = to_beijing(now) if now is not None else beijing_now()
         raw_items = self.memory_repo.list_memories(
             space_id=space_id, memory_type="task", status="active", limit=300
         )
@@ -164,9 +164,7 @@ class TaskMatrixService:
         self, space_id: str, now: datetime | None = None
     ) -> list[dict[str, Any]]:
         """Roll over unfinished `auto_rollover=True` tasks whose due date is before today."""
-        ref_now = now or datetime.now().astimezone()
-        if ref_now.tzinfo is None:
-            ref_now = ref_now.replace(tzinfo=timezone.utc)
+        ref_now = to_beijing(now) if now is not None else beijing_now()
         today_date = ref_now.date()
         today_str = today_date.isoformat()
 
@@ -239,9 +237,7 @@ class TaskMatrixService:
         now: datetime | None = None,
     ) -> dict[str, Any]:
         """Build 2x2 Eisenhower Matrix + Memory-Driven Workload Diagnosis & Next Actions."""
-        ref_now = now or datetime.now().astimezone()
-        if ref_now.tzinfo is None:
-            ref_now = ref_now.replace(tzinfo=timezone.utc)
+        ref_now = to_beijing(now) if now is not None else beijing_now()
         rolled_tasks = self.apply_auto_rollover(space_id, now=ref_now)
         status_filter = "all" if include_done else "todo"
         sorted_tasks = self.list_sorted_tasks(
@@ -886,9 +882,7 @@ class TaskMatrixService:
         now: datetime | None = None,
     ) -> dict[str, Any]:
         """Return multiplayer & friend-supervised tasks ONLY (private personal tasks stay hidden)."""
-        ref_now = now or datetime.now().astimezone()
-        if ref_now.tzinfo is None:
-            ref_now = ref_now.replace(tzinfo=timezone.utc)
+        ref_now = to_beijing(now) if now is not None else beijing_now()
         all_tasks = self.list_sorted_tasks(
             space_id=space_id, task_status="all", sort_by="priority", now=ref_now
         )

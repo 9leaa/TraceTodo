@@ -901,12 +901,30 @@ struct NoteRecordResponse: Codable {
     let filtered: Bool?
     let filterReason: String?
     let errorMessage: String?
+    let jobId: String?
 
     enum CodingKeys: String, CodingKey {
         case extractionStatus = "extraction_status"
         case filtered
         case filterReason = "filter_reason"
         case errorMessage = "error_message"
+        case jobId = "job_id"
+    }
+}
+
+struct IngestStatusResponse: Codable {
+    let spaceId: String?
+    let queued: Int
+    let processing: Int
+    let pending: Int
+    let lastCompletedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case spaceId = "space_id"
+        case queued
+        case processing
+        case pending
+        case lastCompletedAt = "last_completed_at"
     }
 }
 
