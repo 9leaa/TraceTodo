@@ -6,7 +6,7 @@ venv/
 .env
 .env.*
 !.env.example
-dist/
+/dist/
 build/
 *.egg-info/
 .pytest_cache/
@@ -27,7 +27,6 @@ apple-app/.swiftpm/
 **/xcuserdata/
 *.xcuserstate
 DerivedData/
-*.ipa
 *.xcarchive
 *.dSYM
 *.mobileprovision
