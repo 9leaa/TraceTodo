@@ -415,6 +415,95 @@ class TestSecurityAndForgetHardening(unittest.TestCase):
         self.assertEqual(c_m, 200, m_res)
         self.assertGreaterEqual(m_res["pruned_sessions"], 2)
 
+    def test_purge_legacy_forgotten_records_cleans_pre_fix_dirty_rows(self) -> None:
+        adm = self._register("admin_legacy")
+        tok = adm["token"]
+        sp = adm["user"]["space_id"]
+
+        # Create 2 memories: one will simulate a pre-fix dirty forgotten record, one stays active
+        _, r1 = self.api.dispatch(
+            "POST",
+            "/api/notes/record",
+            body={"content": "我现在搬到旧秘密城市贝塔城定居了。"},
+            auth_token=tok,
+        )
+        _, r2 = self.api.dispatch(
+            "POST",
+            "/api/notes/record",
+            body={"content": "明天必须提交季度项目复盘文档。"},
+            auth_token=tok,
+        )
+        dirty_note_id = r1["note"]["note_id"]
+        dirty_mem_id = r1["changes"][0]["memory"]["memory_id"]
+        active_mem_id = r2["changes"][0]["memory"]["memory_id"]
+
+        # Simulate pre-fix legacy forget state directly in SQLite (status='forgotten' with plaintext & orphan raw_note)
+        with self.app.db.transaction() as conn:
+            conn.execute(
+                "UPDATE memories SET status = 'forgotten', summary = '[FORGOTTEN]', evidences_json = '[]' WHERE memory_id = ?",
+                (dirty_mem_id,),
+            )
+            conn.execute("DELETE FROM memory_evidence_links WHERE memory_id = ?", (dirty_mem_id,))
+
+        # Verify pre-fix leak reproduces before purge
+        _, s_before = self.api.dispatch("GET", "/api/memories/search", {"q": ["贝塔城"]}, auth_token=tok)
+        self.assertGreaterEqual(len(s_before["notes"]), 1)
+
+        # Run idempotent legacy purge
+        report = self.app.change_service.purge_legacy_forgotten_records()
+        self.assertEqual(report["scrubbed_memories"], 1)
+        self.assertGreaterEqual(report["scrubbed_versions"], 1)
+        self.assertEqual(report["scrubbed_raw_notes"], 1)
+
+        # Re-running is idempotent (0 more work)
+        report2 = self.app.change_service.purge_legacy_forgotten_records()
+        self.assertEqual(report2["scrubbed_memories"], 0)
+        self.assertEqual(report2["scrubbed_raw_notes"], 0)
+
+        # Leaked note & memory plaintext are completely gone, while active task is untouched
+        _, s_after = self.api.dispatch("GET", "/api/memories/search", {"q": ["贝塔城"]}, auth_token=tok)
+        self.assertEqual(s_after["memories"], [])
+        self.assertEqual(s_after["notes"], [])
+        raw_after = self.app.note_repo.get(sp, dirty_note_id, include_forgotten=True)
+        assert raw_after is not None
+        self.assertTrue(raw_after.is_forgotten)
+        self.assertEqual(raw_after.content, "[FORGOTTEN]")
+
+        active_after = self.app.memory_repo.get(sp, active_mem_id)
+        assert active_after is not None
+        self.assertEqual(active_after.status, "active")
+
+        # Also verify forgetting preference & episodic memories succeeds cleanly with empty scrubbed payload
+        for mtype, payload_data in (
+            ("preference", {"target": "乌龙茶", "polarity": "positive"}),
+            ("episodic", {"event_summary": "参加了秘密技术闭门会"}),
+        ):
+            c_cr, cr = self.api.dispatch(
+                "POST",
+                "/api/memories/propose",
+                body={
+                    "action": "create",
+                    "memory_type": mtype,
+                    "title": f"测试{mtype}",
+                    "summary": f"测试{mtype}摘要",
+                    "payload": payload_data,
+                },
+                auth_token=tok,
+            )
+            self.assertEqual(c_cr, 200, cr)
+            mid_x = cr["memory"]["memory_id"]
+            c_fg, fg = self.api.dispatch(
+                "POST",
+                "/api/memories/propose",
+                body={"action": "forget", "target_memory_id": mid_x, "expected_version": 1},
+                auth_token=tok,
+            )
+            self.assertEqual(c_fg, 200, fg)
+            self.assertEqual(fg["memory"]["payload"], {})
+            reloaded_fg = self.app.memory_repo.get(sp, mid_x, include_forgotten=True)
+            assert reloaded_fg is not None
+            self.assertEqual(reloaded_fg.payload, {})
+
 
 if __name__ == "__main__":
     unittest.main()

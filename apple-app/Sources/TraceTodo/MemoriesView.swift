@@ -382,11 +382,13 @@ struct MemoryEditorAndDetailSheet: View {
                     Button("关闭") { dismiss() }
                 }
             }
-            .confirmationDialog("确认遗忘此记忆？", isPresented: $confirmForget, titleVisibility: .visible) {
-                Button("确认遗忘（从检索与问答移除）", role: .destructive) {
+            .confirmationDialog("确认彻底遗忘此记忆？", isPresented: $confirmForget, titleVisibility: .visible) {
+                Button("确认彻底遗忘（同步清理关联证据与索引）", role: .destructive) {
                     Task { await performForget() }
                 }
                 Button("取消", role: .cancel) {}
+            } message: {
+                Text("将同步擦除该记忆的历史明文、仅关联此记忆的原始证据、向量/全文索引及衍生洞察，且不可恢复。")
             }
         }
         #if os(macOS)

@@ -561,3 +561,206 @@ class ChangeService:
             memory=saved,
             message="Memory updated",
         )
+
+    def purge_legacy_forgotten_records(self) -> dict[str, int]:
+        """Idempotently scrub pre-fix forgotten memories, legacy version snapshots, exclusive orphan notes, and traces."""
+        import json as _json
+
+        db = self.memory_repo.db
+        stats = {
+            "scrubbed_memories": 0,
+            "scrubbed_versions": 0,
+            "scrubbed_raw_notes": 0,
+            "redacted_shared_notes": 0,
+            "cascaded_inferred": 0,
+            "redacted_traces": 0,
+        }
+
+        forgotten_rows = db.query_all(
+            "SELECT memory_id, space_id, title, summary, payload_json, evidences_json FROM memories WHERE status = 'forgotten'"
+        )
+        # 1. Collect all historical note_ids & quotes referenced by forgotten memories BEFORE scrubbing versions
+        legacy_links: dict[tuple[str, str], list[tuple[str, str]]] = {}
+        # key=(space_id, memory_id) -> list[(note_id, quote)]
+        for row in forgotten_rows:
+            sp = str(row["space_id"])
+            mid = str(row["memory_id"])
+            refs: list[tuple[str, str]] = []
+            for ev in _json.loads(row["evidences_json"] or "[]"):
+                if isinstance(ev, dict) and ev.get("note_id"):
+                    refs.append((str(ev["note_id"]), str(ev.get("quote") or "").strip()))
+            ver_rows = db.query_all(
+                "SELECT evidences_json FROM memory_versions WHERE space_id = ? AND memory_id = ?",
+                (sp, mid),
+            )
+            for vr in ver_rows:
+                for ev in _json.loads(vr["evidences_json"] or "[]"):
+                    if isinstance(ev, dict) and ev.get("note_id"):
+                        refs.append((str(ev["note_id"]), str(ev.get("quote") or "").strip()))
+            legacy_links[(sp, mid)] = refs
+
+            # Scrub memories row & FTS & links & vectors
+            dirty_mem = (
+                str(row["title"]) != "[FORGOTTEN]"
+                or str(row["summary"]) != "[FORGOTTEN]"
+                or str(row["evidences_json"]) != "[]"
+                or str(row["payload_json"]) not in ("{}", "")
+            )
+            if dirty_mem:
+                with db.transaction() as conn:
+                    conn.execute(
+                        """
+                        UPDATE memories
+                        SET title = '[FORGOTTEN]',
+                            summary = '[FORGOTTEN]',
+                            payload_json = '{}',
+                            canonical_key = '',
+                            tags_json = '[]',
+                            evidences_json = '[]',
+                            updated_at = ?
+                        WHERE space_id = ? AND memory_id = ?
+                        """,
+                        (utc_now_iso(), sp, mid),
+                    )
+                    conn.execute("DELETE FROM memories_fts WHERE memory_id = ?", (mid,))
+                    conn.execute("DELETE FROM memory_evidence_links WHERE memory_id = ?", (mid,))
+                stats["scrubbed_memories"] += 1
+
+            dirty_v = db.query_one(
+                """
+                SELECT COUNT(*) AS cnt FROM memory_versions
+                WHERE space_id = ? AND memory_id = ?
+                  AND (title != '[FORGOTTEN]' OR summary != '[FORGOTTEN]'
+                       OR payload_json != '{}' OR evidences_json != '[]')
+                """,
+                (sp, mid),
+            )
+            if dirty_v and int(dirty_v["cnt"] or 0) > 0:
+                self.memory_repo.scrub_forgotten_versions(sp, mid)
+                stats["scrubbed_versions"] += int(dirty_v["cnt"] or 0)
+
+            self.relation_repo.clear_inbound_on_inactive(sp, mid, redact_target_text=True)
+            mem_obj = self.memory_repo.get(sp, mid, include_forgotten=True)
+            if mem_obj is not None:
+                self.vector_lifecycle.sync_memory(mem_obj)
+
+        # 2. Scrub exclusive orphan RawNotes cited by now-forgotten memories (or partially redact shared notes)
+        purged_notes_by_space: dict[str, set[str]] = {}
+        seen_notes: set[tuple[str, str]] = set()
+        for (sp, mid), refs in legacy_links.items():
+            for nid, quote in refs:
+                if (sp, nid) in seen_notes:
+                    continue
+                seen_notes.add((sp, nid))
+                note = self.note_repo.get(sp, nid, include_forgotten=True)
+                if note is None:
+                    continue
+                remaining_deps = self.memory_repo.find_dependent_memories(sp, nid)
+                if not remaining_deps:
+                    if not note.is_forgotten or note.content != "[FORGOTTEN]":
+                        scrubbed_note = RawNote(
+                            note_id=note.note_id,
+                            space_id=note.space_id,
+                            content="[FORGOTTEN]",
+                            source_type=note.source_type,
+                            actor_id="legacy_purge",
+                            revision=note.revision + 1,
+                            is_forgotten=True,
+                            forgotten_spans=(),
+                            event_time=note.event_time,
+                            created_at=note.created_at,
+                            updated_at=utc_now_iso(),
+                        )
+                        self.note_repo.save(scrubbed_note)
+                        self.vector_lifecycle.sync_note(scrubbed_note)
+                        stats["scrubbed_raw_notes"] += 1
+                    purged_notes_by_space.setdefault(sp, set()).add(nid)
+                elif quote and not note.is_forgotten:
+                    sibling_blob = "\n".join(
+                        f"{d.title}\n{d.summary}\n{d.payload}\n"
+                        + "\n".join(e.quote for e in d.evidences)
+                        for d in remaining_deps
+                    )
+                    if quote in note.visible_content() and quote not in sibling_blob:
+                        new_spans = tuple(dict.fromkeys([*note.forgotten_spans, quote]))
+                        redacted_note = RawNote(
+                            note_id=note.note_id,
+                            space_id=note.space_id,
+                            content=note.content.replace(quote, "[REDACTED]"),
+                            source_type=note.source_type,
+                            actor_id="legacy_purge",
+                            revision=note.revision + 1,
+                            is_forgotten=False,
+                            forgotten_spans=new_spans,
+                            event_time=note.event_time,
+                            created_at=note.created_at,
+                            updated_at=utc_now_iso(),
+                        )
+                        self.note_repo.save(redacted_note)
+                        self.vector_lifecycle.sync_note(redacted_note)
+                        stats["redacted_shared_notes"] += 1
+
+        # 3. Also scrub any already-forgotten RawNotes that still hold plaintext content
+        dirty_notes = db.query_all(
+            "SELECT note_id, space_id FROM raw_notes WHERE is_forgotten = 1 AND content != '[FORGOTTEN]'"
+        )
+        for nr in dirty_notes:
+            sp = str(nr["space_id"])
+            nid = str(nr["note_id"])
+            note = self.note_repo.get(sp, nid, include_forgotten=True)
+            if note is None:
+                continue
+            scrubbed_note = RawNote(
+                note_id=note.note_id,
+                space_id=note.space_id,
+                content="[FORGOTTEN]",
+                source_type=note.source_type,
+                actor_id="legacy_purge",
+                revision=note.revision + 1,
+                is_forgotten=True,
+                forgotten_spans=(),
+                event_time=note.event_time,
+                created_at=note.created_at,
+                updated_at=utc_now_iso(),
+            )
+            self.note_repo.save(scrubbed_note)
+            self.vector_lifecycle.sync_note(scrubbed_note)
+            stats["scrubbed_raw_notes"] += 1
+            purged_notes_by_space.setdefault(sp, set()).add(nid)
+
+        # 4. Cascade-forget any active inferred Dream memories whose derived_from links are all broken
+        spaces = {str(r["space_id"]) for r in forgotten_rows}
+        for sp in spaces:
+            for cand in self.memory_repo.list_memories(space_id=sp, status="active", limit=500):
+                if cand.assertion_kind != "inferred":
+                    continue
+                out_rels = self.relation_repo.get_neighbors(sp, cand.memory_id)
+                derived_edges = [
+                    r
+                    for r in out_rels
+                    if r.from_memory_id == cand.memory_id and r.relation_type == "derived_from"
+                ]
+                if derived_edges and all(not r.to_memory_id for r in derived_edges):
+                    self.apply(
+                        ChangeProposal(
+                            space_id=sp,
+                            action="forget",
+                            memory_type=cand.memory_type,
+                            target_memory_id=cand.memory_id,
+                            expected_version=cand.version,
+                            actor_id="legacy_purge",
+                            origin="user_direct",
+                            reason="Legacy cleanup: underlying derived_from sources forgotten",
+                        )
+                    )
+                    stats["cascaded_inferred"] += 1
+
+        # 5. Redact traces & idempotency records referencing forgotten memories or purged notes
+        for (sp, mid) in legacy_links:
+            stats["redacted_traces"] += self.trace_repo.redact_for_forgotten(sp, memory_id=mid)
+        for sp, nids in purged_notes_by_space.items():
+            stats["redacted_traces"] += self.trace_repo.redact_for_forgotten(
+                sp, note_ids=tuple(sorted(nids))
+            )
+
+        return stats
