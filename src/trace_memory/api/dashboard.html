@@ -963,6 +963,7 @@
       <div class="brand-logo"><img src="/icon.png" alt="TraceTodo" /></div>
       <h1>TraceTodo</h1>
       <span class="pill" id="engineStatus">Loading...</span>
+      <span class="pill" id="ingestPendingPill" style="display:none;background:#eef2ff;color:#4f46e5;border-color:#c7d2fe;">🧠 AI 整理中...</span>
     </div>
 
     <div class="header-search-wrap">
@@ -2481,8 +2482,60 @@
       });
     }
 
+    let _ingestPollTimer = null;
+    let _lastIngestCompletedAt = '';
+    let _hadPendingIngest = false;
+
+    function updateIngestPendingPill(pendingCount) {
+      const pill = document.getElementById('ingestPendingPill');
+      if (!pill) return;
+      if (pendingCount > 0) {
+        pill.style.display = 'inline-flex';
+        pill.textContent = `🧠 AI 后台整理中 (${pendingCount})`;
+      } else {
+        pill.style.display = 'none';
+      }
+    }
+
+    async function pollIngestStatusOnce() {
+      if (authRequiredFlag && !authToken) return;
+      try {
+        const st = await apiGet('/api/notes/ingest-status');
+        if (st.error) return;
+        const pending = Number(st.pending || 0);
+        updateIngestPendingPill(pending);
+        const completedAt = String(st.last_completed_at || '');
+        if (completedAt && _lastIngestCompletedAt && completedAt !== _lastIngestCompletedAt) {
+          reloadAll();
+        }
+        if (completedAt) _lastIngestCompletedAt = completedAt;
+        if (pending > 0) {
+          _hadPendingIngest = true;
+          scheduleIngestStatusPoll(false);
+        } else {
+          if (_ingestPollTimer) {
+            clearTimeout(_ingestPollTimer);
+            _ingestPollTimer = null;
+          }
+          if (_hadPendingIngest) {
+            _hadPendingIngest = false;
+            reloadAll();
+          }
+        }
+      } catch (e) {
+        // Ignore transient status poll failures
+      }
+    }
+
+    function scheduleIngestStatusPoll(immediate = false) {
+      if (_ingestPollTimer) clearTimeout(_ingestPollTimer);
+      _ingestPollTimer = setTimeout(() => {
+        _ingestPollTimer = null;
+        pollIngestStatusOnce();
+      }, immediate ? 600 : 1800);
+    }
+
     async function recordQuickNote(btn) {
-      const targetBtn = btn || document.getElementById('quickNoteBtn');
       const input = document.getElementById('quickNoteInput');
       const content = input.value.trim();
       if (!content) {
@@ -2490,25 +2543,32 @@
         input.focus();
         return;
       }
+      // Non-blocking burst input: clear immediately without locking the send button
       input.value = '';
-      await withBtnBusy(targetBtn, '⏳ 录入中', async () => {
-        try {
-          const res = await apiPost('/api/notes/record', { content });
-          if (res.error) return showToast(`⚠️ ${res.error}`);
-          if (res.extraction_status === 'filtered_noise' || res.filtered) {
-            showToast(`🛡️ 低成本防线已拦截：${res.filter_reason || res.error_message || '无效输入'}（0 Token 消耗）`);
-            syncAuthStatus().catch(() => {});
-            return;
-          }
-          showToast(`原话已落库 (${res.note.note_id})，抽取更新 ${(res.changes || []).length} 条记忆`);
-          reloadAll();
-        } catch (err) {
-          const q = JSON.parse(localStorage.getItem('tm_offline_queue') || '[]');
-          q.push({ content, space_id: space(), ts: Date.now() });
-          localStorage.setItem('tm_offline_queue', JSON.stringify(q));
-          showToast(`📴 当前离线：已暂存至本地待同步队列 (${q.length} 条)，联网后自动同步`);
+      input.focus();
+      try {
+        const res = await apiPost('/api/notes/record', { content, async_mode: true });
+        if (res.error) return showToast(`⚠️ ${res.error}`);
+        if (res.extraction_status === 'filtered_noise' || res.filtered) {
+          showToast(`🛡️ 低成本防线已拦截：${res.filter_reason || res.error_message || '无效输入'}（0 Token 消耗）`);
+          syncAuthStatus().catch(() => {});
+          return;
         }
-      });
+        if (res.extraction_status === 'queued') {
+          _hadPendingIngest = true;
+          updateIngestPendingPill(1);
+          showToast(`⚡ 原话已秒存，AI 正在后台整理（问答现已立即可查）`);
+          scheduleIngestStatusPoll(true);
+          return;
+        }
+        showToast(`原话已落库 (${res.note.note_id})，抽取更新 ${(res.changes || []).length} 条记忆`);
+        reloadAll();
+      } catch (err) {
+        const q = JSON.parse(localStorage.getItem('tm_offline_queue') || '[]');
+        q.push({ content, space_id: space(), ts: Date.now() });
+        localStorage.setItem('tm_offline_queue', JSON.stringify(q));
+        showToast(`📴 当前离线：已暂存至本地待同步队列 (${q.length} 条)，联网后自动同步`);
+      }
     }
 
     async function flushOfflineQueue() {

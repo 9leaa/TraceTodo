@@ -25,7 +25,9 @@ final class TodoStore: ObservableObject {
     @Published private(set) var engineBadge: String = "未连接"
     @Published private(set) var lastConnectionError: String?
     @Published private(set) var isBusy: Bool = false
+    @Published private(set) var pendingIngestCount: Int = 0
     @Published var statusBanner: String?
+    private var ingestPollTask: Task<Void, Never>?
 
     @Published private(set) var authRequired: Bool = false
     @Published private(set) var allowRegistration: Bool = true
@@ -231,18 +233,52 @@ final class TodoStore: ObservableObject {
         }
     }
 
+    func startIngestPollingIfNeeded() {
+        guard ingestPollTask == nil else { return }
+        ingestPollTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.ingestPollTask = nil }
+            var lastDone = ""
+            for _ in 0..<60 {
+                if Task.isCancelled { break }
+                try? await Task.sleep(nanoseconds: 1_800_000_000)
+                if self.needsLoginGate { break }
+                do {
+                    let st = try await self.client.fetchIngestStatus()
+                    self.pendingIngestCount = st.pending
+                    let doneAt = st.lastCompletedAt ?? ""
+                    if !doneAt.isEmpty && !lastDone.isEmpty && doneAt != lastDone {
+                        await self.refresh()
+                    }
+                    if !doneAt.isEmpty { lastDone = doneAt }
+                    if st.pending == 0 {
+                        await self.refresh()
+                        break
+                    }
+                } catch {
+                    break
+                }
+            }
+            self.pendingIngestCount = 0
+        }
+    }
+
     func submitQuickNote(_ rawText: String) async {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        isBusy = true
-        defer { isBusy = false }
 
         let key = "app:\(UUID().uuidString)"
         do {
-            let res = try await client.recordNote(content: text, idempotencyKey: key)
+            let res = try await client.recordNote(content: text, idempotencyKey: key, asyncMode: true)
             if res.filtered == true || res.extractionStatus == "filtered_noise" {
                 let reason = res.filterReason ?? res.errorMessage ?? "无效或水话输入"
                 showBanner("🛡️ 已拦截：\(reason)（0 Token 消耗）")
+                return
+            }
+            if res.extractionStatus == "queued" {
+                pendingIngestCount = max(1, pendingIngestCount + 1)
+                showBanner("⚡ 已秒存，AI 后台整理中（问答现已立即可查）")
+                startIngestPollingIfNeeded()
                 return
             }
             showBanner("已通过 AI 抽取并更新四象限")

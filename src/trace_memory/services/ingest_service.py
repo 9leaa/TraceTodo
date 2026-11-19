@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import inspect
 import re
+import threading
 import time
 from typing import Any
 
@@ -16,10 +17,12 @@ from trace_memory.domain.proposals import (
     NotFoundError,
     PermissionDeniedError,
     ValidationError,
+    VersionConflictError,
 )
 from trace_memory.llm.protocol import ExtractedCandidate, LLMProvider
 from trace_memory.services.change_service import ChangeService
 from trace_memory.services.guard_service import InputGuardService, RateLimitAndQuotaService
+from trace_memory.services.ingest_queue import IngestJobRepository, _is_transient_llm_error
 from trace_memory.storage.repositories import (
     MemoryRepository,
     NoteRepository,
@@ -32,10 +35,11 @@ from trace_memory.storage.vector_store import VectorLifecycleService
 @dataclass(frozen=True)
 class IngestResult:
     note: RawNote
-    extraction_status: str  # "completed" | "degraded_error" | "idempotent_replay" | "filtered_noise"
+    extraction_status: str  # "completed" | "queued" | "cancelled_forgotten" | "degraded_error" | "idempotent_replay" | "filtered_noise"
     changes: tuple[ChangeResult, ...]
     error_message: str = ""
     trace_id: str = ""
+    job_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -46,6 +50,7 @@ class IngestResult:
             "changes": [c.to_dict() for c in self.changes],
             "error_message": self.error_message,
             "trace_id": self.trace_id,
+            "job_id": self.job_id,
         }
 
 
@@ -63,6 +68,7 @@ class IngestService:
         llm: LLMProvider,
         input_guard: InputGuardService | None = None,
         quota_service: RateLimitAndQuotaService | None = None,
+        job_repo: IngestJobRepository | None = None,
     ) -> None:
         self.note_repo = note_repo
         self.memory_repo = memory_repo
@@ -73,8 +79,9 @@ class IngestService:
         self.llm = llm
         self.input_guard = input_guard
         self.quota_service = quota_service
+        self.job_repo = job_repo
 
-    def record_note(
+    def _preflight_and_persist_note(
         self,
         space_id: str,
         content: str,
@@ -82,8 +89,10 @@ class IngestService:
         actor_id: str = "user",
         event_time: str = "",
         idempotency_key: str = "",
-    ) -> IngestResult:
-        t0 = time.perf_counter()
+        t0: float | None = None,
+    ) -> tuple[RawNote | None, IngestResult | None]:
+        """Run idempotency check, zero-cost InputGuard filter, and durable RawNote + FTS5 save."""
+        start = t0 if t0 is not None else time.perf_counter()
 
         # 1. Entry idempotency check (C08)
         if idempotency_key:
@@ -93,11 +102,12 @@ class IngestService:
                     space_id, cached["note"]["note_id"], include_forgotten=True
                 )
                 if existing_note is not None:
-                    return IngestResult(
+                    return None, IngestResult(
                         note=existing_note,
                         extraction_status="idempotent_replay",
                         changes=(),
                         trace_id=cached.get("trace_id", ""),
+                        job_id=str(cached.get("job_id", "")),
                     )
 
         # 1b. Zero-cost local InputGuard filter (catches empty, oversized, greetings, gibberish BEFORE storage/LLM/Embedding!)
@@ -115,7 +125,7 @@ class IngestService:
                         space_id=space_id,
                         detail={"reason": guard_res.reason, "preview": content.strip()[:40]},
                     )
-                duration = (time.perf_counter() - t0) * 1000.0
+                duration = (time.perf_counter() - start) * 1000.0
                 trace_id = self.trace_repo.record_trace(
                     space_id=space_id,
                     operation="ingest_filtered_noise",
@@ -134,7 +144,7 @@ class IngestService:
                     revision=1,
                     event_time=event_time or utc_now_iso(),
                 )
-                return IngestResult(
+                return None, IngestResult(
                     note=transient_note,
                     extraction_status="filtered_noise",
                     changes=(),
@@ -142,7 +152,7 @@ class IngestService:
                     trace_id=trace_id,
                 )
 
-        # 2. Persist ground-truth RawNote BEFORE any fallible LLM work (C10)
+        # 2. Persist ground-truth RawNote + FTS5 BEFORE any fallible LLM work (C10)
         note = RawNote(
             note_id=new_id("note"),
             space_id=space_id,
@@ -153,6 +163,98 @@ class IngestService:
             event_time=event_time or utc_now_iso(),
         )
         self.note_repo.save(note)
+        return note, None
+
+    def enqueue_note(
+        self,
+        space_id: str,
+        content: str,
+        source_type: str = "web",
+        actor_id: str = "user",
+        event_time: str = "",
+        idempotency_key: str = "",
+    ) -> IngestResult:
+        """Fast-Ack (<5ms) async ingest: persist RawNote + FTS5 + durable ingest_job and return immediately."""
+        if self.job_repo is None:
+            return self.record_note(
+                space_id=space_id,
+                content=content,
+                source_type=source_type,
+                actor_id=actor_id,
+                event_time=event_time,
+                idempotency_key=idempotency_key,
+            )
+
+        t0 = time.perf_counter()
+        note, short_circuit = self._preflight_and_persist_note(
+            space_id=space_id,
+            content=content,
+            source_type=source_type,
+            actor_id=actor_id,
+            event_time=event_time,
+            idempotency_key=idempotency_key,
+            t0=t0,
+        )
+        if short_circuit is not None or note is None:
+            assert short_circuit is not None
+            return short_circuit
+
+        # Reserve note quota slot immediately so async bursts cannot bypass daily note limits
+        if self.quota_service is not None:
+            self.quota_service.record_usage(f"space:{space_id}", notes=1)
+
+        job = self.job_repo.enqueue(
+            space_id=space_id,
+            note_id=note.note_id,
+            actor_id=actor_id,
+            idempotency_key=idempotency_key,
+        )
+        duration = (time.perf_counter() - t0) * 1000.0
+        trace_id = self.trace_repo.record_trace(
+            space_id=space_id,
+            operation="ingest_queued",
+            input_summary=note.content[:80],
+            details={"note_id": note.note_id, "job_id": job["job_id"]},
+            llm_calls=0,
+            tokens_used=0,
+            duration_ms=duration,
+        )
+        out = IngestResult(
+            note=note,
+            extraction_status="queued",
+            changes=(),
+            trace_id=trace_id,
+            job_id=job["job_id"],
+        )
+        if idempotency_key:
+            self.trace_repo.save_idempotent_result(
+                space_id, f"ingest:{idempotency_key}", note.note_id, out.to_dict()
+            )
+        return out
+
+    def process_persisted_note(
+        self,
+        space_id: str,
+        note_id: str,
+        idempotency_key: str = "",
+        count_note_in_quota: bool = True,
+        llm_semaphore: threading.Semaphore | None = None,
+        raise_on_transient_llm_error: bool = False,
+    ) -> IngestResult:
+        """Run LLM extraction, double-check forget/revision race guard, and commit memory changes."""
+        t0 = time.perf_counter()
+        note = self.note_repo.get(space_id, note_id, include_forgotten=True)
+        if note is None or note.is_forgotten:
+            fallback = note or RawNote(
+                note_id=note_id, space_id=space_id, content="[FORGOTTEN]", is_forgotten=True
+            )
+            return IngestResult(
+                note=fallback,
+                extraction_status="cancelled_forgotten",
+                changes=(),
+                error_message="Source note already forgotten before extraction",
+            )
+        start_revision = note.revision
 
         # 3. Extract structured candidates via LLMProvider (passing existing active memories for reconciliation)
         existing_active = self.memory_repo.list_memories(
@@ -161,17 +263,27 @@ class IngestService:
         vector_error = ""
         embed_calls = 0
         try:
-            batch = self._call_extract(note.content, note.event_time, existing_active)
+            if llm_semaphore is not None:
+                with llm_semaphore:
+                    batch = self._call_extract(note.content, note.event_time, existing_active)
+            else:
+                batch = self._call_extract(note.content, note.event_time, existing_active)
         except Exception as exc:
-            # C10: Still index raw note vector on LLM failure so fallback retrieval keeps working
-            try:
-                self.vector_lifecycle.sync_note(note)
-                embed_calls += 1
-            except Exception as vec_exc:
-                vector_error = f"Note embedding degraded: {vec_exc}"
+            if raise_on_transient_llm_error and _is_transient_llm_error(exc):
+                raise
+            # C10: Still index raw note vector on LLM failure if note was not forgotten mid-flight
+            fresh_err = self.note_repo.get(space_id, note_id, include_forgotten=True)
+            if fresh_err is not None and not fresh_err.is_forgotten and fresh_err.revision == start_revision:
+                try:
+                    self.vector_lifecycle.sync_note(fresh_err)
+                    embed_calls += 1
+                except Exception as vec_exc:
+                    vector_error = f"Note embedding degraded: {vec_exc}"
             if self.quota_service is not None:
                 self.quota_service.record_usage(
-                    f"space:{space_id}", notes=1, embed_calls=embed_calls
+                    f"space:{space_id}",
+                    notes=1 if count_note_in_quota else 0,
+                    embed_calls=embed_calls,
                 )
             duration = (time.perf_counter() - t0) * 1000.0
             trace_id = self.trace_repo.record_trace(
@@ -189,11 +301,44 @@ class IngestService:
                 trace_id=trace_id,
             )
 
+        # Double-Check Race Guard: if user forgot or edited the RawNote while LLM was running, discard result!
+        fresh_note = self.note_repo.get(space_id, note_id, include_forgotten=True)
+        if fresh_note is None or fresh_note.is_forgotten or fresh_note.revision != start_revision:
+            if self.quota_service is not None:
+                self.quota_service.record_usage(
+                    f"space:{space_id}",
+                    notes=1 if count_note_in_quota else 0,
+                    llm_calls=batch.llm_calls,
+                    tokens_used=batch.tokens_used,
+                )
+            duration = (time.perf_counter() - t0) * 1000.0
+            trace_id = self.trace_repo.record_trace(
+                space_id=space_id,
+                operation="ingest_aborted_forgotten_or_stale",
+                input_summary="[REDACTED]",
+                details={
+                    "note_id": note_id,
+                    "start_revision": start_revision,
+                    "current_forgotten": bool(fresh_note is None or fresh_note.is_forgotten),
+                    "current_revision": fresh_note.revision if fresh_note else -1,
+                },
+                llm_calls=batch.llm_calls,
+                tokens_used=batch.tokens_used,
+                duration_ms=duration,
+            )
+            return IngestResult(
+                note=fresh_note or note,
+                extraction_status="cancelled_forgotten",
+                changes=(),
+                error_message="Source note was forgotten or modified during extraction; candidates discarded",
+                trace_id=trace_id,
+            )
+
         # Selective Note Vectorization: skip costly Embedding API if LLM confirmed 0 extractable memories!
         note_vector_skipped = len(batch.candidates) == 0
         if not note_vector_skipped:
             try:
-                self.vector_lifecycle.sync_note(note)
+                self.vector_lifecycle.sync_note(fresh_note)
                 embed_calls += 1
             except Exception as exc:
                 # C10: Record embedding degradation honestly without losing the RawNote
@@ -205,15 +350,19 @@ class IngestService:
         )
         results: list[ChangeResult] = []
         for cand in batch.candidates:
-            res = self._adjudicate_candidate(note, cand, active_prefs)
+            # Final per-candidate check against mid-commit forget
+            still_alive = self.note_repo.get(space_id, note_id, include_forgotten=True)
+            if still_alive is None or still_alive.is_forgotten or still_alive.revision != start_revision:
+                break
+            res = self._adjudicate_candidate(fresh_note, cand, active_prefs)
             results.append(res)
-            if res.memory is not None and res.status in ("created", "updated"):
+            if res.memory is not None and res.status in ("created", "updated", "applied"):
                 embed_calls += 1
 
         if self.quota_service is not None:
             self.quota_service.record_usage(
                 f"space:{space_id}",
-                notes=1,
+                notes=1 if count_note_in_quota else 0,
                 llm_calls=batch.llm_calls,
                 embed_calls=embed_calls,
                 tokens_used=batch.tokens_used,
@@ -224,9 +373,9 @@ class IngestService:
         trace_id = self.trace_repo.record_trace(
             space_id=space_id,
             operation="ingest",
-            input_summary=note.content,
+            input_summary=fresh_note.content,
             details={
-                "note_id": note.note_id,
+                "note_id": fresh_note.note_id,
                 "candidate_count": len(batch.candidates),
                 "applied_statuses": [r.status for r in results],
                 "note_vector_skipped": note_vector_skipped,
@@ -237,7 +386,7 @@ class IngestService:
             duration_ms=duration,
         )
         out = IngestResult(
-            note=note,
+            note=fresh_note,
             extraction_status=status,
             changes=tuple(results),
             error_message=vector_error,
@@ -245,9 +394,38 @@ class IngestService:
         )
         if idempotency_key:
             self.trace_repo.save_idempotent_result(
-                space_id, f"ingest:{idempotency_key}", note.note_id, out.to_dict()
+                space_id, f"ingest:{idempotency_key}", fresh_note.note_id, out.to_dict()
             )
         return out
+
+    def record_note(
+        self,
+        space_id: str,
+        content: str,
+        source_type: str = "cli",
+        actor_id: str = "user",
+        event_time: str = "",
+        idempotency_key: str = "",
+    ) -> IngestResult:
+        t0 = time.perf_counter()
+        note, short_circuit = self._preflight_and_persist_note(
+            space_id=space_id,
+            content=content,
+            source_type=source_type,
+            actor_id=actor_id,
+            event_time=event_time,
+            idempotency_key=idempotency_key,
+            t0=t0,
+        )
+        if short_circuit is not None or note is None:
+            assert short_circuit is not None
+            return short_circuit
+        return self.process_persisted_note(
+            space_id=space_id,
+            note_id=note.note_id,
+            idempotency_key=idempotency_key,
+            count_note_in_quota=True,
+        )
 
     def _call_extract(
         self,
@@ -393,26 +571,45 @@ class IngestService:
             action = "update"
             kept_title = cand.title
 
-        proposal = ChangeProposal(
-            space_id=note.space_id,
-            action=action,
-            memory_type=existing.memory_type,
-            target_memory_id=existing.memory_id,
-            expected_version=existing.version,
-            actor_id=note.actor_id,
-            origin="ingest_extractor",
-            title=kept_title,
-            summary=cand.summary,
-            canonical_key=existing.canonical_key,
-            tags=cand.tags,
-            payload=payload,
-            assertion_kind=cand.assertion_kind,
-            evidences=(ev,),
-            relations=cand.relations,
-            event_time=cand.event_time or note.event_time,
-            reason=f"Adjudicated from {note.note_id} rev {note.revision}",
-        )
-        return self.change_service.apply(proposal)
+        for attempt in range(2):
+            proposal = ChangeProposal(
+                space_id=note.space_id,
+                action=action,
+                memory_type=existing.memory_type,
+                target_memory_id=existing.memory_id,
+                expected_version=existing.version,
+                actor_id=note.actor_id,
+                origin="ingest_extractor",
+                title=kept_title,
+                summary=cand.summary,
+                canonical_key=existing.canonical_key,
+                tags=cand.tags,
+                payload=payload,
+                assertion_kind=cand.assertion_kind,
+                evidences=(ev,),
+                relations=cand.relations,
+                event_time=cand.event_time or note.event_time,
+                reason=f"Adjudicated from {note.note_id} rev {note.revision}",
+            )
+            try:
+                return self.change_service.apply(proposal)
+            except VersionConflictError:
+                if attempt >= 1:
+                    raise
+                reloaded = self.memory_repo.get(note.space_id, existing.memory_id)
+                if reloaded is None or reloaded.status == "forgotten":
+                    return ChangeResult(
+                        proposal_id="",
+                        status="rejected",
+                        memory=None,
+                        message="Target memory was forgotten during extraction",
+                    )
+                existing = reloaded
+                if existing.user_locked and existing.memory_type == "task":
+                    # Preserve user's manual quadrant/priority edits when retrying after CAS conflict
+                    for locked_key in ("quadrant", "importance", "urgency", "priority_score", "priority_reason"):
+                        payload.pop(locked_key, None)
+        raise VersionConflictError("Unexpected CAS retry exhaustion")
 
     def edit_raw_note(
         self, space_id: str, note_id: str, new_content: str, actor_id: str = "user"
@@ -593,6 +790,8 @@ class IngestService:
                 updated_at=utc_now_iso(),
             )
             self.note_repo.save(updated_note)
+            if self.job_repo is not None:
+                self.job_repo.cancel_jobs_for_note(space_id, note_id, reason="note_forgotten")
             self.vector_lifecycle.sync_note(updated_note)
 
             for dep in dependents:
@@ -662,6 +861,8 @@ class IngestService:
                 updated_at=utc_now_iso(),
             )
             self.note_repo.save(updated_note)
+            if self.job_repo is not None:
+                self.job_repo.cancel_jobs_for_note(space_id, note_id, reason="note_forgotten")
             self.vector_lifecycle.sync_note(updated_note)
 
             for dep in dependents:

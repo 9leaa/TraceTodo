@@ -17,6 +17,7 @@ from trace_memory.services.guard_service import (
     RateLimitAndQuotaService,
     SystemSettingsStore,
 )
+from trace_memory.services.ingest_queue import IngestJobRepository, IngestWorkerPool
 from trace_memory.services.ingest_service import IngestService
 from trace_memory.services.markdown_sync import MarkdownSyncService
 from trace_memory.services.retrieval_service import RetrievalService
@@ -64,6 +65,8 @@ class AppContainer:
     quota_service: RateLimitAndQuotaService
     auth_service: AuthService
     admin_service: AdminService
+    job_repo: IngestJobRepository
+    ingest_worker: IngestWorkerPool
 
     @classmethod
     def build(
@@ -148,6 +151,7 @@ class AppContainer:
             trace_repo=trace_repo,
             vector_lifecycle=vector_lifecycle,
         )
+        job_repo = IngestJobRepository(db=db)
         ingest_service = IngestService(
             note_repo=note_repo,
             memory_repo=memory_repo,
@@ -158,6 +162,14 @@ class AppContainer:
             llm=llm,
             input_guard=input_guard,
             quota_service=quota_service,
+            job_repo=job_repo,
+        )
+        ingest_worker = IngestWorkerPool(
+            job_repo=job_repo,
+            processor=ingest_service.process_persisted_note,
+            worker_count=cfg.ingest_worker_count,
+            llm_max_concurrency=cfg.llm_max_concurrency,
+            max_retries=cfg.ingest_max_retries,
         )
         retrieval_service = RetrievalService(
             note_repo=note_repo,
@@ -187,6 +199,7 @@ class AppContainer:
             llm=llm,
             input_guard=input_guard,
             quota_service=quota_service,
+            job_repo=job_repo,
         )
         dream_service = DreamService(
             memory_repo=memory_repo,
@@ -231,7 +244,10 @@ class AppContainer:
             quota_service=quota_service,
             auth_service=auth_service,
             admin_service=admin_service,
+            job_repo=job_repo,
+            ingest_worker=ingest_worker,
         )
 
     def close(self) -> None:
+        self.ingest_worker.stop()
         self.db.close()

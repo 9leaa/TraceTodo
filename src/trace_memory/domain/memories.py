@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 from typing import Any
 
-from trace_memory.domain.notes import utc_now_iso
+from trace_memory.domain.notes import BEIJING_TZ, beijing_now, to_beijing, utc_now_iso
 
 MEMORY_TYPES = ("task", "preference", "semantic", "episodic")
 ASSERTION_KINDS = ("stated", "inferred")
@@ -40,18 +40,23 @@ def parse_iso_datetime(value: str) -> datetime | None:
     if not value or not value.strip():
         return None
     raw = value.strip()
+    # Handle plain YYYY-MM-DD BEFORE datetime.fromisoformat (Python 3.11+ parses YYYY-MM-DD as 00:00:00!)
+    if len(raw) == 10 and raw[4] == "-" and raw[7] == "-":
+        try:
+            return datetime.strptime(raw, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59, tzinfo=BEIJING_TZ
+            )
+        except ValueError:
+            return None
     if raw.endswith("Z"):
         raw = raw[:-1] + "+00:00"
     try:
         dt = datetime.fromisoformat(raw)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt
+        return to_beijing(dt)
     except ValueError:
-        # Support YYYY-MM-DD plain date
         try:
             dt = datetime.strptime(raw[:10], "%Y-%m-%d").replace(
-                hour=23, minute=59, second=59, tzinfo=timezone.utc
+                hour=23, minute=59, second=59, tzinfo=BEIJING_TZ
             )
             return dt
         except ValueError:
@@ -74,7 +79,7 @@ def compute_effective_urgency_and_quadrant(
     """
     imp = max(1, min(5, int(importance)))
     urg = max(1, min(5, int(base_urgency)))
-    ref_now = now or datetime.now(timezone.utc)
+    ref_now = to_beijing(now) if now is not None else beijing_now()
 
     deadline_bonus = 0.0
     due_dt = parse_iso_datetime(due_at)
@@ -152,10 +157,12 @@ def compute_next_repeat_due_at(
     rule = repeat_rule if repeat_rule in REPEAT_RULES else "never"
     if rule == "never":
         return due_at
-    base_now = ref_now or datetime.now(timezone.utc)
+    base_now = to_beijing(ref_now) if ref_now is not None else beijing_now()
     dt = parse_iso_datetime(due_at)
     if dt is None:
         dt = base_now.replace(hour=23, minute=59, second=59, microsecond=0)
+    else:
+        dt = to_beijing(dt)
 
     if rule == "daily":
         next_dt = dt + timedelta(days=1)

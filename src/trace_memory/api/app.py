@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
 import hashlib
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -79,7 +81,7 @@ self.addEventListener('fetch', (e) => {
 
 from trace_memory.container import AppContainer
 from trace_memory.domain.memories import MemoryEvidence
-from trace_memory.domain.notes import RawNote, new_id, utc_now_iso
+from trace_memory.domain.notes import RawNote, beijing_now, beijing_now_iso, new_id, utc_now_iso
 from trace_memory.domain.proposals import (
     ChangeProposal,
     NotFoundError,
@@ -309,6 +311,9 @@ class ApiDispatcher:
                     "allow_registration": bool(settings["allow_registration"]),
                     "has_users": self.container.auth_service.has_users(),
                     "noise_filter_enabled": bool(settings["noise_filter_enabled"]),
+                    "timezone": "Asia/Shanghai (UTC+8)",
+                    "server_time": beijing_now_iso(),
+                    "async_ingest_ready": self.container.ingest_worker.is_running,
                 }
 
             if method == "GET" and path == "/api/auth/status":
@@ -616,6 +621,32 @@ class ApiDispatcher:
                         require_llm_slot=True,
                     )
 
+                sync_flag = qp.get("sync", [""])[0].strip().lower() in ("1", "true", "yes")
+                async_q = qp.get("async", [""])[0].strip().lower() in ("1", "true", "yes")
+                async_param = payload.get("async_mode")
+                if sync_flag or async_param is False:
+                    use_async = False
+                elif async_param is True or async_q:
+                    use_async = True
+                else:
+                    use_async = self.container.ingest_worker.is_running
+
+                if use_async:
+                    if not self.container.ingest_worker.is_running:
+                        self.container.ingest_worker.start()
+                    res_ing = self.container.ingest_service.enqueue_note(
+                        space_id=space_id,
+                        content=content,
+                        source_type="web",
+                        actor_id=actor_name,
+                        event_time=str(payload.get("event_time", "")),
+                        idempotency_key=idem,
+                    )
+                    if res_ing.extraction_status == "queued":
+                        self.container.ingest_worker.notify()
+                        return 202, res_ing.to_dict()
+                    return 200, res_ing.to_dict()
+
                 res_ing = self.container.ingest_service.record_note(
                     space_id=space_id,
                     content=content,
@@ -625,6 +656,15 @@ class ApiDispatcher:
                     idempotency_key=idem,
                 )
                 return 200, res_ing.to_dict()
+
+            if method == "GET" and path == "/api/notes/ingest-status":
+                status_obj = self.container.job_repo.get_space_status(space_id)
+                job_id = qp.get("job_id", [""])[0].strip()
+                if job_id:
+                    job_obj = self.container.job_repo.get_job(job_id)
+                    if job_obj is not None and job_obj["space_id"] == space_id:
+                        status_obj["job"] = job_obj
+                return 200, status_obj
 
             if method == "POST" and path == "/api/notes/forget":
                 self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
@@ -884,9 +924,7 @@ class ApiDispatcher:
                 created += 1
 
         # Seed one rich DuoDo-style checklist + supervised demo task idempotently
-        from datetime import datetime
-
-        today_due = datetime.now().astimezone().replace(hour=21, minute=0, second=0, microsecond=0).isoformat()
+        today_due = beijing_now().replace(hour=21, minute=0, second=0, microsecond=0).isoformat()
         rich_res = self.container.task_matrix_service.save_task_card(
             space_id=space_id,
             data={
@@ -991,8 +1029,24 @@ def create_fastapi_app(container: AppContainer) -> Any:
     if not _HAS_FASTAPI:
         raise RuntimeError("FastAPI is not installed")
 
+    @asynccontextmanager
+    async def _lifespan(_app: Any):
+        try:
+            import anyio
+
+            limiter = anyio.to_thread.current_default_thread_limiter()
+            if limiter.total_tokens < container.config.api_threadpool_tokens:
+                limiter.total_tokens = container.config.api_threadpool_tokens
+        except Exception:
+            pass
+        container.ingest_worker.start()
+        try:
+            yield
+        finally:
+            container.ingest_worker.stop()
+
     dispatcher = ApiDispatcher(container)
-    app = FastAPI(title="Trace-Memory Console & API", version="0.1.0")
+    app = FastAPI(title="Trace-Memory Console & API", version="0.1.0", lifespan=_lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -1057,8 +1111,12 @@ def create_fastapi_app(container: AppContainer) -> Any:
                 content={"jsonrpc": "2.0", "id": None, "error": {"code": -32000, "message": "Payload too large"}},
                 status_code=413,
             )
-        code, resp_obj = dispatcher.dispatch_mcp_http(
-            raw_bytes, query_params=qp, headers=hdrs, client_ip=client_ip
+        code, resp_obj = await asyncio.to_thread(
+            dispatcher.dispatch_mcp_http,
+            raw_bytes,
+            query_params=qp,
+            headers=hdrs,
+            client_ip=client_ip,
         )
         if code == 202 and resp_obj is None:
             return Response(status_code=202)
@@ -1089,7 +1147,8 @@ def create_fastapi_app(container: AppContainer) -> Any:
                     return JSONResponse(content={"error": "Invalid JSON body"}, status_code=400)
                 if not isinstance(body, dict):
                     return JSONResponse(content={"error": "JSON body must be an object"}, status_code=400)
-        status_code, payload = dispatcher.dispatch(
+        status_code, payload = await asyncio.to_thread(
+            dispatcher.dispatch,
             request.method,
             f"/api/{rest_of_path}",
             qp,
@@ -1248,9 +1307,12 @@ def run_web_server(container: AppContainer, host: str = "127.0.0.1", port: int =
         def log_message(self, fmt: str, *args: Any) -> None:
             return
 
+    container.ingest_worker.start()
     server = ThreadingHTTPServer((host, port), _Handler)
     print(f"Trace-Memory Web Console running at http://{host}:{port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         server.server_close()
+    finally:
+        container.ingest_worker.stop()

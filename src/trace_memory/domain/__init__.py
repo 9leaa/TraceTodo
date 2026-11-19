@@ -15,7 +15,17 @@ from trace_memory.domain.memories import (
     TaskPayload,
     compute_effective_urgency_and_quadrant,
 )
-from trace_memory.domain.notes import RawNote, new_id, utc_now_iso
+from trace_memory.domain.notes import (
+    BEIJING_TZ,
+    RawNote,
+    beijing_now,
+    beijing_now_iso,
+    beijing_today_date,
+    format_beijing_prompt_clock,
+    new_id,
+    to_beijing,
+    utc_now_iso,
+)
 from trace_memory.domain.proposals import (
     BudgetExceededError,
     ChangeProposal,

@@ -13,7 +13,7 @@ from typing import Any
 import uuid
 
 from trace_memory.config import TraceMemoryConfig
-from trace_memory.domain.notes import new_id, utc_now_iso
+from trace_memory.domain.notes import BEIJING_TZ, beijing_now, new_id, to_beijing, utc_now_iso
 from trace_memory.domain.proposals import (
     NotFoundError,
     PermissionDeniedError,
@@ -190,7 +190,7 @@ class AuthService:
     def _issue_session(self, user: UserAccount, device_label: str = "") -> dict[str, Any]:
         raw_token = f"tm_{uuid.uuid4().hex}{uuid.uuid4().hex[:16]}"
         token_hash = _sha256_hex(raw_token)
-        now_dt = datetime.now(timezone.utc).replace(microsecond=0)
+        now_dt = beijing_now().replace(microsecond=0)
         exp_dt = now_dt + timedelta(hours=max(1, int(self.config.session_ttl_hours)))
         now_iso = now_dt.isoformat()
         exp_iso = exp_dt.isoformat()
@@ -356,20 +356,16 @@ class AuthService:
         if str(row["status"]) != "active":
             return None
         try:
-            exp_dt = datetime.fromisoformat(str(row["expires_at"]))
-            if exp_dt.tzinfo is None:
-                exp_dt = exp_dt.replace(tzinfo=timezone.utc)
-            if exp_dt <= datetime.now(timezone.utc):
+            exp_dt = to_beijing(datetime.fromisoformat(str(row["expires_at"])))
+            if exp_dt <= beijing_now():
                 return None
         except Exception:
             return None
 
         # Throttle session `last_used_at` updates to at most once every 60s
         try:
-            last_dt = datetime.fromisoformat(str(row["last_used_at"]))
-            if last_dt.tzinfo is None:
-                last_dt = last_dt.replace(tzinfo=timezone.utc)
-            if (datetime.now(timezone.utc) - last_dt).total_seconds() >= 60:
+            last_dt = to_beijing(datetime.fromisoformat(str(row["last_used_at"])))
+            if (beijing_now() - last_dt).total_seconds() >= 60:
                 with self.db.transaction() as conn:
                     conn.execute(
                         "UPDATE user_sessions SET last_used_at = ? WHERE token_hash = ?",

@@ -3,16 +3,60 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 import uuid
 
 
 VALID_SOURCE_TYPES = ("cli", "mcp", "api", "web", "markdown_edit", "system")
 
+# Fixed China Standard Time (Beijing Time, Asia/Shanghai, UTC+8) for Mainland China users
+BEIJING_TZ = timezone(timedelta(hours=8), name="CST")
+_CN_WEEKDAYS = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
+
+
+def beijing_now() -> datetime:
+    """Return current wall-clock datetime anchored to Beijing Time (UTC+8)."""
+    return datetime.now(BEIJING_TZ)
+
+
+def to_beijing(dt: datetime) -> datetime:
+    """Convert an aware datetime to Beijing Time, or attach Beijing Time if naive."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=BEIJING_TZ)
+    return dt.astimezone(BEIJING_TZ)
+
+
+def beijing_now_iso() -> str:
+    """Return current Beijing Time as second-precision ISO-8601 string with `+08:00`."""
+    return beijing_now().replace(microsecond=0).isoformat()
+
+
+def beijing_today_date(now: datetime | None = None) -> str:
+    """Return `YYYY-MM-DD` date string anchored to Beijing Time (UTC+8)."""
+    ref = to_beijing(now) if now is not None else beijing_now()
+    return ref.strftime("%Y-%m-%d")
+
+
+def format_beijing_prompt_clock(now: datetime | None = None) -> str:
+    """Return a clear Beijing Time clock & relative-date anchor block for LLM prompts."""
+    ref = to_beijing(now) if now is not None else beijing_now()
+    weekday = _CN_WEEKDAYS[ref.weekday()]
+    day_before_yesterday = (ref - timedelta(days=2)).strftime("%Y-%m-%d")
+    yesterday = (ref - timedelta(days=1)).strftime("%Y-%m-%d")
+    today = ref.strftime("%Y-%m-%d")
+    tomorrow = (ref + timedelta(days=1)).strftime("%Y-%m-%d")
+    day_after_tomorrow = (ref + timedelta(days=2)).strftime("%Y-%m-%d")
+    return (
+        f"{ref.strftime('%Y-%m-%d %H:%M:%S')}（{weekday}，北京时间 Asia/Shanghai UTC+8 / +08:00）\n"
+        f"相对日期锚点（严格以北京时间为准）："
+        f"前天={day_before_yesterday}、昨天={yesterday}、今天={today}、明天={tomorrow}、后天={day_after_tomorrow}"
+    )
+
 
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    """Backward-compatible timestamp helper now unified on Beijing Time (`+08:00`)."""
+    return beijing_now_iso()
 
 
 def new_id(prefix: str) -> str:

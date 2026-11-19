@@ -309,6 +309,26 @@ CREATE TABLE IF NOT EXISTS security_audit_logs (
 
 CREATE INDEX IF NOT EXISTS idx_security_audit_created
     ON security_audit_logs(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS ingest_jobs (
+    job_id TEXT PRIMARY KEY,
+    space_id TEXT NOT NULL,
+    note_id TEXT NOT NULL,
+    actor_id TEXT NOT NULL DEFAULT 'user',
+    idempotency_key TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'queued',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT NOT NULL DEFAULT '',
+    result_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingest_jobs_status_space
+    ON ingest_jobs(status, space_id, created_at ASC);
+
+CREATE INDEX IF NOT EXISTS idx_ingest_jobs_note
+    ON ingest_jobs(space_id, note_id);
 """
 
 
@@ -330,7 +350,7 @@ class Database:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("PRAGMA foreign_keys=ON")
-            conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute("PRAGMA busy_timeout=15000")
             self._local.conn = conn
         return conn
 

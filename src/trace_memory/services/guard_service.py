@@ -13,13 +13,14 @@ import time
 from typing import Any
 
 from trace_memory.config import TraceMemoryConfig
-from trace_memory.domain.notes import new_id, utc_now_iso
+from trace_memory.domain.notes import beijing_today_date, new_id, utc_now_iso
 from trace_memory.domain.proposals import QuotaExceededError, RateLimitError, ValidationError
 from trace_memory.storage.database import Database
 
 
 def today_utc_date() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    """Daily usage bucket date anchored to Beijing Time (UTC+8, resets at 00:00 CST)."""
+    return beijing_today_date()
 
 
 _MEANINGFUL_CHAR_RE = re.compile(r"[a-zA-Z0-9\u4e00-\u9fff]")
