@@ -336,6 +336,15 @@ CREATE TABLE IF NOT EXISTS space_sync_state (
     last_reason TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS space_preferences (
+    space_id TEXT PRIMARY KEY,
+    theme_id TEXT NOT NULL DEFAULT 'classic',
+    enabled_modules_json TEXT NOT NULL DEFAULT '{}',
+    pomodoro_minutes INTEGER NOT NULL DEFAULT 25,
+    extra_json TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT NOT NULL
+);
 """
 
 

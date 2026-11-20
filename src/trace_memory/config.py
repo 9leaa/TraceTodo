@@ -52,6 +52,7 @@ class TraceMemoryConfig:
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key: str = ""
     llm_model: str = "gpt-4o-mini"
+    vision_model: str = "qwen-vl-plus"
     embedding_model: str = "text-embedding-3-small"
     llm_timeout_seconds: float = 30.0
 
@@ -97,6 +98,10 @@ class TraceMemoryConfig:
     def sqlite_path(self) -> Path:
         return self.data_dir / "trace_memory.db"
 
+    @property
+    def uploads_dir(self) -> Path:
+        return self.data_dir / "uploads"
+
     @classmethod
     def from_env(
         cls,
@@ -132,6 +137,7 @@ class TraceMemoryConfig:
             openai_base_url=_get("TRACE_MEMORY_OPENAI_BASE_URL", "https://api.openai.com/v1"),
             openai_api_key=env.get("TRACE_MEMORY_OPENAI_API_KEY", ""),
             llm_model=_get("TRACE_MEMORY_LLM_MODEL", "gpt-4o-mini"),
+            vision_model=_get("TRACE_MEMORY_VISION_MODEL", "qwen-vl-plus"),
             embedding_model=_get("TRACE_MEMORY_EMBEDDING_MODEL", "text-embedding-3-small"),
             dream_max_llm_calls=int(_get("TRACE_MEMORY_DREAM_MAX_LLM_CALLS", "5")),
             dream_max_tokens=int(_get("TRACE_MEMORY_DREAM_MAX_TOKENS", "8000")),

@@ -16,11 +16,18 @@
       --header-h: 60px;
       --bg: #f4f6fb;
       --surface: #ffffff;
+      --surface-alt: #f8fafc;
       --border: #e2e8f0;
       --text: #1e293b;
+      --heading: #0f172a;
       --muted: #64748b;
-      --primary: #7c3aed;
-      --primary-soft: #f3e8ff;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --primary-soft: #eff6ff;
+      --header-bg: #ffffff;
+      --rail-active-bg: #f1f5f9;
+      --rail-active-ico: #2d3748;
+      --tl-header-grad: linear-gradient(135deg, #4b91f7 0%, #2563eb 100%);
       --q1-bg: #fef2f2; --q1-border: #fca5a5; --q1-badge: #dc2626;
       --q2-bg: #eff6ff; --q2-border: #93c5fd; --q2-badge: #2563eb;
       --q3-bg: #fffbeb; --q3-border: #fcd34d; --q3-badge: #d97706;
@@ -33,27 +40,115 @@
       --mc-mint: #c9f7ce;     --mc-mint-acc: #10b981;
       --mc-peach: #ffe0ba;    --mc-peach-acc: #f97316;
     }
+    [data-theme="westlake"] {
+      --bg: #eef7f5;
+      --surface: #ffffff;
+      --surface-alt: #f2fbf9;
+      --border: #cce5df;
+      --primary: #0d9488;
+      --primary-hover: #0f766e;
+      --primary-soft: #ccfbf1;
+      --header-bg: linear-gradient(90deg, #ffffff 0%, #f0fdfa 60%, #e0f2fe 100%);
+      --rail-active-bg: #e6f7f4;
+      --rail-active-ico: #0f766e;
+      --tl-header-grad: linear-gradient(135deg, #14b8a6 0%, #0284c7 100%);
+    }
+    [data-theme="autumn"] {
+      --bg: #fdf6f0;
+      --surface: #ffffff;
+      --surface-alt: #fffaf5;
+      --border: #fed7aa;
+      --primary: #ea580c;
+      --primary-hover: #c2410c;
+      --primary-soft: #ffedd5;
+      --header-bg: linear-gradient(90deg, #ffffff 0%, #fff7ed 60%, #fef3c7 100%);
+      --rail-active-bg: #ffedd5;
+      --rail-active-ico: #c2410c;
+      --tl-header-grad: linear-gradient(135deg, #f97316 0%, #d97706 100%);
+    }
+    [data-theme="golden_gate"] {
+      --bg: #fef4f4;
+      --surface: #ffffff;
+      --surface-alt: #fff8f8;
+      --border: #fecdd3;
+      --primary: #dc2626;
+      --primary-hover: #b91c1c;
+      --primary-soft: #ffe4e6;
+      --header-bg: linear-gradient(90deg, #ffffff 0%, #fff1f2 60%, #ffedd5 100%);
+      --rail-active-bg: #ffe4e6;
+      --rail-active-ico: #be123c;
+      --tl-header-grad: linear-gradient(135deg, #ef4444 0%, #e11d48 100%);
+    }
+    [data-theme="snow_peak"] {
+      --bg: #eef5ff;
+      --surface: #ffffff;
+      --surface-alt: #f5f9ff;
+      --border: #bfdbfe;
+      --primary: #0284c7;
+      --primary-hover: #0369a1;
+      --primary-soft: #e0f2fe;
+      --header-bg: linear-gradient(90deg, #ffffff 0%, #f0f9ff 60%, #e0e7ff 100%);
+      --rail-active-bg: #e0f2fe;
+      --rail-active-ico: #0369a1;
+      --tl-header-grad: linear-gradient(135deg, #0ea5e9 0%, #4f46e5 100%);
+    }
+    [data-theme="deep_forest"] {
+      --bg: #0b1512;
+      --surface: #13221d;
+      --surface-alt: #182b25;
+      --border: #243e36;
+      --text: #e2f1ec;
+      --heading: #f0fdf4;
+      --muted: #8caea3;
+      --primary: #10b981;
+      --primary-hover: #059669;
+      --primary-soft: #16382d;
+      --header-bg: linear-gradient(90deg, #101e1a 0%, #132721 65%, #0f292e 100%);
+      --rail-active-bg: #1b352d;
+      --rail-active-ico: #10b981;
+      --tl-header-grad: linear-gradient(135deg, #059669 0%, #0284c7 100%);
+      --q1-bg: #2c1519; --q1-border: #7f1d1d; --q1-badge: #f87171;
+      --q2-bg: #132338; --q2-border: #1e3a8a; --q2-badge: #60a5fa;
+      --q3-bg: #2b2112; --q3-border: #78350f; --q3-badge: #fbbf24;
+      --q4-bg: #15231f; --q4-border: #28423a; --q4-badge: #94a3b8;
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       background: var(--bg);
       color: var(--text);
       line-height: 1.55;
+      transition: background 0.2s ease, color 0.2s ease;
     }
     header {
-      background: #ffffff;
-      color: #1e293b;
+      background: var(--header-bg);
+      color: var(--text);
       padding: calc(10px + env(safe-area-inset-top)) 20px 10px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       flex-wrap: wrap;
       gap: 12px;
-      border-bottom: 1px solid #e2e8f0;
+      border-bottom: 1px solid var(--border);
       position: sticky;
       top: 0;
       z-index: 35;
+      overflow: hidden;
     }
+    .header-theme-art {
+      position: absolute;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: 340px;
+      pointer-events: none;
+      opacity: 0.42;
+      z-index: 0;
+      display: flex;
+      align-items: flex-end;
+      justify-content: flex-end;
+    }
+    header > *:not(.header-theme-art) { position: relative; z-index: 1; }
     .brand { display: flex; align-items: center; gap: 10px; }
     .brand-logo {
       width: 34px; height: 34px;
@@ -63,13 +158,14 @@
       box-shadow: 0 2px 8px rgba(59,130,246,0.22);
     }
     .brand-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .brand h1 { font-size: 16px; font-weight: 700; letter-spacing: 0.2px; color: #0f172a; }
+    .brand h1 { font-size: 16px; font-weight: 700; letter-spacing: 0.2px; color: var(--heading); }
     .pill {
       font-size: 11.5px;
       padding: 3px 10px;
       border-radius: 999px;
-      background: #f1f5f9;
-      color: #475569;
+      background: var(--surface-alt);
+      color: var(--muted);
+      border: 1px solid var(--border);
       font-weight: 500;
     }
     .top-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -80,14 +176,15 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
       border-radius: 10px;
       padding: 4px 6px 4px 12px;
     }
     .header-search-wrap input {
       border: none;
       background: transparent;
+      color: var(--text);
       flex: 1;
       padding: 5px 4px;
       outline: none;
@@ -99,6 +196,8 @@
       border: 1px solid var(--border);
       padding: 8px 12px;
       font-size: 13px;
+      background: var(--surface);
+      color: var(--text);
     }
     button {
       cursor: pointer;
@@ -109,17 +208,17 @@
       touch-action: manipulation;
     }
     button:disabled { opacity: 0.62; cursor: wait; }
-    button:hover { border-color: #94a3b8; background: #f8fafc; }
-    button.primary { background: #3b82f6; color: #fff; border-color: #3b82f6; }
-    button.primary:hover { background: #2563eb; }
+    button:hover { border-color: var(--primary); background: var(--surface-alt); }
+    button.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+    button.primary:hover { background: var(--primary-hover); }
     button.duodo-btn {
-      background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
+      background: var(--tl-header-grad);
       color: #fff;
       border: none;
       border-radius: 10px;
       font-weight: 600;
       padding: 8px 15px;
-      box-shadow: 0 4px 12px rgba(59,130,246,0.28);
+      box-shadow: 0 4px 12px rgba(15,23,42,0.16);
     }
     button.duodo-btn:hover { filter: brightness(1.06); }
     button.ai-pill {
@@ -134,25 +233,26 @@
     }
     button.ai-pill:disabled { opacity: 0.6; cursor: wait; }
     button.ghost-dark {
-      background: #f8fafc;
-      color: #334155;
-      border: 1px solid #e2e8f0;
+      background: var(--surface-alt);
+      color: var(--text);
+      border: 1px solid var(--border);
       padding: 6px 10px;
       font-size: 12px;
     }
-    button.ghost-dark:hover { background: #eef2ff; border-color: #c7d2fe; color: #3730a3; }
+    button.ghost-dark:hover { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
 
     /* 3-Region Workspace Layout */
     .workspace-shell {
       display: flex;
       min-height: calc(100vh - 58px);
-      background: #f5f7fb;
+      background: var(--bg);
     }
     .left-rail {
-      width: 106px;
+      width: 102px;
       flex-shrink: 0;
       margin: 16px 0 16px 16px;
-      background: #ffffff;
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 14px;
       padding: 12px 6px;
       box-shadow: 0 6px 22px rgba(15,23,42,0.05);
@@ -179,7 +279,7 @@
       background: transparent;
       padding: 10px 6px;
       border-radius: 10px;
-      color: #64748b;
+      color: var(--muted);
       font-weight: 600;
       font-size: 11.5px;
       display: flex;
@@ -190,7 +290,7 @@
       user-select: none;
     }
     .tab-btn > * { pointer-events: none; }
-    .tab-btn:hover { background: #f8fafc; color: #1e293b; border-color: transparent; }
+    .tab-btn:hover { background: var(--surface-alt); color: var(--heading); border-color: transparent; }
     .tab-btn .tab-ico {
       width: 34px; height: 34px;
       border-radius: 999px;
@@ -198,22 +298,23 @@
       font-size: 16px;
       transition: all 0.15s ease;
     }
-    .tab-btn.active { background: #f1f5f9; color: #0f172a; }
-    .tab-btn.active .tab-ico { background: #2d3748; color: #ffffff; }
+    .tab-btn.active { background: var(--rail-active-bg); color: var(--heading); }
+    .tab-btn.active .tab-ico { background: var(--rail-active-ico); color: #ffffff; }
     .rail-tip-box {
       margin-top: auto;
       width: 100%;
       padding: 10px 6px 4px;
       text-align: center;
     }
-    .rail-tip-title { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; color: #64748b; margin-bottom: 4px; }
+    .rail-tip-title { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; color: var(--muted); margin-bottom: 4px; }
     .rail-tip-card {
-      background: #e8eef5;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
       border-radius: 10px;
       padding: 8px 6px;
       font-size: 10.5px;
       line-height: 1.4;
-      color: #334155;
+      color: var(--text);
       margin-top: 4px;
     }
 
@@ -232,8 +333,8 @@
     .right-timeline-rail {
       width: 300px;
       flex-shrink: 0;
-      background: #f5f7fb;
-      border-left: 1px solid #e2e8f0;
+      background: var(--bg);
+      border-left: 1px solid var(--border);
       display: flex;
       flex-direction: column;
       position: sticky;
@@ -242,7 +343,7 @@
       align-self: flex-start;
     }
     .timeline-header {
-      background: linear-gradient(135deg, #4b91f7 0%, #2563eb 100%);
+      background: var(--tl-header-grad);
       color: #fff;
       padding: 18px 18px 0;
     }
@@ -1185,10 +1286,161 @@
       color: #1d4ed8;
       border-color: #bfdbfe;
     }
+
+    /* Anti-Bloat Converged Segmented Switchers, Theme Gallery, Toggles & Calendar */
+    .seg-pill-bar {
+      display: inline-flex;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      padding: 3px;
+      gap: 3px;
+      flex-wrap: wrap;
+    }
+    .seg-pill-btn {
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 6px 13px;
+      border-radius: 8px;
+      transition: all 0.15s ease;
+    }
+    .seg-pill-btn:hover { color: var(--heading); background: transparent; border-color: transparent; }
+    .seg-pill-btn.active {
+      background: var(--primary);
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(15,23,42,0.12);
+    }
+
+    .countdown-strip {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 9px 14px;
+      margin-bottom: 14px;
+      border-radius: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 12.5px;
+      box-shadow: 0 3px 10px rgba(15,23,42,0.03);
+    }
+    .countdown-capsule {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: var(--primary-soft);
+      color: var(--primary);
+      font-weight: 700;
+      font-size: 12px;
+    }
+
+    .theme-gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+      gap: 10px;
+    }
+    .theme-card-item {
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+      padding: 10px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: all 0.16s ease;
+      text-align: left;
+    }
+    .theme-card-item:hover { transform: translateY(-1px); border-color: var(--primary); }
+    .theme-card-item.selected {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-soft);
+    }
+    .theme-card-preview {
+      height: 44px;
+      border-radius: 8px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      padding: 6px 8px;
+    }
+
+    .cal-month-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 8px;
+    }
+    @media (max-width: 680px) { .cal-month-grid { gap: 4px; } }
+    .cal-weekday-hdr {
+      text-align: center;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--muted);
+      padding: 4px 0;
+    }
+    .cal-day-cell {
+      min-height: 76px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      padding: 6px 7px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      transition: all 0.14s ease;
+    }
+    .cal-day-cell:hover { border-color: var(--primary); }
+    .cal-day-cell.is-other { opacity: 0.42; }
+    .cal-day-cell.is-today { border-color: var(--primary); background: var(--primary-soft); }
+    .cal-day-cell.is-selected { box-shadow: 0 0 0 2px var(--primary); }
+    .cal-task-dot {
+      font-size: 10.5px;
+      padding: 1px 5px;
+      border-radius: 5px;
+      background: var(--surface-alt);
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      border-left: 3px solid var(--primary);
+    }
+
+    [data-theme="deep_forest"] .analytic-card,
+    [data-theme="deep_forest"] .tl-card,
+    [data-theme="deep_forest"] .card-box,
+    [data-theme="deep_forest"] .modal,
+    [data-theme="deep_forest"] .duodo-sheet,
+    [data-theme="deep_forest"] .duodo-card,
+    [data-theme="deep_forest"] .auth-sheet,
+    [data-theme="deep_forest"] .graph-toolbar-card {
+      background: var(--surface);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    [data-theme="deep_forest"] .diag-box {
+      background: linear-gradient(135deg, #132c24 0%, #162936 100%);
+      border-color: #254b3e;
+    }
+    [data-theme="deep_forest"] .diag-box h3 { color: #6ee7b7; }
+    [data-theme="deep_forest"] .diag-list { color: var(--text); }
+    [data-theme="deep_forest"] .task-card { background: var(--surface); }
+    [data-theme="deep_forest"] .card-checklist { background: var(--surface-alt); border-color: var(--border); }
+    [data-theme="deep_forest"] .tag { background: var(--surface-alt); color: var(--text); }
+    [data-theme="deep_forest"] .focus-row { border-bottom-color: var(--border); }
   </style>
 </head>
 <body>
   <header>
+    <div class="header-theme-art" id="headerThemeArt" aria-hidden="true"></div>
     <div class="brand">
       <div class="brand-logo"><img src="/icon.png" alt="TraceTodo" /></div>
       <h1>TraceTodo</h1>
@@ -1205,26 +1457,25 @@
     <div class="top-actions">
       <button type="button" class="duodo-btn" onclick="openTaskSheet(null)">+ 新建任务</button>
       <span id="spaceWrap" style="display:inline-flex;align-items:center;gap:4px;">
-        <label style="font-size:12px;color:#64748b;">Space:</label>
-        <input id="spaceInput" value="default" style="width:92px;padding:5px 8px;background:#f8fafc;" onchange="reloadAll()" />
+        <label style="font-size:12px;color:var(--muted);">Space:</label>
+        <input id="spaceInput" value="default" style="width:88px;padding:5px 8px;" onchange="reloadAll()" />
       </span>
+      <button type="button" id="topSupBtn" data-tab="supervision" data-module-toggle="supervision" class="ghost-dark" onclick="switchTab('supervision', this)">👥 监工</button>
+      <button type="button" id="openPrefsBtn" class="ghost-dark" onclick="openPrefsModal()">🎨 外观/模块</button>
       <button type="button" id="notifToggleBtn" class="ghost-dark" onclick="toggleWebNotifications()">🔔 通知</button>
       <button type="button" id="accountBtn" class="ghost-dark" onclick="openAuthModal()">🔐 登录 / 账号</button>
       <button type="button" class="ghost-dark" onclick="seedDemo(this)">✨ 演示</button>
-      <button type="button" class="ghost-dark" onclick="exportMarkdown(this)">📂 导出</button>
-      <button type="button" class="ghost-dark" id="syncMdBtn" onclick="syncMarkdown(this)">🔄 同步</button>
-      <button type="button" class="ghost-dark" onclick="runDream(this)">🌙 Dream</button>
     </div>
   </header>
 
   <div class="workspace-shell">
     <aside class="left-rail">
       <div class="tabs" id="mainTabs">
-        <button type="button" class="tab-btn active" data-tab="tasks" onclick="switchTab('tasks', this)"><span class="tab-ico">📊</span><span>概览</span></button>
-        <button type="button" class="tab-btn" data-tab="supervision" onclick="switchTab('supervision', this)"><span class="tab-ico">👥</span><span>监工</span></button>
-        <button type="button" class="tab-btn" data-tab="memories" onclick="switchTab('memories', this)"><span class="tab-ico">🗂️</span><span>记忆</span></button>
-        <button type="button" class="tab-btn" data-tab="graph" onclick="switchTab('graph', this)"><span class="tab-ico">🕸️</span><span>图谱</span></button>
-        <button type="button" class="tab-btn" data-tab="ask" onclick="switchTab('ask', this)"><span class="tab-ico">💬</span><span>问答</span></button>
+        <button type="button" class="tab-btn active" data-tab="tasks" onclick="switchTab('tasks', this)"><span class="tab-ico">📋</span><span>待办</span></button>
+        <button type="button" class="tab-btn" data-tab="calendar" data-module-toggle="calendar" onclick="switchTab('calendar', this)"><span class="tab-ico">📅</span><span>日历</span></button>
+        <button type="button" class="tab-btn" data-tab="focus" data-module-toggle="focus" onclick="switchTab('focus', this)"><span class="tab-ico">🍅</span><span>专注</span></button>
+        <button type="button" class="tab-btn" data-tab="notes" data-module-toggle="notes" onclick="switchTab('notes', this)"><span class="tab-ico">📝</span><span>随记</span></button>
+        <button type="button" class="tab-btn" data-tab="memories" onclick="switchTab('memories', this)"><span class="tab-ico">🧠</span><span>记忆</span></button>
         <button type="button" class="tab-btn" id="adminTabBtn" data-tab="admin" style="display:none;" onclick="switchTab('admin', this)"><span class="tab-ico">🛡️</span><span>后台</span></button>
       </div>
       <div class="rail-tip-box">
@@ -1235,35 +1486,44 @@
     </aside>
 
     <div class="container">
-      <!-- TAB 1: SUMMARY DASHBOARD & EISENHOWER 4-QUADRANT MATRIX -->
+      <!-- TAB 1: UNIFIED TODO HUB (OVERVIEW / 4-QUADRANT / PRIORITY LIST) -->
       <section id="panel-tasks" class="panel active">
-        <div class="summary-header">
-          <div class="summary-title">SUMMARY</div>
-          <div style="font-size:12px;color:#64748b;">个人记忆与四象限执行概览</div>
-        </div>
-        <div class="kpi-grid" id="taskKpis"></div>
-
-        <div class="analytics-row">
-          <div class="analytic-card">
-            <h4>TOP FOCUS · 优先聚焦</h4>
-            <div id="topFocusList"></div>
+        <div class="summary-header" style="flex-wrap:wrap;gap:10px;">
+          <div>
+            <div class="summary-title">TODO · 待办中心</div>
+            <div style="font-size:12px;color:var(--muted);">概览、四象限与多维列表三合一收敛视图</div>
           </div>
-          <div class="analytic-card">
-            <h4>TASK INSIGHTS · 分布洞察</h4>
-            <div id="taskInsightsBody"></div>
+          <div class="seg-pill-bar" id="todoViewSegBar">
+            <button type="button" class="seg-pill-btn active" id="viewBtnOverview" onclick="setTaskView('overview')">📊 概览</button>
+            <button type="button" class="seg-pill-btn" id="viewBtnMatrix" onclick="setTaskView('matrix')">田 四象限</button>
+            <button type="button" class="seg-pill-btn" id="viewBtnList" onclick="setTaskView('list')">☰ 列表</button>
           </div>
         </div>
 
-        <div class="diag-box">
-          <h3>🧭 艾森豪威尔四象限 · 记忆驱动负载诊断与优先建议</h3>
-          <ul class="diag-list" id="diagList"></ul>
+        <div class="countdown-strip" id="todoCountdownStrip" data-module-toggle="countdown" style="display:none;"></div>
+
+        <div id="todoOverviewSection">
+          <div class="kpi-grid" id="taskKpis"></div>
+
+          <div class="analytics-row">
+            <div class="analytic-card">
+              <h4>TOP FOCUS · 优先聚焦</h4>
+              <div id="topFocusList"></div>
+            </div>
+            <div class="analytic-card">
+              <h4>TASK INSIGHTS · 分布洞察</h4>
+              <div id="taskInsightsBody"></div>
+            </div>
+          </div>
+
+          <div class="diag-box">
+            <h3>🧭 艾森豪威尔四象限 · 记忆驱动负载诊断与优先建议</h3>
+            <ul class="diag-list" id="diagList"></ul>
+          </div>
         </div>
 
         <div class="toolbar">
-          <div class="btn-group">
-            <button type="button" id="viewBtnMatrix" class="active" onclick="setTaskView('matrix')">田 四象限矩阵视图</button>
-            <button type="button" id="viewBtnList" onclick="setTaskView('list')">☰ 优先级排序列表</button>
-          </div>
+          <div style="font-size:13px;font-weight:600;color:var(--muted);" id="todoSubHeading">田 艾森豪威尔四象限看板</div>
           <div class="btn-group">
             <label style="font-size:12px;color:var(--muted);">排序依据:</label>
             <select id="taskSortSelect" onchange="loadTasks()">
@@ -1282,7 +1542,68 @@
         <div id="listContainer" class="list-stack" style="display:none;"></div>
       </section>
 
-    <!-- TAB 2: MULTIPLAYER & FRIEND SUPERVISION BOARD -->
+      <!-- TAB 2: CALENDAR VIEW (Zero-Duplication Projection of Tasks) -->
+      <section id="panel-calendar" class="panel">
+        <div class="summary-header" style="flex-wrap:wrap;gap:10px;">
+          <div>
+            <div class="summary-title">CALENDAR · 时间画布</div>
+            <div style="font-size:12px;color:var(--muted);">零重复录入：直接投影四象限待办与截止排期</div>
+          </div>
+          <div class="btn-group">
+            <button type="button" onclick="shiftCalendarMonth(-1)">◀ 上月</button>
+            <button type="button" onclick="shiftCalendarMonth(0)">今天</button>
+            <button type="button" onclick="shiftCalendarMonth(1)">下月 ▶</button>
+            <button type="button" class="duodo-btn" onclick="openTaskSheetForSelectedDate()">+ 在选中日排期</button>
+          </div>
+        </div>
+        <div class="card-box" style="margin-bottom:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <h3 id="calMonthTitle" style="margin:0;">日历月视图</h3>
+            <span class="pill" id="calSelectedDateLabel">今日</span>
+          </div>
+          <div class="cal-month-grid" id="calMonthGrid"></div>
+        </div>
+        <div class="card-box">
+          <h3 id="calDayAgendaTitle">📅 当日待办排期</h3>
+          <div id="calDayAgendaList" class="list-stack"></div>
+        </div>
+      </section>
+
+      <!-- TAB 3: POMODORO & FOCUS CENTER -->
+      <section id="panel-focus" class="panel">
+        <div class="summary-header" style="flex-wrap:wrap;gap:10px;">
+          <div>
+            <div class="summary-title">FOCUS · 番茄专注中心</div>
+            <div style="font-size:12px;color:var(--muted);">番茄倒计时 / 正计时双模式 · 专注统计与时间轴</div>
+          </div>
+        </div>
+        <div id="focusCenterRoot" class="card-box">
+          <p style="color:var(--muted);font-size:13px;">正在加载专注中心...</p>
+        </div>
+      </section>
+
+      <!-- TAB 4: NOTES / MEMO & JOURNAL HUB (Reusing RawNote Kernel) -->
+      <section id="panel-notes" class="panel">
+        <div class="summary-header" style="flex-wrap:wrap;gap:10px;">
+          <div>
+            <div class="summary-title">NOTES · 随记流</div>
+            <div style="font-size:12px;color:var(--muted);">复用 RawNote 真值内核：既是轻量随手记，又能自动沉淀长期记忆</div>
+          </div>
+        </div>
+        <div class="card-box" style="margin-bottom:16px;display:grid;gap:10px;">
+          <textarea id="notesEditorInput" rows="3" placeholder="随手记下一段备忘、灵感或今日片段（AI 将自动在后台识别待办与长期偏好）..."></textarea>
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+            <div class="btn-group" style="flex:1;min-width:200px;">
+              <input id="notesSearchInput" style="flex:1;max-width:320px;" placeholder="检索历史随记原文 (BM25)..." onkeydown="if(event.key==='Enter') loadNotesPanel()" />
+              <button type="button" onclick="loadNotesPanel()">🔍 搜索随记</button>
+            </div>
+            <button type="button" class="duodo-btn" onclick="submitNoteFromNotesTab(this)">✍️ 保存随记</button>
+          </div>
+        </div>
+        <div id="notesStreamList" class="list-stack"></div>
+      </section>
+
+    <!-- SUPERVISION BOARD (Accessible via Topbar & Share Link, Controlled by Feature Toggle) -->
     <section id="panel-supervision" class="panel">
       <div class="card-box" style="margin-bottom:16px;">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
@@ -1306,8 +1627,20 @@
       <div id="supervisionList" class="list-stack"></div>
     </section>
 
-    <!-- TAB 3: MEMORIES & HYBRID VECTOR SEARCH -->
+    <!-- TAB 5A: MEMORIES & HYBRID VECTOR SEARCH -->
     <section id="panel-memories" class="panel">
+      <div class="summary-header" style="flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+        <div class="seg-pill-bar">
+          <button type="button" class="seg-pill-btn active" data-tab="memories" onclick="switchTab('memories')">🗂️ 记忆库</button>
+          <button type="button" class="seg-pill-btn" data-tab="graph" onclick="switchTab('graph')">🕸️ 双链星图</button>
+          <button type="button" class="seg-pill-btn" data-tab="ask" onclick="switchTab('ask')">💬 证据问答</button>
+        </div>
+        <div class="btn-group">
+          <button type="button" class="ghost-dark" onclick="exportMarkdown(this)">📂 导出 Markdown</button>
+          <button type="button" class="ghost-dark" id="syncMdBtn" onclick="syncMarkdown(this)">🔄 同步回流</button>
+          <button type="button" class="ghost-dark" onclick="runDream(this)">🌙 Dream 归纳</button>
+        </div>
+      </div>
       <div class="toolbar">
         <div class="btn-group" style="flex:1;">
           <input id="memSearchInput" style="flex:1;max-width:440px;" placeholder="输入关键词或跨字面语义查询（如：线上结算隐患 / 居住城市 / 咖啡习惯）..." onkeydown="if(event.key==='Enter') loadMemories()" />
@@ -1325,8 +1658,18 @@
       <div id="memoriesList" class="list-stack"></div>
     </section>
 
-    <!-- TAB 4: GRAPH CONTEXT (OBSIDIAN FORCE-DIRECTED CANVAS + LIST INSPECTOR) -->
+    <!-- TAB 5B: GRAPH CONTEXT (OBSIDIAN FORCE-DIRECTED CANVAS + LIST INSPECTOR) -->
     <section id="panel-graph" class="panel">
+      <div class="summary-header" style="flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+        <div class="seg-pill-bar">
+          <button type="button" class="seg-pill-btn" data-tab="memories" onclick="switchTab('memories')">🗂️ 记忆库</button>
+          <button type="button" class="seg-pill-btn active" data-tab="graph" onclick="switchTab('graph')">🕸️ 双链星图</button>
+          <button type="button" class="seg-pill-btn" data-tab="ask" onclick="switchTab('ask')">💬 证据问答</button>
+        </div>
+        <div class="btn-group">
+          <button type="button" class="ghost-dark" onclick="runDream(this)">🌙 Dream 归纳</button>
+        </div>
+      </div>
       <div class="graph-toolbar-card">
         <div class="graph-row">
           <div class="btn-group" style="flex:1;min-width:260px;">
@@ -1433,8 +1776,18 @@
       </div>
     </section>
 
-    <!-- TAB 5: ASK & TRACE -->
+    <!-- TAB 5C: ASK & TRACE -->
     <section id="panel-ask" class="panel">
+      <div class="summary-header" style="flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+        <div class="seg-pill-bar">
+          <button type="button" class="seg-pill-btn" data-tab="memories" onclick="switchTab('memories')">🗂️ 记忆库</button>
+          <button type="button" class="seg-pill-btn" data-tab="graph" onclick="switchTab('graph')">🕸️ 双链星图</button>
+          <button type="button" class="seg-pill-btn active" data-tab="ask" onclick="switchTab('ask')">💬 证据问答</button>
+        </div>
+        <div class="btn-group">
+          <button type="button" class="ghost-dark" onclick="exportMarkdown(this)">📂 导出 Markdown</button>
+        </div>
+      </div>
       <div class="two-col">
         <div class="card-box">
           <h3>💬 结合记忆与原话的证据问答 (`/ask`)</h3>
@@ -1532,7 +1885,7 @@
         <h2>TASKS · 待办流</h2>
         <div class="timeline-tabs">
           <button type="button" class="timeline-tab active" id="tlTabTodo" onclick="setTimelineTab('todo')">待办 (<span id="tlCntTodo">0</span>)</button>
-          <button type="button" class="timeline-tab" id="tlTabSup" onclick="setTimelineTab('sup')">监督 (<span id="tlCntSup">0</span>)</button>
+          <button type="button" class="timeline-tab" id="tlTabSup" data-module-toggle="supervision" onclick="setTimelineTab('sup')">监督 (<span id="tlCntSup">0</span>)</button>
           <button type="button" class="timeline-tab" id="tlTabDone" onclick="setTimelineTab('done')">已完 (<span id="tlCntDone">0</span>)</button>
         </div>
       </div>
@@ -1827,10 +2180,45 @@
     </div>
   </div>
 
+  <!-- Appearance Theme Gallery & Anti-Bloat Module Toggles Modal -->
+  <div class="modal-backdrop" id="prefsModal" onclick="if(event.target===this) closePrefsModal()">
+    <div class="duodo-sheet" style="max-width:640px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:0 4px;">
+        <strong style="font-size:15.5px;">🎨 外观主题画廊 & 🧩 防臃肿模块开关</strong>
+        <button type="button" onclick="closePrefsModal()" style="border-radius:999px;padding:4px 12px;font-size:12px;">完成</button>
+      </div>
+
+      <div class="duodo-card" style="display:grid;gap:10px;">
+        <div>
+          <div style="font-weight:700;font-size:14px;">🎨 精选纯矢量外观主题（跨 Web / macOS / iOS 同步）</div>
+          <div style="font-size:11.5px;color:var(--muted);">零大图膨胀（&lt;10KB 纯 CSS Token + 矢量微插画），一键实时换肤</div>
+        </div>
+        <div class="theme-gallery-grid" id="themeGalleryGrid"></div>
+      </div>
+
+      <div class="duodo-card" style="display:grid;gap:8px;">
+        <div>
+          <div style="font-weight:700;font-size:14px;">🧩 可插拔模块管理（Feature Toggles）</div>
+          <div style="font-size:11.5px;color:var(--muted);">关闭暂时不用的功能后，对应入口从导航栏与顶栏彻底隐身，零视觉干扰</div>
+        </div>
+        <div id="moduleTogglesList" style="display:grid;gap:6px;"></div>
+      </div>
+
+      <div class="duodo-card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div style="font-size:12.5px;color:var(--muted);">📚 知识库与睡眠归纳快捷操作</div>
+        <div class="btn-group">
+          <button type="button" onclick="exportMarkdown(this)">📂 导出 Markdown</button>
+          <button type="button" onclick="syncMarkdown(this)">🔄 同步外部编辑</button>
+          <button type="button" onclick="runDream(this)">🌙 Dream 归纳</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
   <script>
-    let currentTaskView = 'matrix';
+    let currentTaskView = 'overview';
     let cachedTasksById = {};
     let editingMemoryId = null;
     let editingVersion = null;
@@ -1946,17 +2334,26 @@
     }
 
     function switchTab(name, btn, opts) {
-      const targetBtn = btn || document.querySelector(`.tab-btn[data-tab="${name}"]`);
       const targetPanel = document.getElementById(`panel-${name}`);
       if (!targetPanel) return;
+      const railKey = (name === 'graph' || name === 'ask') ? 'memories' : name;
+      const targetBtn = document.querySelector(`#mainTabs .tab-btn[data-tab="${railKey}"]`) || btn || document.querySelector(`.tab-btn[data-tab="${name}"]`);
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-      if (targetBtn) targetBtn.classList.add('active');
+      if (targetBtn && targetBtn.classList.contains('tab-btn')) targetBtn.classList.add('active');
       targetPanel.classList.add('active');
+      if (name === 'memories' || name === 'graph' || name === 'ask') {
+        targetPanel.querySelectorAll('.seg-pill-btn[data-tab]').forEach(sb => {
+          sb.classList.toggle('active', sb.getAttribute('data-tab') === name);
+        });
+      }
       if (!opts?.preserveScroll) window.scrollTo(0, 0);
 
       const handleErr = (err) => showToast(`加载失败: ${err?.message || err}`);
       if (name === 'tasks') loadTasks().catch(handleErr);
+      if (name === 'calendar') renderCalendarPanel();
+      if (name === 'focus' && typeof loadFocusCenter === 'function') loadFocusCenter().catch(handleErr);
+      if (name === 'notes') loadNotesPanel().catch(handleErr);
       if (name === 'supervision') loadSupervisionBoard().catch(handleErr);
       if (name === 'memories') loadMemories().catch(handleErr);
       if (name === 'graph') loadGraph().catch(handleErr);
@@ -1966,10 +2363,19 @@
 
     function setTaskView(mode) {
       currentTaskView = mode;
+      const ovBtn = document.getElementById('viewBtnOverview');
+      if (ovBtn) ovBtn.classList.toggle('active', mode === 'overview');
       document.getElementById('viewBtnMatrix').classList.toggle('active', mode === 'matrix');
       document.getElementById('viewBtnList').classList.toggle('active', mode === 'list');
-      document.getElementById('matrixContainer').style.display = mode === 'matrix' ? 'grid' : 'none';
+      const ovSec = document.getElementById('todoOverviewSection');
+      if (ovSec) ovSec.style.display = mode === 'overview' ? 'block' : 'none';
+      const showMatrix = (mode === 'overview' || mode === 'matrix');
+      document.getElementById('matrixContainer').style.display = showMatrix ? 'grid' : 'none';
       document.getElementById('listContainer').style.display = mode === 'list' ? 'flex' : 'none';
+      const subHdr = document.getElementById('todoSubHeading');
+      if (subHdr) {
+        subHdr.textContent = mode === 'list' ? '☰ 多维优先级排序列表' : '田 艾森豪威尔四象限看板';
+      }
     }
 
     function renderTaskCard(t) {
@@ -2259,6 +2665,13 @@
       document.getElementById('listContainer').innerHTML = sorted.length
         ? sorted.map(renderTaskCard).join('')
         : `<div class="card-box" style="color:var(--muted);">暂无符合条件的待办事项</div>`;
+      renderCountdownCapsule(sorted);
+      if (document.getElementById('panel-calendar')?.classList.contains('active')) {
+        renderCalendarPanel();
+      }
+      if (typeof refreshFocusTaskSelector === 'function') {
+        refreshFocusTaskSelector();
+      }
     }
 
     function toggleCardSubtaskEl(el) {
@@ -4712,6 +5125,344 @@
       if (hdr) new ResizeObserver(syncHeaderHeight).observe(hdr);
     }
 
+    // ---------------- Anti-Bloat Theme Gallery, Feature Toggles, Calendar & Notes ----------------
+    const THEME_VECTOR_SVGS = {
+      classic: `<svg width="260" height="54" viewBox="0 0 260 54" fill="none"><circle cx="215" cy="18" r="28" fill="#3b82f6" fill-opacity="0.10"/><circle cx="242" cy="38" r="22" fill="#8b5cf6" fill-opacity="0.10"/></svg>`,
+      westlake: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><path d="M20 56 Q90 14 170 42 T300 22 L300 56 Z" fill="#0d9488" fill-opacity="0.18"/><path d="M90 56 Q150 28 220 46 T300 36 L300 56 Z" fill="#0284c7" fill-opacity="0.16"/><path d="M168 48 Q192 34 216 48" stroke="#0f766e" stroke-width="2" stroke-opacity="0.45" fill="none"/></svg>`,
+      autumn: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><path d="M30 56 Q110 18 190 44 T300 20 L300 56 Z" fill="#ea580c" fill-opacity="0.18"/><circle cx="236" cy="18" r="11" fill="#f59e0b" fill-opacity="0.32"/><path d="M120 56 Q190 30 300 40 L300 56 Z" fill="#d97706" fill-opacity="0.16"/></svg>`,
+      golden_gate: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><circle cx="244" cy="24" r="16" fill="#fb7185" fill-opacity="0.28"/><path d="M150 54 L150 16 M220 54 L220 16 M115 44 Q150 20 185 40 Q220 20 255 44 M110 44 L265 44" stroke="#dc2626" stroke-width="2" stroke-opacity="0.42" fill="none"/></svg>`,
+      snow_peak: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><polygon points="110,56 162,14 214,56" fill="#0284c7" fill-opacity="0.18"/><polygon points="162,14 178,27 160,30 148,26" fill="#ffffff" fill-opacity="0.85"/><polygon points="182,56 232,18 286,56" fill="#4f46e5" fill-opacity="0.18"/></svg>`,
+      deep_forest: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><circle cx="190" cy="14" r="1.6" fill="#a7f3d0"/><circle cx="226" cy="10" r="1.2" fill="#bae6fd"/><circle cx="258" cy="18" r="2" fill="#6ee7b7"/><polygon points="172,56 184,26 196,56" fill="#10b981" fill-opacity="0.32"/><polygon points="204,56 218,20 232,56" fill="#059669" fill-opacity="0.40"/><polygon points="238,56 250,28 262,56" fill="#34d399" fill-opacity="0.28"/></svg>`,
+    };
+
+    const DEFAULT_THEMES_CATALOG = [
+      { id: 'classic', name: '纯净晴空', subtitle: '清爽高对比白蓝 · 默认极简', primary: '#3b82f6', accent: '#7c3aed', bg: '#f4f6fb', is_dark: false },
+      { id: 'westlake', name: '西湖烟雨青', subtitle: '江南青瓷碧水 · 远山断桥微插画', primary: '#0d9488', accent: '#0284c7', bg: '#eff8f6', is_dark: false },
+      { id: 'autumn', name: '秋林枫叶橙', subtitle: '暖阳银杏琥珀 · 层林尽染微插画', primary: '#ea580c', accent: '#d97706', bg: '#fdf6f0', is_dark: false },
+      { id: 'golden_gate', name: '金门落日红', subtitle: '朱砂海湾霞光 · 长桥剪影微插画', primary: '#dc2626', accent: '#e11d48', bg: '#fef4f4', is_dark: false },
+      { id: 'snow_peak', name: '雪山冰川蓝', subtitle: '凛冽日照雪峰 · 冰川折线微插画', primary: '#0284c7', accent: '#4f46e5', bg: '#eff6ff', is_dark: false },
+      { id: 'deep_forest', name: '深林暗夜', subtitle: '沉浸护眼松石暗色 · 星夜松影微插画', primary: '#10b981', accent: '#38bdf8', bg: '#0b1512', is_dark: true },
+    ];
+
+    const MODULE_TOGGLE_DEFS = [
+      { key: 'calendar', icon: '📅', title: '日历视图', desc: '周/月排期投影，关闭后从左侧/底部 5 栏导航隐身' },
+      { key: 'focus', icon: '🍅', title: '番茄专注中心', desc: '番茄倒计时 / 正计时与专注时间轴，关闭后从主导航隐身' },
+      { key: 'notes', icon: '📝', title: '随记（备忘 & 日记）', desc: '轻量图文随手记入口，关闭后从主导航隐身' },
+      { key: 'journal', icon: '📖', title: '每日心情日记子模块', desc: '随记页内一日一页心情小结开关' },
+      { key: 'countdown', icon: '⏳', title: '倒数纪念日胶囊', desc: '待办页顶部临期倒数日胶囊提醒条' },
+      { key: 'supervision', icon: '👥', title: '好友监工看板', desc: '多人协作与督促互动，关闭后从顶栏与右侧待办流隐身' },
+    ];
+
+    let appPreferences = {
+      theme_id: localStorage.getItem('tm_theme_id') || 'classic',
+      enabled_modules: (() => {
+        try {
+          return {
+            calendar: true, focus: true, notes: true, journal: true, countdown: true, supervision: true,
+            ...(JSON.parse(localStorage.getItem('tm_enabled_modules') || '{}') || {})
+          };
+        } catch (e) {
+          return { calendar: true, focus: true, notes: true, journal: true, countdown: true, supervision: true };
+        }
+      })(),
+      pomodoro_minutes: Number(localStorage.getItem('tm_pomodoro_minutes') || 25) || 25,
+      themes_catalog: DEFAULT_THEMES_CATALOG,
+    };
+
+    function applyThemeDOM(themeId) {
+      const validId = THEME_VECTOR_SVGS[themeId] ? themeId : 'classic';
+      appPreferences.theme_id = validId;
+      document.documentElement.setAttribute('data-theme', validId);
+      localStorage.setItem('tm_theme_id', validId);
+      const artEl = document.getElementById('headerThemeArt');
+      if (artEl) artEl.innerHTML = THEME_VECTOR_SVGS[validId] || '';
+      const metaTheme = document.querySelector('meta[name="theme-color"]');
+      if (metaTheme) {
+        metaTheme.setAttribute('content', validId === 'deep_forest' ? '#0b1512' : '#0f172a');
+      }
+    }
+
+    function applyModuleTogglesDOM() {
+      const mods = appPreferences.enabled_modules || {};
+      localStorage.setItem('tm_enabled_modules', JSON.stringify(mods));
+      document.querySelectorAll('[data-module-toggle]').forEach(el => {
+        const modKey = el.getAttribute('data-module-toggle');
+        if (!modKey) return;
+        const enabled = mods[modKey] !== false;
+        if (modKey === 'countdown') {
+          if (!enabled) el.style.display = 'none';
+          else renderCountdownCapsule(lastLoadedTasks);
+        } else {
+          el.style.display = enabled ? '' : 'none';
+        }
+      });
+      if (mods.supervision === false && currentTimelineTab === 'sup') {
+        setTimelineTab('todo');
+      }
+      const activePanel = document.querySelector('.panel.active');
+      if (activePanel && !activeShareToken) {
+        const pId = activePanel.id.replace('panel-', '');
+        if ((pId === 'calendar' && mods.calendar === false) ||
+            (pId === 'focus' && mods.focus === false) ||
+            (pId === 'notes' && mods.notes === false) ||
+            (pId === 'supervision' && mods.supervision === false)) {
+          switchTab('tasks');
+        }
+      }
+    }
+
+    applyThemeDOM(appPreferences.theme_id);
+    applyModuleTogglesDOM();
+
+    async function syncPreferencesFromServer() {
+      const res = await apiGet('/api/preferences');
+      if (!res || res.error) return;
+      appPreferences = {
+        ...appPreferences,
+        ...res,
+        enabled_modules: { ...appPreferences.enabled_modules, ...(res.enabled_modules || {}) },
+        themes_catalog: res.themes_catalog || DEFAULT_THEMES_CATALOG,
+      };
+      if (res.pomodoro_minutes) {
+        localStorage.setItem('tm_pomodoro_minutes', String(res.pomodoro_minutes));
+      }
+      applyThemeDOM(appPreferences.theme_id);
+      applyModuleTogglesDOM();
+      if (document.getElementById('prefsModal')?.classList.contains('open')) {
+        renderPrefsModalContent();
+      }
+    }
+
+    function openPrefsModal() {
+      renderPrefsModalContent();
+      document.getElementById('prefsModal').classList.add('open');
+    }
+
+    function closePrefsModal() {
+      document.getElementById('prefsModal').classList.remove('open');
+    }
+
+    function renderPrefsModalContent() {
+      const cat = appPreferences.themes_catalog || DEFAULT_THEMES_CATALOG;
+      const curTheme = appPreferences.theme_id || 'classic';
+      const grid = document.getElementById('themeGalleryGrid');
+      if (grid) {
+        grid.innerHTML = cat.map(t => {
+          const sel = t.id === curTheme;
+          return `
+            <button type="button" class="theme-card-item ${sel ? 'selected' : ''}" onclick="selectAppTheme('${esc(t.id)}')">
+              <div class="theme-card-preview" style="background:linear-gradient(135deg, ${esc(t.primary)} 0%, ${esc(t.accent)} 100%);">
+                <span style="background:rgba(255,255,255,0.92);color:#0f172a;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px;">${t.is_dark ? '🌙 暗色' : '☀️ 亮色'}</span>
+                ${sel ? '<span style="background:#fff;color:#0f172a;font-size:11px;font-weight:800;width:20px;height:20px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;">✓</span>' : ''}
+              </div>
+              <div style="font-weight:700;font-size:13px;color:var(--heading);">${esc(t.name)}</div>
+              <div style="font-size:11px;color:var(--muted);line-height:1.35;">${esc(t.subtitle)}</div>
+            </button>
+          `;
+        }).join('');
+      }
+
+      const modBox = document.getElementById('moduleTogglesList');
+      const mods = appPreferences.enabled_modules || {};
+      if (modBox) {
+        modBox.innerHTML = MODULE_TOGGLE_DEFS.map(m => {
+          const checked = mods[m.key] !== false;
+          return `
+            <div class="setting-row" style="padding:7px 2px;">
+              <div>
+                <div class="setting-label">${m.icon} ${esc(m.title)}</div>
+                <div style="font-size:11.5px;color:var(--muted);">${esc(m.desc)}</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleAppModule('${esc(m.key)}', this.checked)" />
+                <span class="slider"></span>
+              </label>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    async function selectAppTheme(themeId) {
+      applyThemeDOM(themeId);
+      renderPrefsModalContent();
+      const res = await apiPost('/api/preferences', { theme_id: themeId });
+      if (res && !res.error) {
+        const meta = (appPreferences.themes_catalog || DEFAULT_THEMES_CATALOG).find(x => x.id === themeId);
+        showToast(`🎨 已切换主题：${meta ? meta.name : themeId}（已跨端同步）`);
+      }
+    }
+
+    async function toggleAppModule(modKey, enabled) {
+      appPreferences.enabled_modules = { ...(appPreferences.enabled_modules || {}), [modKey]: Boolean(enabled) };
+      applyModuleTogglesDOM();
+      const res = await apiPost('/api/preferences', { module_key: modKey, enabled: Boolean(enabled) });
+      if (res && !res.error) {
+        const def = MODULE_TOGGLE_DEFS.find(x => x.key === modKey);
+        showToast(`${enabled ? '✅ 已启用' : '🙈 已隐藏'}「${def ? def.title : modKey}」`);
+      }
+    }
+
+    function renderCountdownCapsule(tasks) {
+      const strip = document.getElementById('todoCountdownStrip');
+      if (!strip) return;
+      if (appPreferences.enabled_modules?.countdown === false) {
+        strip.style.display = 'none';
+        return;
+      }
+      const nowMs = Date.now();
+      const upcoming = (tasks || [])
+        .filter(t => t.payload?.task_status !== 'done' && t.payload?.due_at)
+        .map(t => ({ task: t, dueMs: Date.parse(t.payload.due_at) }))
+        .filter(x => !Number.isNaN(x.dueMs))
+        .sort((a, b) => a.dueMs - b.dueMs);
+      if (!upcoming.length) {
+        strip.style.display = 'none';
+        return;
+      }
+      const nearest = upcoming[0];
+      const diffDays = Math.ceil((nearest.dueMs - nowMs) / 86400000);
+      const badgeTxt = diffDays < 0 ? `已逾期 ${Math.abs(diffDays)} 天` : (diffDays === 0 ? '就在今天' : `还有 ${diffDays} 天`);
+      strip.style.display = 'flex';
+      strip.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+          <span class="countdown-capsule">⏳ ${esc(badgeTxt)}</span>
+          <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;" onclick="openTaskSheet('${esc(nearest.task.memory_id)}')">${esc(nearest.task.title)}</span>
+        </div>
+        <span style="font-size:11.5px;color:var(--muted);">📅 ${esc(nearest.task.payload.due_at.slice(0, 10))} · 共 ${upcoming.length} 项排期</span>
+      `;
+    }
+
+    // Calendar Month Projection State
+    let _calYear = new Date().getFullYear();
+    let _calMonth = new Date().getMonth(); // 0-11
+    let _calSelectedDate = fmtLocalYMD(new Date());
+
+    function shiftCalendarMonth(delta) {
+      if (delta === 0) {
+        const now = new Date();
+        _calYear = now.getFullYear();
+        _calMonth = now.getMonth();
+        _calSelectedDate = fmtLocalYMD(now);
+      } else {
+        const d = new Date(_calYear, _calMonth + delta, 1);
+        _calYear = d.getFullYear();
+        _calMonth = d.getMonth();
+      }
+      renderCalendarPanel();
+    }
+
+    function selectCalendarDate(ymd) {
+      _calSelectedDate = ymd;
+      renderCalendarPanel();
+    }
+
+    function openTaskSheetForSelectedDate() {
+      openTaskSheet(null);
+      if (_calSelectedDate) {
+        document.getElementById('tsDate').value = _calSelectedDate;
+      }
+    }
+
+    function renderCalendarPanel() {
+      const grid = document.getElementById('calMonthGrid');
+      if (!grid) return;
+      document.getElementById('calMonthTitle').textContent = `${_calYear} 年 ${_calMonth + 1} 月`;
+      document.getElementById('calSelectedDateLabel').textContent = `选中：${_calSelectedDate}`;
+
+      const byDate = {};
+      for (const t of (lastLoadedTasks || [])) {
+        const due = t.payload?.due_at ? t.payload.due_at.slice(0, 10) : '';
+        if (due) {
+          if (!byDate[due]) byDate[due] = [];
+          byDate[due].push(t);
+        }
+      }
+
+      const weekdays = ['一', '二', '三', '四', '五', '六', '日'];
+      let html = weekdays.map(w => `<div class="cal-weekday-hdr">周${w}</div>`).join('');
+
+      const firstDay = new Date(_calYear, _calMonth, 1);
+      const startOffset = (firstDay.getDay() + 6) % 7; // Mon=0..Sun=6
+      const startDate = new Date(_calYear, _calMonth, 1 - startOffset);
+      const todayYmd = fmtLocalYMD(new Date());
+
+      for (let i = 0; i < 42; i++) {
+        const cur = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + i);
+        const ymd = fmtLocalYMD(cur);
+        const isOther = cur.getMonth() !== _calMonth;
+        const isToday = ymd === todayYmd;
+        const isSel = ymd === _calSelectedDate;
+        const dayTasks = byDate[ymd] || [];
+        const dots = dayTasks.slice(0, 2).map(t => `<div class="cal-task-dot">${esc(t.title)}</div>`).join('');
+        const more = dayTasks.length > 2 ? `<div style="font-size:10px;color:var(--muted);">+${dayTasks.length - 2} 项</div>` : '';
+        html += `
+          <div class="cal-day-cell ${isOther ? 'is-other' : ''} ${isToday ? 'is-today' : ''} ${isSel ? 'is-selected' : ''}" onclick="selectCalendarDate('${ymd}')">
+            <div style="display:flex;justify-content:space-between;font-size:11.5px;font-weight:700;">
+              <span>${cur.getDate()}</span>
+              ${dayTasks.length ? `<span style="color:var(--primary);font-size:10.5px;">${dayTasks.length}</span>` : ''}
+            </div>
+            ${dots}
+            ${more}
+          </div>
+        `;
+      }
+      grid.innerHTML = html;
+
+      const selTasks = byDate[_calSelectedDate] || [];
+      document.getElementById('calDayAgendaTitle').textContent = `📅 ${_calSelectedDate} 待办排期 (${selTasks.length} 项)`;
+      document.getElementById('calDayAgendaList').innerHTML = selTasks.length
+        ? selTasks.map(renderTaskCard).join('')
+        : `<div style="color:var(--muted);font-size:13px;padding:14px 4px;">当日暂无排期事项，点击右上角「+ 在选中日排期」快速添加。</div>`;
+    }
+
+    async function loadNotesPanel() {
+      const q = (document.getElementById('notesSearchInput')?.value || '').trim();
+      const res = await apiGet(`/api/notes/list?limit=50${q ? '&q=' + encodeURIComponent(q) : ''}`);
+      const box = document.getElementById('notesStreamList');
+      if (!box) return;
+      if (res.error) {
+        box.innerHTML = `<div class="card-box" style="color:#dc2626;">加载随记失败: ${esc(res.error)}</div>`;
+        return;
+      }
+      const notes = res.notes || [];
+      box.innerHTML = notes.length ? notes.map(n => `
+        <div class="mem-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span class="tag">📝 ${esc(n.source_type)} · v${n.revision}</span>
+            <span style="font-size:11.5px;color:var(--muted);">🕒 ${esc((n.event_time || n.created_at || '').slice(0, 19).replace('T', ' '))}</span>
+          </div>
+          <div style="font-size:13.5px;white-space:pre-wrap;line-height:1.6;">${esc(n.content)}</div>
+          <div class="card-actions" style="justify-content:flex-end;">
+            <button type="button" style="color:#b91c1c;font-size:12px;" onclick="forgetNoteFromStream('${esc(n.note_id)}')">🗑️ 遗忘原文并级联清理派生记忆</button>
+          </div>
+        </div>
+      `).join('') : `<div class="card-box" style="color:var(--muted);">暂无随记记录，在上方输入框写下第一条灵感吧。</div>`;
+    }
+
+    async function submitNoteFromNotesTab(btn) {
+      const el = document.getElementById('notesEditorInput');
+      const content = (el?.value || '').trim();
+      if (!content) return showToast('请输入随记内容');
+      await withBtnBusy(btn, '⏳ 保存中', async () => {
+        const res = await apiPost('/api/notes/record', { content });
+        if (res.error) return showToast(`保存失败: ${res.error}`);
+        el.value = '';
+        showToast(res.extraction_status === 'queued' ? '⚡ 随记已秒存，AI 正在后台提炼关联记忆' : '✅ 随记已保存');
+        await loadNotesPanel();
+        loadTasks();
+      });
+    }
+
+    async function forgetNoteFromStream(noteId) {
+      if (!confirm('确认遗忘该条随记？关联的单源派生记忆与向量也将同步清理。')) return;
+      const res = await apiPost('/api/notes/forget', { note_id: noteId });
+      if (res.error) return showToast(`遗忘失败: ${res.error}`);
+      showToast('🧹 已遗忘该随记并级联清理派生记忆');
+      await loadNotesPanel();
+      loadTasks();
+    }
+
     async function reloadAll() {
       try {
         await syncAuthStatus();
@@ -4720,18 +5471,24 @@
           return;
         }
         await flushOfflineQueue();
-        const health = await apiGet('/api/health');
+        const [health] = await Promise.all([
+          apiGet('/api/health'),
+          syncPreferencesFromServer().catch(() => {}),
+        ]);
         document.getElementById('engineStatus').textContent =
           `Vector: ${health.vector_backend} | LLM: ${health.llm_provider}`;
       } catch (e) {
         document.getElementById('engineStatus').textContent = '📴 离线缓存模式';
       }
       if (activeShareToken) {
-        loadSupervisionBoard().catch(() => {});
+        switchTab('supervision', null, { preserveScroll: true });
         return;
       }
       await loadTasks();
       checkTaskReminders();
+      if (document.getElementById('panel-calendar')?.classList.contains('active')) renderCalendarPanel();
+      if (document.getElementById('panel-focus')?.classList.contains('active') && typeof loadFocusCenter === 'function') loadFocusCenter();
+      if (document.getElementById('panel-notes')?.classList.contains('active')) loadNotesPanel();
       if (document.getElementById('panel-supervision').classList.contains('active')) loadSupervisionBoard();
       if (document.getElementById('panel-memories').classList.contains('active')) loadMemories();
       if (document.getElementById('panel-graph').classList.contains('active')) loadGraph();
@@ -4747,14 +5504,12 @@
       const qSpace = params.get('space_id');
       if (qSpace) document.getElementById('spaceInput').value = qSpace;
       const qTab = params.get('tab');
-      if (qTab) {
-        const btn = document.querySelector(`.tab-btn[data-tab="${qTab}"]`);
-        if (btn) {
-          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-          document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-          btn.classList.add('active');
-          document.getElementById(`panel-${qTab}`)?.classList.add('active');
-        }
+      if (qTab && document.getElementById(`panel-${qTab}`)) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        const railKey = (qTab === 'graph' || qTab === 'ask') ? 'memories' : qTab;
+        document.querySelector(`#mainTabs .tab-btn[data-tab="${railKey}"]`)?.classList.add('active');
+        document.getElementById(`panel-${qTab}`)?.classList.add('active');
       }
     })();
 
@@ -4763,7 +5518,7 @@
     let _syncCheckInFlight = false;
 
     function isAnyEditorModalOpen() {
-      const ids = ['taskSheetOverlay', 'memoryDetailOverlay', 'authOverlay', 'focusOverlay'];
+      const ids = ['taskSheetModal', 'detailModal', 'authModal', 'prefsModal', 'focusOverlay'];
       return ids.some(id => {
         const el = document.getElementById(id);
         return el && el.classList.contains('open');

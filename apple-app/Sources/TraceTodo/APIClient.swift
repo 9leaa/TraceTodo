@@ -205,6 +205,28 @@ struct TraceMemoryAPIClient {
         try await get("/api/sync/state")
     }
 
+    func fetchPreferences() async throws -> SpacePreferencesResponse {
+        try await get("/api/preferences")
+    }
+
+    func updatePreferences(body: [String: Any]) async throws -> SpacePreferencesResponse {
+        let data = try await postRaw("/api/preferences", body: body)
+        return try JSONDecoder().decode(SpacePreferencesResponse.self, from: data)
+    }
+
+    func fetchNotesList(query: String = "", limit: Int = 50) async throws -> RawNoteListResponse {
+        var items = [URLQueryItem(name: "limit", value: String(limit))]
+        let clean = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !clean.isEmpty {
+            items.append(URLQueryItem(name: "q", value: clean))
+        }
+        return try await get("/api/notes/list", queryItems: items)
+    }
+
+    func forgetNote(noteId: String) async throws {
+        try await postRaw("/api/notes/forget", body: ["note_id": noteId])
+    }
+
     func refreshTaskStatuses() async throws -> TaskStatusRefreshResponse {
         let data = try await postRaw("/api/tasks/refresh-status", body: [:])
         return try JSONDecoder().decode(TaskStatusRefreshResponse.self, from: data)
