@@ -928,6 +928,42 @@ struct IngestStatusResponse: Codable {
     }
 }
 
+struct SyncStateResponse: Codable {
+    let spaceId: String
+    let syncVersion: Int
+    let lastReason: String?
+    let updatedAt: String?
+    let pendingIngest: Int?
+    let serverTime: String?
+    let beijingDate: String?
+
+    enum CodingKeys: String, CodingKey {
+        case spaceId = "space_id"
+        case syncVersion = "sync_version"
+        case lastReason = "last_reason"
+        case updatedAt = "updated_at"
+        case pendingIngest = "pending_ingest"
+        case serverTime = "server_time"
+        case beijingDate = "beijing_date"
+    }
+}
+
+struct TaskStatusRefreshResponse: Codable {
+    let checkedSpaces: Int?
+    let rolledCount: Int?
+    let refreshedCount: Int?
+    let syncVersion: Int?
+    let beijingDate: String?
+
+    enum CodingKeys: String, CodingKey {
+        case checkedSpaces = "checked_spaces"
+        case rolledCount = "rolled_count"
+        case refreshedCount = "refreshed_count"
+        case syncVersion = "sync_version"
+        case beijingDate = "beijing_date"
+    }
+}
+
 struct SupervisionShareResponse: Codable {
     let shareId: String
     let shareToken: String

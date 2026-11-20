@@ -7,13 +7,22 @@ import WidgetKit
 @MainActor
 final class TodoStore: ObservableObject {
     @Published var serverURL: String {
-        didSet { UserDefaults.standard.set(serverURL, forKey: "tm_server_url") }
+        didSet {
+            UserDefaults.standard.set(serverURL, forKey: "tm_server_url")
+            syncSharedWidgetConfig()
+        }
     }
     @Published var spaceId: String {
-        didSet { UserDefaults.standard.set(spaceId, forKey: "tm_space_id") }
+        didSet {
+            UserDefaults.standard.set(spaceId, forKey: "tm_space_id")
+            syncSharedWidgetConfig()
+        }
     }
     @Published var authToken: String {
-        didSet { UserDefaults.standard.set(authToken, forKey: "tm_auth_token") }
+        didSet {
+            UserDefaults.standard.set(authToken, forKey: "tm_auth_token")
+            syncSharedWidgetConfig()
+        }
     }
     @Published var sortBy: TaskSortOption = .priority
     @Published var includeDone: Bool = false
@@ -26,8 +35,11 @@ final class TodoStore: ObservableObject {
     @Published private(set) var lastConnectionError: String?
     @Published private(set) var isBusy: Bool = false
     @Published private(set) var pendingIngestCount: Int = 0
+    @Published private(set) var lastKnownSyncVersion: Int = -1
+    @Published private(set) var lastKnownBeijingDate: String = ""
     @Published var statusBanner: String?
     private var ingestPollTask: Task<Void, Never>?
+    private var autoSyncTask: Task<Void, Never>?
 
     @Published private(set) var authRequired: Bool = false
     @Published private(set) var allowRegistration: Bool = true
@@ -41,12 +53,18 @@ final class TodoStore: ObservableObject {
     @Published var activeFocusTask: TaskItemModel?
 
     static var defaultServerURL: String {
-        "http://127.0.0.1:18090"
+        SharedWidgetBridge.cloudServerURL
+    }
+
+    static var localServerURL: String {
+        SharedWidgetBridge.localServerURL
     }
 
     init() {
         let savedURL = (UserDefaults.standard.string(forKey: "tm_server_url") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if savedURL.isEmpty {
+        let userExplicitlyPickedEnv = UserDefaults.standard.bool(forKey: "tm_env_user_selected")
+        if savedURL.isEmpty || (!userExplicitlyPickedEnv && savedURL == Self.localServerURL) {
+            // Default to online cloud environment unless user explicitly selected local/custom environment
             self.serverURL = Self.defaultServerURL
             UserDefaults.standard.set(Self.defaultServerURL, forKey: "tm_server_url")
         } else {
@@ -54,7 +72,27 @@ final class TodoStore: ObservableObject {
         }
         self.spaceId = UserDefaults.standard.string(forKey: "tm_space_id") ?? "default"
         self.authToken = UserDefaults.standard.string(forKey: "tm_auth_token") ?? ""
+        syncSharedWidgetConfig()
         loadOfflineState()
+    }
+
+    func switchServerURL(_ newURL: String) {
+        let clean = newURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        UserDefaults.standard.set(true, forKey: "tm_env_user_selected")
+        self.serverURL = clean
+        self.lastKnownSyncVersion = -1
+    }
+
+    func syncSharedWidgetConfig() {
+        let effSpace = (currentUser != nil && currentUser?.isAdmin == false)
+            ? (currentUser?.spaceId ?? spaceId)
+            : spaceId
+        SharedWidgetBridge.saveConfig(
+            serverURL: serverURL,
+            spaceId: effSpace,
+            authToken: authToken
+        )
     }
 
     var isAuthenticated: Bool {
@@ -108,6 +146,7 @@ final class TodoStore: ObservableObject {
     private func saveMatrixCache(_ resp: MatrixResponse) {
         if let data = try? JSONEncoder().encode(resp) {
             try? data.write(to: matrixCacheFile)
+            SharedWidgetBridge.saveMatrixSnapshotData(data)
         }
     }
 
@@ -154,6 +193,14 @@ final class TodoStore: ObservableObject {
             let llm = (health["llm_provider"] as? String) ?? "llm"
             self.engineBadge = "在线 · \(llm)"
             saveMatrixCache(fresh)
+            syncSharedWidgetConfig()
+            if let syncSt = try? await client.fetchSyncState() {
+                self.lastKnownSyncVersion = syncSt.syncVersion
+                self.pendingIngestCount = syncSt.pendingIngest ?? 0
+                if let bjDate = syncSt.beijingDate, !bjDate.isEmpty {
+                    self.lastKnownBeijingDate = bjDate
+                }
+            }
             #if os(iOS)
             WidgetCenter.shared.reloadAllTimelines()
             #endif
@@ -230,6 +277,85 @@ final class TodoStore: ObservableObject {
         savePendingQueue()
         if syncedCount > 0 {
             showBanner("已自动同步 \(syncedCount) 条离线待办")
+        }
+    }
+
+    func startAutoSyncLoop() {
+        guard autoSyncTask == nil else { return }
+        autoSyncTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.autoSyncTask = nil }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                if Task.isCancelled { break }
+                await self.syncIfChanged()
+            }
+        }
+    }
+
+    func stopAutoSyncLoop() {
+        autoSyncTask?.cancel()
+        autoSyncTask = nil
+    }
+
+    func syncIfChanged() async {
+        if needsLoginGate || isPresentingNewTaskSheet || editingTaskTarget != nil {
+            return
+        }
+        do {
+            let st = try await client.fetchSyncState()
+            let newVer = st.syncVersion
+            let bjDate = st.beijingDate ?? ""
+            self.pendingIngestCount = st.pendingIngest ?? 0
+
+            let versionAdvanced = lastKnownSyncVersion >= 0 && newVer > lastKnownSyncVersion
+            let dayRolled = !lastKnownBeijingDate.isEmpty && !bjDate.isEmpty && bjDate != lastKnownBeijingDate
+
+            if lastKnownSyncVersion < 0 {
+                lastKnownSyncVersion = newVer
+            }
+            if !bjDate.isEmpty && lastKnownBeijingDate.isEmpty {
+                lastKnownBeijingDate = bjDate
+            }
+
+            if versionAdvanced || dayRolled {
+                let prevIds = Set((matrix?.sortedTasks ?? []).map(\.memoryId))
+                lastKnownSyncVersion = newVer
+                if !bjDate.isEmpty { lastKnownBeijingDate = bjDate }
+
+                let fresh = try await client.fetchMatrix(sortBy: sortBy, includeDone: includeDone)
+                self.matrix = fresh
+                self.isOnline = true
+                saveMatrixCache(fresh)
+                #if os(iOS)
+                WidgetCenter.shared.reloadAllTimelines()
+                #endif
+                NotificationManager.shared.syncReminders(for: fresh.sortedTasks)
+
+                if dayRolled {
+                    showBanner("🌅 已进入新的一天（\(bjDate)），自动刷新任务到期状态")
+                } else if versionAdvanced {
+                    let newlyArrived = fresh.sortedTasks.filter { !$0.payload.isDone && !prevIds.contains($0.memoryId) }
+                    if !newlyArrived.isEmpty {
+                        NotificationManager.shared.notifyRemoteTasksArrived(newlyArrived)
+                        showBanner("🔄 已自动同步跨端新任务：\(newlyArrived[0].title)")
+                    }
+                }
+            }
+        } catch {
+            // Silent ignore on transient polling errors
+        }
+    }
+
+    func triggerDailyStatusCheck() async {
+        do {
+            let rep = try await client.refreshTaskStatuses()
+            let rolled = rep.rolledCount ?? 0
+            let refreshed = rep.refreshedCount ?? 0
+            showBanner("🔄 到期状态检查完成：顺延 \(rolled) 项，提权刷新 \(refreshed) 项")
+            await refresh()
+        } catch {
+            showBanner("到期检查失败：\(error.localizedDescription)")
         }
     }
 

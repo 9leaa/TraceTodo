@@ -49,12 +49,14 @@ class ChangeService:
         relation_repo: RelationRepository,
         trace_repo: TraceRepository,
         vector_lifecycle: VectorLifecycleService,
+        sync_tracker: Any = None,
     ) -> None:
         self.note_repo = note_repo
         self.memory_repo = memory_repo
         self.relation_repo = relation_repo
         self.trace_repo = trace_repo
         self.vector_lifecycle = vector_lifecycle
+        self.sync_tracker = sync_tracker
 
     def _validate_evidence_permissions(
         self, space_id: str, evidences: tuple[MemoryEvidence, ...]
@@ -101,6 +103,13 @@ class ChangeService:
             self.trace_repo.save_idempotent_result(
                 proposal.space_id, proposal.idempotency_key, proposal_id, result.to_dict()
             )
+        if self.sync_tracker is not None and result.status in (
+            "created",
+            "updated",
+            "applied",
+            "pending_review",
+        ):
+            self.sync_tracker.bump(proposal.space_id, reason=proposal.action)
         return result
 
     def _handle_create(self, proposal_id: str, proposal: ChangeProposal) -> ChangeResult:

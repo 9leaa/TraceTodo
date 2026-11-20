@@ -697,12 +697,47 @@ struct SettingsSyncView: View {
                 }
             }
 
-            Section("Trace-Memory 服务端连接配置") {
-                TextField("服务端地址（iPhone 默认直连云服务器，也支持 HTTPS 域名）", text: $store.serverURL)
+            Section("Trace-Memory 服务端环境与连接") {
+                HStack(spacing: 8) {
+                    Button {
+                        dismissAppKeyboard()
+                        store.switchServerURL(TodoStore.defaultServerURL)
+                        Task { await store.refresh() }
+                    } label: {
+                        Text("☁️ 线上云端")
+                            .font(.caption.bold())
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(store.serverURL == TodoStore.defaultServerURL ? Color.blue : Color.blue.opacity(0.12))
+                            .foregroundStyle(store.serverURL == TodoStore.defaultServerURL ? .white : .blue)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.borderless)
+
+                    Button {
+                        dismissAppKeyboard()
+                        store.switchServerURL(TodoStore.localServerURL)
+                        Task { await store.refresh() }
+                    } label: {
+                        Text("💻 本地环境")
+                            .font(.caption.bold())
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(store.serverURL == TodoStore.localServerURL ? Color.indigo : Color.indigo.opacity(0.12))
+                            .foregroundStyle(store.serverURL == TodoStore.localServerURL ? .white : .indigo)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.borderless)
+
+                    Spacer()
+                }
+
+                TextField("自定义服务端地址（默认线上，也支持本地或 HTTPS 域名）", text: $store.serverURL)
                     .autocorrectionDisabled()
                     .submitLabel(.done)
                     .onSubmit {
                         dismissAppKeyboard()
+                        store.switchServerURL(store.serverURL)
                         Task { await store.refresh() }
                     }
                     #if os(iOS)
@@ -719,23 +754,6 @@ struct SettingsSyncView: View {
                     #if os(iOS)
                     .textInputAutocapitalization(.never)
                     #endif
-
-                if store.serverURL != TodoStore.defaultServerURL {
-                    Button {
-                        dismissAppKeyboard()
-                        store.serverURL = TodoStore.defaultServerURL
-                        Task { await store.refresh() }
-                    } label: {
-                        Text("🌐 恢复默认云服务器地址")
-                            .font(.caption.bold())
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Color.blue.opacity(0.12))
-                            .foregroundStyle(.blue)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.borderless)
-                }
 
                 HStack {
                     Circle()
@@ -758,10 +776,14 @@ struct SettingsSyncView: View {
                 }
             }
 
-            Section("系统提醒权限与离线队列") {
-                Button("请求系统本地通知权限 (UNUserNotificationCenter)") {
-                    NotificationManager.shared.requestPermissionIfNeeded()
+            Section("任务消息通知与每日到期检查") {
+                NotificationSettingsBlock()
+                Button("🔄 立即执行到期状态检查（顺延 + 提权）") {
+                    Task { await store.triggerDailyStatusCheck() }
                 }
+            }
+
+            Section("离线队列与演示数据") {
                 HStack {
                     Text("本地待同步离线记录")
                     Spacer()
@@ -793,6 +815,87 @@ struct SettingsSyncView: View {
             #if os(macOS)
             .frame(minWidth: 560, minHeight: 540)
             #endif
+        }
+    }
+}
+
+private struct NotificationSettingsBlock: View {
+    @EnvironmentObject var store: TodoStore
+    @ObservedObject private var notif = NotificationManager.shared
+    @State private var feedbackText: String = ""
+
+    var body: some View {
+        Group {
+            HStack {
+                Text("系统通知权限状态")
+                Spacer()
+                Text(notif.statusLabel)
+                    .font(.caption.bold())
+                    .foregroundStyle(notif.isSystemDenied ? .red : .blue)
+            }
+
+            Toggle("允许任务消息通知", isOn: $notif.notificationsEnabled)
+                .onChange(of: notif.notificationsEnabled) { _, newVal in
+                    if newVal {
+                        Task {
+                            let ok = await notif.requestPermissionAndReport()
+                            if ok {
+                                notif.syncReminders(for: store.matrix?.sortedTasks ?? [])
+                                feedbackText = "✅ 任务消息通知已开启并同步排程"
+                            } else if notif.isSystemDenied {
+                                feedbackText = "⚠️ 系统通知权限被关闭，请点击下方「前往系统设置」开启"
+                            }
+                        }
+                    } else {
+                        notif.syncReminders(for: store.matrix?.sortedTasks ?? [])
+                        feedbackText = "已暂停本地任务通知"
+                    }
+                }
+
+            Picker("默认提前提醒", selection: $notif.defaultReminderMinutes) {
+                Text("仅手动设置提醒的任务").tag(-1)
+                Text("截止准点提醒").tag(0)
+                Text("提前 5 分钟").tag(5)
+                Text("提前 15 分钟（推荐）").tag(15)
+                Text("提前 30 分钟").tag(30)
+                Text("提前 1 小时").tag(60)
+            }
+            .onChange(of: notif.defaultReminderMinutes) { _, _ in
+                notif.syncReminders(for: store.matrix?.sortedTasks ?? [])
+            }
+
+            Toggle("每日 09:00 待办汇总早报", isOn: $notif.dailyDigestEnabled)
+                .onChange(of: notif.dailyDigestEnabled) { _, _ in
+                    notif.syncReminders(for: store.matrix?.sortedTasks ?? [])
+                }
+
+            Toggle("跨端新同步任务即时提醒", isOn: $notif.notifyNewRemoteTasks)
+
+            HStack(spacing: 12) {
+                Button("🔔 发送 3 秒测试通知") {
+                    Task {
+                        feedbackText = await notif.sendTestNotification()
+                    }
+                }
+                .buttonStyle(.borderless)
+
+                if notif.isSystemDenied {
+                    Button("⚙️ 前往系统设置") {
+                        notif.openSystemNotificationSettings()
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.orange)
+                }
+            }
+
+            if !feedbackText.isEmpty {
+                Text(feedbackText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .onAppear {
+            notif.refreshAuthorizationStatus()
         }
     }
 }

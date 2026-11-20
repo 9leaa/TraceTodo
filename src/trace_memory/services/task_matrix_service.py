@@ -230,6 +230,77 @@ class TaskMatrixService:
                 rolled.append(res.memory.to_dict())
         return rolled
 
+    def refresh_due_task_statuses(
+        self, space_id: str, now: datetime | None = None
+    ) -> list[dict[str, Any]]:
+        """Persist due-date urgency/quadrant escalations & overdue flags for active todo tasks."""
+        ref_now = to_beijing(now) if now is not None else beijing_now()
+        refreshed: list[dict[str, Any]] = []
+        raw_items = self.memory_repo.list_memories(
+            space_id=space_id, memory_type="task", status="active", limit=300
+        )
+        for item in raw_items:
+            p = item.payload
+            if p.get("task_status") != "todo":
+                continue
+            due_at = str(p.get("due_at", "") or "")
+            if not due_at:
+                continue
+            due_dt = parse_iso_datetime(due_at)
+            if due_dt is None:
+                continue
+
+            imp = int(p.get("importance", 3))
+            base_urg = int(p.get("urgency", 3))
+            eff_urg, auto_quad, auto_score = compute_effective_urgency_and_quadrant(
+                imp, base_urg, due_at, now=ref_now, has_blockers=bool(p.get("blockers"))
+            )
+            hours_left = (due_dt - ref_now).total_seconds() / 3600.0
+            is_overdue = hours_left <= 0
+
+            stored_quad = str(p.get("quadrant", auto_quad))
+            stored_score = float(p.get("priority_score", 0.0) or 0.0)
+            target_quad = stored_quad if item.user_locked else auto_quad
+
+            needs_update = (
+                target_quad != stored_quad
+                or abs(auto_score - stored_score) >= 1.5
+                or (is_overdue and "已逾期" not in str(p.get("priority_reason", "")))
+            )
+            if not needs_update:
+                continue
+
+            patch: dict[str, Any] = {
+                "priority_score": auto_score,
+            }
+            if not item.user_locked:
+                patch["quadrant"] = auto_quad
+            if is_overdue:
+                old_r = str(p.get("priority_reason", "")).strip()
+                if "已逾期" not in old_r:
+                    patch["priority_reason"] = f"{old_r}；任务已逾期自动提权".strip("；")
+            elif eff_urg > base_urg:
+                old_r = str(p.get("priority_reason", "")).strip()
+                if "临近截止" not in old_r:
+                    patch["priority_reason"] = f"{old_r}；临近截止自动提权".strip("；")
+
+            res = self.change_service.apply(
+                ChangeProposal(
+                    space_id=space_id,
+                    action="update",
+                    memory_type="task",
+                    target_memory_id=item.memory_id,
+                    expected_version=item.version,
+                    actor_id="daily_due_scheduler",
+                    origin="system_daily_check",
+                    payload=patch,
+                    reason=f"每日到期状态巡检刷新（{ref_now.strftime('%Y-%m-%d %H:%M')}）",
+                )
+            )
+            if res.memory is not None:
+                refreshed.append(res.memory.to_dict())
+        return refreshed
+
     def build_matrix_analysis(
         self,
         space_id: str,

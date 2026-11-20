@@ -19,15 +19,15 @@ enum WidgetQuadrantFilter: String, AppEnum {
 
 struct TraceTodoWidgetConfigIntent: WidgetConfigurationIntent {
     static var title: LocalizedStringResource = "TraceTodo 桌面待办"
-    static var description = IntentDescription("实时展示四象限待办，支持直接在桌面完成任务与切换筛选。")
+    static var description = IntentDescription("实时展示四象限待办，自动读取主 App 配置（默认线上环境），支持桌面打卡完成与锁屏展示。")
 
-    @Parameter(title: "服务端地址", default: "http://127.0.0.1:18090")
+    @Parameter(title: "服务端地址（留空自动跟随主 App）", default: "")
     var serverURL: String
 
-    @Parameter(title: "记忆空间 Space ID", default: "default")
+    @Parameter(title: "记忆空间 Space ID（留空自动跟随主 App）", default: "")
     var spaceId: String
 
-    @Parameter(title: "访问令牌 Token (开启鉴权后填写)", default: "")
+    @Parameter(title: "访问令牌 Token（留空自动跟随主 App）", default: "")
     var authToken: String
 
     @Parameter(title: "显示象限", default: .all)
@@ -180,14 +180,90 @@ enum WidgetAPI {
     static func normalizedBase(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        return trimmed.isEmpty ? "http://127.0.0.1:18090" : trimmed
+        if !trimmed.isEmpty {
+            return trimmed
+        }
+        let shared = SharedWidgetBridge.loadConfig().serverURL
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return shared.isEmpty ? SharedWidgetBridge.cloudServerURL : shared
+    }
+
+    static func resolveConfig(_ config: TraceTodoWidgetConfigIntent) -> (base: String, space: String, token: String) {
+        let shared = SharedWidgetBridge.loadConfig()
+        let base = normalizedBase(config.serverURL)
+        let rawSpace = config.spaceId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let space = rawSpace.isEmpty ? shared.spaceId : rawSpace
+        let rawTok = config.authToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        let token = rawTok.isEmpty ? shared.authToken : rawTok
+        return (base, space.isEmpty ? "default" : space, token)
+    }
+
+    private static func decodeEntry(
+        from data: Data,
+        base: String,
+        space: String,
+        token: String,
+        filter: WidgetQuadrantFilter
+    ) throws -> TraceTodoWidgetEntry {
+        let dto = try JSONDecoder().decode(RawMatrixDTO.self, from: data)
+        let filtered = dto.sortedTasks.filter { t in
+            guard t.payload.taskStatus != "done" else { return false }
+            if filter == .q1 { return t.payload.quadrant == "Q1_do_first" }
+            if filter == .q2 { return t.payload.quadrant == "Q2_schedule" }
+            return true
+        }.map { t -> WidgetTaskRow in
+            let subs = t.payload.subtasks ?? []
+            let prog = subs.isEmpty ? "" : "\(subs.filter(\.done).count)/\(subs.count)"
+            let due = t.payload.dueAt.map { String($0.prefix(10)) } ?? ""
+            return WidgetTaskRow(
+                id: t.memoryId,
+                title: t.title,
+                quadrant: t.payload.quadrant ?? "Q4_eliminate",
+                priorityScore: t.payload.priorityScore ?? 0,
+                dueLabel: due,
+                version: t.version,
+                isOverdue: t.payload.isOverdue ?? false,
+                subtaskProgress: prog
+            )
+        }
+        return TraceTodoWidgetEntry(
+            date: Date(),
+            serverURL: base,
+            spaceId: space,
+            authToken: token,
+            filter: filter,
+            q1Count: dto.summaryCounts.q1,
+            q2Count: dto.summaryCounts.q2,
+            q34Count: dto.summaryCounts.q3 + dto.summaryCounts.q4,
+            totalTodo: dto.summaryCounts.totalTodo,
+            totalDone: dto.summaryCounts.totalDone,
+            overdueCount: dto.summaryCounts.overdue,
+            tasks: filtered,
+            isOffline: false
+        )
+    }
+
+    private static func cachedFallbackEntry(
+        config: TraceTodoWidgetConfigIntent,
+        base: String,
+        space: String,
+        token: String
+    ) -> TraceTodoWidgetEntry {
+        if let cachedData = SharedWidgetBridge.loadMatrixSnapshotData(),
+           let entry = try? decodeEntry(from: cachedData, base: base, space: space, token: token, filter: config.filter) {
+            return entry
+        }
+        return .placeholder(config: config, isOffline: true)
     }
 
     static func fetchEntry(config: TraceTodoWidgetConfigIntent) async -> TraceTodoWidgetEntry {
-        let base = normalizedBase(config.serverURL)
-        let space = config.spaceId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "default" : config.spaceId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolved = resolveConfig(config)
+        let base = resolved.base
+        let space = resolved.space
+        let cleanTok = resolved.token
         guard var comps = URLComponents(string: "\(base)/api/tasks/matrix") else {
-            return .placeholder(config: config, isOffline: true)
+            return cachedFallbackEntry(config: config, base: base, space: space, token: cleanTok)
         }
         comps.queryItems = [
             URLQueryItem(name: "space_id", value: space),
@@ -195,11 +271,10 @@ enum WidgetAPI {
             URLQueryItem(name: "include_done", value: "false")
         ]
         guard let url = comps.url else {
-            return .placeholder(config: config, isOffline: true)
+            return cachedFallbackEntry(config: config, base: base, space: space, token: cleanTok)
         }
         var req = URLRequest(url: url)
-        req.timeoutInterval = 6
-        let cleanTok = config.authToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        req.timeoutInterval = 8
         if !cleanTok.isEmpty {
             req.setValue("Bearer \(cleanTok)", forHTTPHeaderField: "Authorization")
         }
@@ -207,46 +282,12 @@ enum WidgetAPI {
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
             guard let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-                return .placeholder(config: config, isOffline: true)
+                return cachedFallbackEntry(config: config, base: base, space: space, token: cleanTok)
             }
-            let dto = try JSONDecoder().decode(RawMatrixDTO.self, from: data)
-            let filtered = dto.sortedTasks.filter { t in
-                guard t.payload.taskStatus != "done" else { return false }
-                if config.filter == .q1 { return t.payload.quadrant == "Q1_do_first" }
-                if config.filter == .q2 { return t.payload.quadrant == "Q2_schedule" }
-                return true
-            }.map { t -> WidgetTaskRow in
-                let subs = t.payload.subtasks ?? []
-                let prog = subs.isEmpty ? "" : "\(subs.filter(\.done).count)/\(subs.count)"
-                let due = t.payload.dueAt.map { String($0.prefix(10)) } ?? ""
-                return WidgetTaskRow(
-                    id: t.memoryId,
-                    title: t.title,
-                    quadrant: t.payload.quadrant ?? "Q4_eliminate",
-                    priorityScore: t.payload.priorityScore ?? 0,
-                    dueLabel: due,
-                    version: t.version,
-                    isOverdue: t.payload.isOverdue ?? false,
-                    subtaskProgress: prog
-                )
-            }
-            return TraceTodoWidgetEntry(
-                date: Date(),
-                serverURL: base,
-                spaceId: space,
-                authToken: cleanTok,
-                filter: config.filter,
-                q1Count: dto.summaryCounts.q1,
-                q2Count: dto.summaryCounts.q2,
-                q34Count: dto.summaryCounts.q3 + dto.summaryCounts.q4,
-                totalTodo: dto.summaryCounts.totalTodo,
-                totalDone: dto.summaryCounts.totalDone,
-                overdueCount: dto.summaryCounts.overdue,
-                tasks: filtered,
-                isOffline: false
-            )
+            SharedWidgetBridge.saveMatrixSnapshotData(data)
+            return try decodeEntry(from: data, base: base, space: space, token: cleanTok, filter: config.filter)
         } catch {
-            return .placeholder(config: config, isOffline: true)
+            return cachedFallbackEntry(config: config, base: base, space: space, token: cleanTok)
         }
     }
 
@@ -349,6 +390,8 @@ struct TraceTodoWidgetEntryView: View {
             accessoryRectView
         case .accessoryCircular:
             accessoryCircularView
+        case .accessoryInline:
+            accessoryInlineView
         default:
             mediumView
         }
@@ -606,8 +649,20 @@ struct TraceTodoWidgetEntryView: View {
             VStack(spacing: 0) {
                 Text("\(entry.totalTodo)")
                     .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .widgetAccentable()
                 Text("待办")
                     .font(.system(size: 8.5, weight: .medium))
+            }
+        }
+        .widgetURL(URL(string: "tracetodo://overview"))
+    }
+
+    private var accessoryInlineView: some View {
+        Group {
+            if let first = entry.tasks.first {
+                Label("Q1:\(entry.q1Count) · \(first.title)", systemImage: "checkmark.circle")
+            } else {
+                Label("今日待办 \(entry.totalTodo) 项", systemImage: "checkmark.seal")
             }
         }
         .widgetURL(URL(string: "tracetodo://overview"))
@@ -699,18 +754,34 @@ struct TraceTodoWidget: Widget {
             intent: TraceTodoWidgetConfigIntent.self,
             provider: TraceTodoTimelineProvider()
         ) { entry in
-            TraceTodoWidgetEntryView(entry: entry)
-                .containerBackground(.fill.tertiary, for: .widget)
+            TraceTodoWidgetContainer(entry: entry)
         }
         .configurationDisplayName("TraceTodo 四象限待办")
-        .description("实时查看今日四象限待办，支持直接在桌面打卡完成与刷新。")
+        .description("支持锁屏壁纸与桌面展示今日四象限待办，直接打卡完成并自动同步云端。")
         .supportedFamilies([
             .systemSmall,
             .systemMedium,
             .systemLarge,
             .accessoryRectangular,
-            .accessoryCircular
+            .accessoryCircular,
+            .accessoryInline
         ])
+    }
+}
+
+private struct TraceTodoWidgetContainer: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: TraceTodoWidgetEntry
+
+    var body: some View {
+        switch family {
+        case .accessoryCircular, .accessoryRectangular, .accessoryInline:
+            TraceTodoWidgetEntryView(entry: entry)
+                .containerBackground(.clear, for: .widget)
+        default:
+            TraceTodoWidgetEntryView(entry: entry)
+                .containerBackground(.fill.tertiary, for: .widget)
+        }
     }
 }
 

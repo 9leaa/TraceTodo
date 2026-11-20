@@ -29,6 +29,7 @@ enum AppSection: String, CaseIterable, Identifiable {
 
 struct MainContentView: View {
     @EnvironmentObject var store: TodoStore
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selectedSection: AppSection = .overview
     @State private var topCaptureText: String = ""
 
@@ -78,7 +79,27 @@ struct MainContentView: View {
                 .tabItem { Label("设置", systemImage: "gearshape.fill") }
                 .tag(AppSection.settings)
             }
-            .task { await store.refresh() }
+            .task {
+                NotificationManager.shared.refreshAuthorizationStatus()
+                await store.refresh()
+                store.startAutoSyncLoop()
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    NotificationManager.shared.refreshAuthorizationStatus()
+                    store.startAutoSyncLoop()
+                    Task { await store.syncIfChanged() }
+                } else if newPhase == .background {
+                    store.stopAutoSyncLoop()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
+                Task { await store.refresh() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .traceTodoOpenOverview)) { _ in
+                selectedSection = .overview
+                Task { await store.refresh() }
+            }
             .onOpenURL { url in
                 handleDeepLink(url)
             }
@@ -238,7 +259,27 @@ struct MainContentView: View {
             }
             .preferredColorScheme(.light)
             .frame(minWidth: 1120, minHeight: 700)
-            .task { await store.refresh() }
+            .task {
+                NotificationManager.shared.refreshAuthorizationStatus()
+                await store.refresh()
+                store.startAutoSyncLoop()
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    NotificationManager.shared.refreshAuthorizationStatus()
+                    store.startAutoSyncLoop()
+                    Task { await store.syncIfChanged() }
+                } else if newPhase == .background {
+                    store.stopAutoSyncLoop()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
+                Task { await store.refresh() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .traceTodoOpenOverview)) { _ in
+                selectedSection = .overview
+                Task { await store.refresh() }
+            }
             #endif
 
             if let focusTask = store.activeFocusTask {
@@ -484,6 +525,7 @@ struct TraceTodoApp: App {
     @StateObject private var store = TodoStore()
 
     init() {
+        NotificationManager.shared.configureDelegate()
         #if os(macOS)
         NSApplication.shared.setActivationPolicy(.regular)
         #endif

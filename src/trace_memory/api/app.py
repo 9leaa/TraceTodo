@@ -15,7 +15,7 @@ from urllib.parse import parse_qs, urlparse
 try:
     from fastapi import FastAPI, Request, Response
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import HTMLResponse, JSONResponse
+    from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
     _HAS_FASTAPI = True
 except ImportError:  # pragma: no cover
@@ -25,6 +25,7 @@ except ImportError:  # pragma: no cover
     CORSMiddleware = Any  # type: ignore[misc,assignment]
     HTMLResponse = Any  # type: ignore[misc,assignment]
     JSONResponse = Any  # type: ignore[misc,assignment]
+    StreamingResponse = Any  # type: ignore[misc,assignment]
     _HAS_FASTAPI = False
 
 
@@ -314,7 +315,15 @@ class ApiDispatcher:
                     "timezone": "Asia/Shanghai (UTC+8)",
                     "server_time": beijing_now_iso(),
                     "async_ingest_ready": self.container.ingest_worker.is_running,
+                    "daily_scheduler_ready": self.container.daily_scheduler.is_running,
                 }
+
+            if method == "GET" and path == "/api/sync/state":
+                st = self.container.sync_tracker.get_state(space_id)
+                ing = self.container.job_repo.get_space_status(space_id)
+                st["pending_ingest"] = int(ing.get("pending", 0))
+                st["last_completed_at"] = str(ing.get("last_completed_at", ""))
+                return 200, st
 
             if method == "GET" and path == "/api/auth/status":
                 settings = self.container.settings_store.get_all()
@@ -537,6 +546,13 @@ class ApiDispatcher:
                 self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
                 rolled = self.container.task_matrix_service.apply_auto_rollover(space_id=space_id)
                 return 200, {"rolled_over": rolled, "count": len(rolled)}
+
+            if method == "POST" and path == "/api/tasks/refresh-status":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                report = self.container.daily_scheduler.run_once(space_id=space_id)
+                sync_state = self.container.sync_tracker.get_state(space_id)
+                report["sync_version"] = sync_state["sync_version"]
+                return 200, report
 
             if method == "POST" and path == "/api/tasks/focus":
                 self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
@@ -1040,9 +1056,11 @@ def create_fastapi_app(container: AppContainer) -> Any:
         except Exception:
             pass
         container.ingest_worker.start()
+        container.daily_scheduler.start()
         try:
             yield
         finally:
+            container.daily_scheduler.stop()
             container.ingest_worker.stop()
 
     dispatcher = ApiDispatcher(container)
@@ -1121,6 +1139,56 @@ def create_fastapi_app(container: AppContainer) -> Any:
         if code == 202 and resp_obj is None:
             return Response(status_code=202)
         return JSONResponse(content=resp_obj, status_code=code)
+
+    @app.get("/api/sync/stream")
+    async def api_sync_stream(request: Request) -> Response:
+        qp: dict[str, list[str]] = {}
+        for k, v in request.query_params.multi_items():
+            qp.setdefault(k, []).append(v)
+        hdrs = {k: v for k, v in request.headers.items()}
+        eff_token = _extract_token(qp, hdrs)
+        try:
+            _, space_id, _ = dispatcher._resolve_auth_and_space("/api/sync/stream", qp, {}, eff_token)
+        except UnauthorizedError as exc:
+            return JSONResponse(content={"error": str(exc), "code": "AUTH_REQUIRED"}, status_code=401)
+        except PermissionDeniedError as exc:
+            return JSONResponse(content={"error": str(exc)}, status_code=403)
+
+        since_raw = qp.get("since", ["0"])[0]
+        try:
+            known_ver = int(since_raw)
+        except ValueError:
+            known_ver = 0
+
+        async def _event_gen():
+            nonlocal known_ver
+            init_st = await asyncio.to_thread(container.sync_tracker.get_state, space_id)
+            known_ver = max(known_ver, int(init_st["sync_version"]))
+            yield f"event: sync_state\ndata: {json.dumps(init_st, ensure_ascii=False)}\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                st = await asyncio.to_thread(
+                    container.sync_tracker.wait_for_update, space_id, known_ver, 15.0
+                )
+                if await request.is_disconnected():
+                    break
+                cur_ver = int(st["sync_version"])
+                if cur_ver > known_ver:
+                    known_ver = cur_ver
+                    yield f"event: space_updated\ndata: {json.dumps(st, ensure_ascii=False)}\n\n"
+                else:
+                    yield ": keepalive\n\n"
+
+        return StreamingResponse(
+            _event_gen(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @app.api_route("/api/{rest_of_path:path}", methods=["GET", "POST"])
     async def api_entry(request: Request, rest_of_path: str) -> JSONResponse:
@@ -1308,6 +1376,7 @@ def run_web_server(container: AppContainer, host: str = "127.0.0.1", port: int =
             return
 
     container.ingest_worker.start()
+    container.daily_scheduler.start()
     server = ThreadingHTTPServer((host, port), _Handler)
     print(f"Trace-Memory Web Console running at http://{host}:{port}")
     try:
@@ -1315,4 +1384,5 @@ def run_web_server(container: AppContainer, host: str = "127.0.0.1", port: int =
     except KeyboardInterrupt:
         server.server_close()
     finally:
+        container.daily_scheduler.stop()
         container.ingest_worker.stop()
