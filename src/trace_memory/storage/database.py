@@ -368,6 +368,27 @@ CREATE INDEX IF NOT EXISTS idx_focus_sessions_space_date
     ON focus_sessions(space_id, focus_date DESC, ended_at DESC);
 CREATE INDEX IF NOT EXISTS idx_focus_sessions_task
     ON focus_sessions(space_id, task_memory_id);
+
+CREATE TABLE IF NOT EXISTS media_attachments (
+    media_id TEXT PRIMARY KEY,
+    space_id TEXT NOT NULL,
+    note_id TEXT NOT NULL DEFAULT '',
+    file_rel_path TEXT NOT NULL,
+    thumb_rel_path TEXT NOT NULL DEFAULT '',
+    mime_type TEXT NOT NULL DEFAULT 'image/jpeg',
+    width INTEGER NOT NULL DEFAULT 0,
+    height INTEGER NOT NULL DEFAULT 0,
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    caption TEXT NOT NULL DEFAULT '',
+    ocr_text TEXT NOT NULL DEFAULT '',
+    vision_status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_media_attachments_space_note
+    ON media_attachments(space_id, note_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_media_attachments_space_time
+    ON media_attachments(space_id, created_at DESC);
 """
 
 

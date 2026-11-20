@@ -421,13 +421,13 @@ final class TodoStore: ObservableObject {
         }
     }
 
-    func submitQuickNote(_ rawText: String) async {
+    func submitQuickNote(_ rawText: String, mediaIds: [String] = []) async {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty || !mediaIds.isEmpty else { return }
 
         let key = "app:\(UUID().uuidString)"
         do {
-            let res = try await client.recordNote(content: text, idempotencyKey: key, asyncMode: true)
+            let res = try await client.recordNote(content: text, idempotencyKey: key, asyncMode: true, mediaIds: mediaIds)
             if res.filtered == true || res.extractionStatus == "filtered_noise" {
                 let reason = res.filterReason ?? res.errorMessage ?? "无效或水话输入"
                 showBanner("🛡️ 已拦截：\(reason)（0 Token 消耗）")

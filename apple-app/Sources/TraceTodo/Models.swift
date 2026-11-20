@@ -592,6 +592,7 @@ struct CitedNoteItem: Codable, Identifiable, Hashable {
 struct AskCitations: Codable, Hashable {
     let memories: [CitedMemoryItem]?
     let notes: [CitedNoteItem]?
+    let media: [MediaAttachmentModel]?
 }
 
 enum JSONValue: Codable, Hashable {
@@ -775,6 +776,7 @@ struct MemoryDetailResponse: Codable {
     let memory: MemoryItemModel?
     let sources: [SourceNoteDetail]
     let history: [VersionHistoryItem]
+    let media: [MediaAttachmentModel]?
     let markdown: String?
 }
 

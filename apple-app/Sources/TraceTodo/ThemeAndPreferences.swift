@@ -139,6 +139,7 @@ struct RawNoteStreamItem: Codable, Identifiable, Hashable {
     let revision: Int
     let eventTime: String
     let createdAt: String
+    let media: [MediaAttachmentModel]?
 
     var id: String { noteId }
 
@@ -150,6 +151,7 @@ struct RawNoteStreamItem: Codable, Identifiable, Hashable {
         case revision
         case eventTime = "event_time"
         case createdAt = "created_at"
+        case media
     }
 }
 
@@ -389,6 +391,7 @@ struct CalendarPreviewHostView: View {
 struct QuickNotesStreamView: View {
     @EnvironmentObject var store: TodoStore
     @State private var draftText: String = ""
+    @State private var pendingMedia: [MediaAttachmentModel] = []
     @State private var searchQuery: String = ""
     @State private var notes: [RawNoteStreamItem] = []
     @State private var isLoading: Bool = false
@@ -397,9 +400,9 @@ struct QuickNotesStreamView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("📝 随记流（备忘 & 日常片段）")
+                    Text("📝 随记流（图文备忘 & 视觉记忆）")
                         .font(.headline)
-                    Text("复用 RawNote 真值内核：随手写下的想法可自动提炼长期偏好与待办")
+                    Text("端侧压缩附图自动解析白板/车票 OCR，遗忘时同步物理清理磁盘图片")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -407,28 +410,38 @@ struct QuickNotesStreamView: View {
                         .lineLimit(3...6)
                         .textFieldStyle(.roundedBorder)
 
+                    if !pendingMedia.isEmpty {
+                        MediaThumbnailGridView(media: pendingMedia) { item in
+                            pendingMedia.removeAll { $0.mediaId == item.mediaId }
+                            Task { try? await store.client.deleteMedia(mediaId: item.mediaId) }
+                        }
+                    }
+
                     HStack {
-                        TextField("BM25 搜索历史随记...", text: $searchQuery)
+                        TextField("检索随记或图中 OCR...", text: $searchQuery)
                             .textFieldStyle(.roundedBorder)
                             .onSubmit { Task { await reloadNotes() } }
                         Button("搜索") {
                             Task { await reloadNotes() }
                         }
                         Spacer()
+                        ImageAttachPickerButton(pendingMedia: $pendingMedia)
                         VoiceMicButton(text: $draftText, compact: false)
                         Button("✍️ 保存随记") {
                             let clean = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
-                            guard !clean.isEmpty else { return }
+                            let mIds = pendingMedia.map(\.mediaId)
+                            guard !clean.isEmpty || !mIds.isEmpty else { return }
                             draftText = ""
+                            pendingMedia = []
                             dismissAppKeyboard()
                             Task {
-                                await store.submitQuickNote(clean)
+                                await store.submitQuickNote(clean, mediaIds: mIds)
                                 await reloadNotes()
                             }
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(store.activeTheme.primaryColor)
-                        .disabled(draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && pendingMedia.isEmpty)
                     }
                 }
                 .padding(14)
@@ -459,6 +472,9 @@ struct QuickNotesStreamView: View {
                             Text(item.content)
                                 .font(.subheadline)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                            if let itemMedia = item.media, !itemMedia.isEmpty {
+                                MediaThumbnailGridView(media: itemMedia)
+                            }
                             HStack {
                                 Spacer()
                                 Button(role: .destructive) {

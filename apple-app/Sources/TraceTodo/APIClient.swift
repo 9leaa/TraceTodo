@@ -187,14 +187,44 @@ struct TraceMemoryAPIClient {
     }
 
     @discardableResult
-    func recordNote(content: String, idempotencyKey: String = "", asyncMode: Bool = true) async throws -> NoteRecordResponse {
+    func recordNote(
+        content: String,
+        idempotencyKey: String = "",
+        asyncMode: Bool = true,
+        mediaIds: [String] = []
+    ) async throws -> NoteRecordResponse {
         var payload: [String: Any] = ["content": content, "async_mode": asyncMode]
         if !idempotencyKey.isEmpty {
             payload["idempotency_key"] = idempotencyKey
         }
+        if !mediaIds.isEmpty {
+            payload["media_ids"] = mediaIds
+        }
         let data = try await postRaw("/api/notes/record", body: payload)
         return (try? JSONDecoder().decode(NoteRecordResponse.self, from: data))
             ?? NoteRecordResponse(extractionStatus: "completed", filtered: false, filterReason: nil, errorMessage: nil, jobId: nil)
+    }
+
+    func uploadMedia(
+        imageBase64: String,
+        thumbBase64: String = "",
+        width: Int = 0,
+        height: Int = 0
+    ) async throws -> MediaUploadResponse {
+        let data = try await postRaw(
+            "/api/media/upload",
+            body: [
+                "image_base64": imageBase64,
+                "thumb_base64": thumbBase64,
+                "width": width,
+                "height": height
+            ]
+        )
+        return try JSONDecoder().decode(MediaUploadResponse.self, from: data)
+    }
+
+    func deleteMedia(mediaId: String) async throws {
+        try await postRaw("/api/media/delete", body: ["media_id": mediaId])
     }
 
     func fetchIngestStatus() async throws -> IngestStatusResponse {

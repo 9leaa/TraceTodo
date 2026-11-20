@@ -546,9 +546,10 @@ struct AskMemoryView: View {
                 .background(Color.primary.opacity(0.035))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-            // Citations: Memories & Source RawNotes
+            // Citations: Memories, Source RawNotes & Visual Media
             let mems = res.citations?.memories ?? []
             let notes = res.citations?.notes ?? []
+            let mediaItems = res.citations?.media ?? []
 
             if !mems.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
@@ -609,6 +610,15 @@ struct AskMemoryView: View {
                         .background(Color.primary.opacity(0.03))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
+                }
+            }
+
+            if !mediaItems.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("🖼️ 关联视觉图片溯源（点击查看原图与 OCR）")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                    MediaThumbnailGridView(media: mediaItems)
                 }
             }
         }

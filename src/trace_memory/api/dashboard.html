@@ -1511,6 +1511,51 @@
       0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
       50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
     }
+
+    /* Image Memory Thumbnail Grid & Drag/Drop Zone */
+    .media-thumb-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .media-thumb-card {
+      position: relative;
+      width: 78px;
+      height: 78px;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .media-thumb-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .media-thumb-del {
+      position: absolute;
+      top: 3px;
+      right: 3px;
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.72);
+      color: #fff;
+      border: none;
+      font-size: 11px;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .notes-drop-active {
+      outline: 2px dashed var(--primary);
+      background: var(--primary-soft) !important;
+    }
   </style>
 </head>
 <body>
@@ -1523,9 +1568,10 @@
       <span class="pill" id="ingestPendingPill" style="display:none;background:#eef2ff;color:#4f46e5;border-color:#c7d2fe;">🧠 AI 整理中...</span>
     </div>
 
-    <div class="header-search-wrap">
+    <div class="header-search-wrap" style="position:relative;">
       <span style="color:#94a3b8;">🔍</span>
-      <input id="quickNoteInput" placeholder="一句话极速录入待办或记忆（支持 🎤 按住说话松手即入队）..." onkeydown="if(event.key==='Enter') recordQuickNote()" />
+      <input id="quickNoteInput" placeholder="极速录入待办或记忆（支持 🎤 语音 / Ctrl+V 粘贴截图）..." onkeydown="if(event.key==='Enter') recordQuickNote()" onpaste="handleImagePaste(event, 'quick')" />
+      <button type="button" id="quickImageBtn" class="voice-mic-btn" title="附加/拍照图片（端侧自动压缩提取视觉记忆）" onclick="triggerImagePicker('quick')">🖼️</button>
       <button type="button" id="quickVoiceBtn" class="voice-mic-btn" title="点按流式听写 / 按住说话松手即入队" onpointerdown="onVoiceBtnDown(event, 'quickNoteInput', true)" onpointerup="onVoiceBtnUp(event)" onclick="onVoiceBtnClick(event, 'quickNoteInput', true)">🎤</button>
       <button type="button" id="quickNoteBtn" class="primary" style="padding:5px 12px;border-radius:8px;font-size:12px;" onclick="recordQuickNote(this)">AI 录入</button>
     </div>
@@ -1543,6 +1589,11 @@
       <button type="button" class="ghost-dark" onclick="seedDemo(this)">✨ 演示</button>
     </div>
   </header>
+  <input type="file" id="sharedImageFileInput" accept="image/*" multiple style="display:none;" onchange="onImageFilesSelected(event)" />
+  <div id="quickMediaDraftBar" style="display:none;padding:6px 20px;background:var(--surface);border-bottom:1px solid var(--border);align-items:center;gap:10px;flex-wrap:wrap;">
+    <span style="font-size:12px;color:var(--muted);font-weight:600;">🖼️ 待录入附图：</span>
+    <div id="quickMediaDraftGrid" class="media-thumb-grid" style="margin-top:0;"></div>
+  </div>
 
   <div class="workspace-shell">
     <aside class="left-rail">
@@ -1727,14 +1778,16 @@
             <div style="font-size:12px;color:var(--muted);">复用 RawNote 真值内核：既是轻量随手记，又能自动沉淀长期记忆</div>
           </div>
         </div>
-        <div class="card-box" style="margin-bottom:16px;display:grid;gap:10px;">
-          <textarea id="notesEditorInput" rows="3" placeholder="随手记下一段备忘、灵感或今日片段（AI 将自动在后台识别待办与长期偏好）..."></textarea>
+        <div class="card-box" id="notesComposeBox" style="margin-bottom:16px;display:grid;gap:10px;" ondragover="onNotesDragOver(event)" ondragleave="onNotesDragLeave(event)" ondrop="onNotesDrop(event)">
+          <textarea id="notesEditorInput" rows="3" placeholder="随手记下一段备忘、灵感或今日片段（支持拖拽 / 粘贴图片，AI 自动提取图中 OCR 与记忆）..." onpaste="handleImagePaste(event, 'notes')"></textarea>
+          <div id="notesMediaDraftGrid" class="media-thumb-grid" style="display:none;"></div>
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
             <div class="btn-group" style="flex:1;min-width:200px;">
-              <input id="notesSearchInput" style="flex:1;max-width:320px;" placeholder="检索历史随记原文 (BM25)..." onkeydown="if(event.key==='Enter') loadNotesPanel()" />
+              <input id="notesSearchInput" style="flex:1;max-width:320px;" placeholder="检索历史随记或图中 OCR 文字..." onkeydown="if(event.key==='Enter') loadNotesPanel()" />
               <button type="button" onclick="loadNotesPanel()">🔍 搜索随记</button>
             </div>
             <div class="btn-group">
+              <button type="button" id="notesImageBtn" class="voice-mic-btn" title="拖拽/粘贴/选择拍照附图（自动压缩至 150~300KB）" onclick="triggerImagePicker('notes')">📷 附图</button>
               <button type="button" id="notesVoiceBtn" class="voice-mic-btn" title="点按语音听写 / 按住说话松手即保存" onpointerdown="onVoiceBtnDown(event, 'notesEditorInput', true)" onpointerup="onVoiceBtnUp(event)" onclick="onVoiceBtnClick(event, 'notesEditorInput', false)">🎤 语音输入</button>
               <button type="button" class="duodo-btn" onclick="submitNoteFromNotesTab(this)">✍️ 保存随记</button>
             </div>
@@ -2355,6 +2408,17 @@
           <button type="button" onclick="runDream(this)">🌙 Dream 归纳</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Lightbox Modal for Image Memory & OCR Preview -->
+  <div class="modal-backdrop" id="mediaLightboxModal" onclick="if(event.target===this) closeMediaLightbox()">
+    <div class="modal" style="max-width:760px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <strong>🖼️ 视觉记忆原图与 OCR 溯源</strong>
+        <button type="button" onclick="closeMediaLightbox()">关闭</button>
+      </div>
+      <div id="mediaLightboxBody" style="display:grid;gap:10px;"></div>
     </div>
   </div>
 
@@ -3716,16 +3780,19 @@
     async function recordQuickNote(btn) {
       const input = document.getElementById('quickNoteInput');
       const content = input.value.trim();
-      if (!content) {
-        showToast('请先输入一句话待办或记忆内容');
+      const mediaIds = _pendingMediaDrafts.quick.map(m => m.media_id);
+      if (!content && !mediaIds.length) {
+        showToast('请先输入内容或附加图片');
         input.focus();
         return;
       }
       // Non-blocking burst input: clear immediately without locking the send button
       input.value = '';
+      _pendingMediaDrafts.quick = [];
+      renderPendingMediaDrafts('quick');
       input.focus();
       try {
-        const res = await apiPost('/api/notes/record', { content, async_mode: true });
+        const res = await apiPost('/api/notes/record', { content, media_ids: mediaIds, async_mode: true });
         if (res.error) return showToast(`⚠️ ${res.error}`);
         if (res.extraction_status === 'filtered_noise' || res.filtered) {
           showToast(`🛡️ 低成本防线已拦截：${res.filter_reason || res.error_message || '无效输入'}（0 Token 消耗）`);
@@ -4732,6 +4799,10 @@
         if (res.error) return showToast(`问答失败: ${res.error}`);
         const memCites = ((res.citations || {}).memories || []).map(m => `<button type="button" class="chip-btn" onclick="openDetail('${esc(m.memory_id)}')">🧠 ${esc(m.title)}</button>`).join(' ');
         const noteCites = ((res.citations || {}).notes || []).map(n => `<span class="tag">📝 ${esc(n.event_time?.slice(0,10) || '')} “${esc(n.content.slice(0, 40))}”</span>`).join(' ');
+        const mediaCites = ((res.citations || {}).media || []);
+        const mediaGridHtml = mediaCites.length
+          ? `<div style="margin-top:4px;"><strong>🖼️ 关联图片溯源 (${mediaCites.length} 张):</strong>${renderMediaGridHtml(mediaCites)}</div>`
+          : '';
         const modeText = res.query_mode === 'history' ? '🕰️ 历史演进追溯' : '📍 当前状态检索';
         document.getElementById('askResult').innerHTML = `
           <div style="margin-top:10px;" class="meta-row">
@@ -4743,6 +4814,7 @@
           <div style="margin-top:8px;font-size:12px;display:grid;gap:6px;">
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><strong>引用记忆卡:</strong> ${memCites || '<span style="color:var(--muted);">无</span>'}</div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><strong>支撑原话:</strong> ${noteCites || '<span style="color:var(--muted);">无</span>'}</div>
+            ${mediaGridHtml}
           </div>
         `;
         loadTraces();
@@ -4858,9 +4930,13 @@
           `<div class="mem-card"><strong>v${h.version} · ${esc(h.status)} · ${esc(h.origin)}</strong><div>${esc(h.summary)}</div><div style="color:var(--muted);font-size:12px;">原因: ${esc(h.change_reason)} (${esc(h.created_at)})</div></div>`
         ).join('');
 
+        const detailMediaHtml = (st.media && st.media.length)
+          ? `<h4>🖼️ 关联视觉附件 (${st.media.length})</h4>${renderMediaGridHtml(st.media)}`
+          : '';
         panelHtml = `
           <div><code>${esc(m.uri)}</code> · 类型: <strong>${esc(m.memory_type)}</strong> · 断言: <strong>${esc(m.assertion_kind)}</strong></div>
           <pre class="answer-box">${esc(JSON.stringify(m.payload, null, 2))}</pre>
+          ${detailMediaHtml}
           <h4>📝 支撑原话证据 (Ground-Truth RawNotes)</h4>
           ${sourcesHtml}
           <h4>📜 版本演进审计链 (MemoryVersions)</h4>
@@ -4880,6 +4956,7 @@
         memory: m,
         sources: data.sources || [],
         history: data.history || [],
+        media: data.media || [],
         markdown: data.markdown || '',
         tab: initialTab,
       };
@@ -5812,25 +5889,207 @@
             <span style="font-size:11.5px;color:var(--muted);">🕒 ${esc((n.event_time || n.created_at || '').slice(0, 19).replace('T', ' '))}</span>
           </div>
           <div style="font-size:13.5px;white-space:pre-wrap;line-height:1.6;">${esc(n.content)}</div>
+          ${Array.isArray(n.media) && n.media.length ? renderMediaGridHtml(n.media) : ''}
           <div class="card-actions" style="justify-content:flex-end;">
-            <button type="button" style="color:#b91c1c;font-size:12px;" onclick="forgetNoteFromStream('${esc(n.note_id)}')">🗑️ 遗忘原文并级联清理派生记忆</button>
+            <button type="button" style="color:#b91c1c;font-size:12px;" onclick="forgetNoteFromStream('${esc(n.note_id)}')">🗑️ 遗忘原文并级联清理派生记忆与图片</button>
           </div>
         </div>
-      `).join('') : `<div class="card-box" style="color:var(--muted);">暂无随记记录，在上方输入框写下第一条灵感吧。</div>`;
+      `).join('') : `<div class="card-box" style="color:var(--muted);">暂无随记记录，在上方输入框写下第一条灵感或粘贴一张图片吧。</div>`;
     }
 
     async function submitNoteFromNotesTab(btn) {
       const el = document.getElementById('notesEditorInput');
       const content = (el?.value || '').trim();
-      if (!content) return showToast('请输入随记内容');
+      const mediaIds = _pendingMediaDrafts.notes.map(m => m.media_id);
+      if (!content && !mediaIds.length) return showToast('请输入随记内容或附加图片');
       await withBtnBusy(btn, '⏳ 保存中', async () => {
-        const res = await apiPost('/api/notes/record', { content });
+        const res = await apiPost('/api/notes/record', { content, media_ids: mediaIds });
         if (res.error) return showToast(`保存失败: ${res.error}`);
         el.value = '';
-        showToast(res.extraction_status === 'queued' ? '⚡ 随记已秒存，AI 正在后台提炼关联记忆' : '✅ 随记已保存');
+        _pendingMediaDrafts.notes = [];
+        renderPendingMediaDrafts('notes');
+        showToast(res.extraction_status === 'queued' ? '⚡ 图文随记已秒存，AI 正在后台解析视觉 OCR 与记忆' : '✅ 图文随记已保存');
         await loadNotesPanel();
         loadTasks();
       });
+    }
+
+    // ---------------- Client-Side Image Compression (150~300KB + Thumb) & Media Gallery ----------------
+    let _activeImageTarget = 'notes';
+    const _pendingMediaDrafts = { quick: [], notes: [] };
+    const _mediaCacheById = {};
+
+    function renderMediaGridHtml(mediaList) {
+      if (!Array.isArray(mediaList) || !mediaList.length) return '';
+      return `<div class="media-thumb-grid">` + mediaList.map(m => {
+        _mediaCacheById[m.media_id] = m;
+        const tip = [m.caption, m.ocr_text].filter(Boolean).join(' | ');
+        return `
+          <div class="media-thumb-card" title="${esc(tip || '点击查看高清原图与 OCR 详情')}" onclick="openMediaLightbox('${esc(m.media_id)}')">
+            <img src="${esc(m.thumb_url || m.url)}" alt="${esc(m.caption || '附图')}" loading="lazy" />
+          </div>
+        `;
+      }).join('') + `</div>`;
+    }
+
+    function openMediaLightbox(mediaId) {
+      const m = _mediaCacheById[mediaId];
+      if (!m) return;
+      const kb = Math.max(1, Math.round((m.size_bytes || 0) / 1024));
+      document.getElementById('mediaLightboxBody').innerHTML = `
+        <div style="text-align:center;background:var(--surface-alt);border-radius:12px;padding:10px;border:1px solid var(--border);">
+          <img src="${esc(m.url)}" alt="原图" style="max-width:100%;max-height:62vh;border-radius:8px;object-fit:contain;" />
+        </div>
+        <div style="font-size:12.5px;display:grid;gap:6px;">
+          <div class="meta-row">
+            <span class="tag">ID: ${esc(m.media_id)}</span>
+            <span class="tag">${m.width || '?'}×${m.height || '?'} · ${kb} KB</span>
+            <span class="tag">解析状态: ${esc(m.vision_status)}</span>
+          </div>
+          ${m.caption ? `<div><strong>👁️ 视觉摘要 (Caption)：</strong>${esc(m.caption)}</div>` : ''}
+          ${m.ocr_text ? `<div class="answer-box" style="margin-top:2px;"><strong>📄 图中文字 (OCR)：</strong><br/>${esc(m.ocr_text)}</div>` : ''}
+        </div>
+      `;
+      document.getElementById('mediaLightboxModal').classList.add('open');
+    }
+
+    function closeMediaLightbox() {
+      document.getElementById('mediaLightboxModal').classList.remove('open');
+    }
+
+    function triggerImagePicker(targetKey) {
+      _activeImageTarget = targetKey === 'quick' ? 'quick' : 'notes';
+      const inp = document.getElementById('sharedImageFileInput');
+      if (inp) {
+        inp.value = '';
+        inp.click();
+      }
+    }
+
+    function onImageFilesSelected(ev) {
+      const files = Array.from(ev.target.files || []);
+      if (files.length) uploadCompressedImages(files, _activeImageTarget);
+    }
+
+    function handleImagePaste(ev, targetKey) {
+      const items = Array.from(ev.clipboardData?.items || []);
+      const imgFiles = items.filter(it => it.type && it.type.startsWith('image/')).map(it => it.getAsFile()).filter(Boolean);
+      if (imgFiles.length) {
+        ev.preventDefault();
+        uploadCompressedImages(imgFiles, targetKey);
+      }
+    }
+
+    function onNotesDragOver(ev) {
+      ev.preventDefault();
+      document.getElementById('notesComposeBox')?.classList.add('notes-drop-active');
+    }
+
+    function onNotesDragLeave(ev) {
+      document.getElementById('notesComposeBox')?.classList.remove('notes-drop-active');
+    }
+
+    function onNotesDrop(ev) {
+      ev.preventDefault();
+      document.getElementById('notesComposeBox')?.classList.remove('notes-drop-active');
+      const files = Array.from(ev.dataTransfer?.files || []).filter(f => f.type && f.type.startsWith('image/'));
+      if (files.length) uploadCompressedImages(files, 'notes');
+    }
+
+    async function compressImageFileToJpeg(file) {
+      const bitmapUrl = URL.createObjectURL(file);
+      try {
+        const img = await new Promise((resolve, reject) => {
+          const el = new Image();
+          el.onload = () => resolve(el);
+          el.onerror = reject;
+          el.src = bitmapUrl;
+        });
+
+        const renderScaled = (maxEdge, quality) => {
+          let w = img.naturalWidth || img.width || 800;
+          let h = img.naturalHeight || img.height || 600;
+          if (Math.max(w, h) > maxEdge) {
+            const ratio = maxEdge / Math.max(w, h);
+            w = Math.max(1, Math.round(w * ratio));
+            h = Math.max(1, Math.round(h * ratio));
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          return { dataUrl: canvas.toDataURL('image/jpeg', quality), width: w, height: h };
+        };
+
+        // Compress main image targeting ~150-280 KB
+        let main = renderScaled(1440, 0.78);
+        if (main.dataUrl.length > 380000) {
+          main = renderScaled(1200, 0.66);
+        }
+        const thumb = renderScaled(320, 0.70);
+        return { mainDataUrl: main.dataUrl, thumbDataUrl: thumb.dataUrl, width: main.width, height: main.height };
+      } finally {
+        URL.revokeObjectURL(bitmapUrl);
+      }
+    }
+
+    async function uploadCompressedImages(files, targetKey) {
+      const bucket = targetKey === 'quick' ? 'quick' : 'notes';
+      showToast(`🖼️ 正在端侧压缩并上传 ${files.length} 张图片...`);
+      for (const f of files.slice(0, 6)) {
+        try {
+          const compressed = await compressImageFileToJpeg(f);
+          const res = await apiPost('/api/media/upload', {
+            image_base64: compressed.mainDataUrl,
+            thumb_base64: compressed.thumbDataUrl,
+            width: compressed.width,
+            height: compressed.height,
+          });
+          if (res.error) {
+            showToast(`图片上传失败: ${res.error}`);
+          } else if (res.media) {
+            _pendingMediaDrafts[bucket].push(res.media);
+            renderPendingMediaDrafts(bucket);
+          }
+        } catch (err) {
+          showToast(`图片处理失败: ${err?.message || err}`);
+        }
+      }
+    }
+
+    async function removePendingDraftMedia(bucket, mediaId) {
+      _pendingMediaDrafts[bucket] = (_pendingMediaDrafts[bucket] || []).filter(m => m.media_id !== mediaId);
+      renderPendingMediaDrafts(bucket);
+      await apiPost('/api/media/delete', { media_id: mediaId }).catch(() => {});
+    }
+
+    function renderPendingMediaDrafts(bucket) {
+      const list = _pendingMediaDrafts[bucket] || [];
+      if (bucket === 'quick') {
+        const bar = document.getElementById('quickMediaDraftBar');
+        const grid = document.getElementById('quickMediaDraftGrid');
+        if (!bar || !grid) return;
+        bar.style.display = list.length ? 'flex' : 'none';
+        grid.innerHTML = list.map(m => `
+          <div class="media-thumb-card" style="width:52px;height:52px;">
+            <img src="${esc(m.thumb_url || m.url)}" alt="预览" />
+            <button type="button" class="media-thumb-del" onclick="removePendingDraftMedia('quick', '${esc(m.media_id)}')">✕</button>
+          </div>
+        `).join('');
+      } else {
+        const grid = document.getElementById('notesMediaDraftGrid');
+        if (!grid) return;
+        grid.style.display = list.length ? 'flex' : 'none';
+        grid.innerHTML = list.map(m => `
+          <div class="media-thumb-card">
+            <img src="${esc(m.thumb_url || m.url)}" alt="预览" />
+            <button type="button" class="media-thumb-del" onclick="removePendingDraftMedia('notes', '${esc(m.media_id)}')">✕</button>
+          </div>
+        `).join('');
+      }
     }
 
     async function forgetNoteFromStream(noteId) {

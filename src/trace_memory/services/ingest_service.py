@@ -70,6 +70,7 @@ class IngestService:
         quota_service: RateLimitAndQuotaService | None = None,
         job_repo: IngestJobRepository | None = None,
         sync_tracker: Any = None,
+        media_service: Any = None,
     ) -> None:
         self.note_repo = note_repo
         self.memory_repo = memory_repo
@@ -82,6 +83,7 @@ class IngestService:
         self.quota_service = quota_service
         self.job_repo = job_repo
         self.sync_tracker = sync_tracker
+        self.media_service = media_service
 
     def _preflight_and_persist_note(
         self,
@@ -91,10 +93,14 @@ class IngestService:
         actor_id: str = "user",
         event_time: str = "",
         idempotency_key: str = "",
+        media_ids: list[str] | tuple[str, ...] = (),
         t0: float | None = None,
     ) -> tuple[RawNote | None, IngestResult | None]:
         """Run idempotency check, zero-cost InputGuard filter, and durable RawNote + FTS5 save."""
         start = t0 if t0 is not None else time.perf_counter()
+        clean_media_ids = tuple(str(m).strip() for m in (media_ids or ()) if str(m).strip())
+        if clean_media_ids and not content.strip():
+            content = "[图片记录]"
 
         # 1. Entry idempotency check (C08)
         if idempotency_key:
@@ -112,8 +118,8 @@ class IngestService:
                         job_id=str(cached.get("job_id", "")),
                     )
 
-        # 1b. Zero-cost local InputGuard filter (catches empty, oversized, greetings, gibberish BEFORE storage/LLM/Embedding!)
-        if self.input_guard is not None:
+        # 1b. Zero-cost local InputGuard filter (skip noise filter when explicit image attachments are present!)
+        if self.input_guard is not None and not clean_media_ids:
             guard_res = self.input_guard.inspect_note(content)
             if not guard_res.allowed:
                 if guard_res.category in ("empty", "too_long"):
@@ -165,6 +171,8 @@ class IngestService:
             event_time=event_time or utc_now_iso(),
         )
         self.note_repo.save(note)
+        if clean_media_ids and self.media_service is not None:
+            self.media_service.bind_to_note(space_id, note.note_id, clean_media_ids)
         return note, None
 
     def enqueue_note(
@@ -175,6 +183,7 @@ class IngestService:
         actor_id: str = "user",
         event_time: str = "",
         idempotency_key: str = "",
+        media_ids: list[str] | tuple[str, ...] = (),
     ) -> IngestResult:
         """Fast-Ack (<5ms) async ingest: persist RawNote + FTS5 + durable ingest_job and return immediately."""
         if self.job_repo is None:
@@ -185,6 +194,7 @@ class IngestService:
                 actor_id=actor_id,
                 event_time=event_time,
                 idempotency_key=idempotency_key,
+                media_ids=media_ids,
             )
 
         t0 = time.perf_counter()
@@ -195,6 +205,7 @@ class IngestService:
             actor_id=actor_id,
             event_time=event_time,
             idempotency_key=idempotency_key,
+            media_ids=media_ids,
             t0=t0,
         )
         if short_circuit is not None or note is None:
@@ -260,6 +271,19 @@ class IngestService:
             )
         start_revision = note.revision
 
+        # 2b. Vision VLM Caption + OCR enrichment for any attached images
+        visual_text = ""
+        vlm_calls = 0
+        vlm_tokens = 0
+        if self.media_service is not None:
+            visual_text, vlm_calls, vlm_tokens = self.media_service.analyze_pending_for_note(
+                space_id, note_id
+            )
+            if visual_text:
+                self.media_service.refresh_note_fts_with_media(space_id, note)
+
+        extract_input = f"{note.content}\n{visual_text}".strip() if visual_text else note.content
+
         # 3. Extract structured candidates via LLMProvider (passing existing active memories for reconciliation)
         existing_active = self.memory_repo.list_memories(
             space_id=space_id, status="active", limit=40
@@ -269,9 +293,9 @@ class IngestService:
         try:
             if llm_semaphore is not None:
                 with llm_semaphore:
-                    batch = self._call_extract(note.content, note.event_time, existing_active)
+                    batch = self._call_extract(extract_input, note.event_time, existing_active)
             else:
-                batch = self._call_extract(note.content, note.event_time, existing_active)
+                batch = self._call_extract(extract_input, note.event_time, existing_active)
         except Exception as exc:
             if raise_on_transient_llm_error and _is_transient_llm_error(exc):
                 raise
@@ -308,6 +332,8 @@ class IngestService:
         # Double-Check Race Guard: if user forgot or edited the RawNote while LLM was running, discard result!
         fresh_note = self.note_repo.get(space_id, note_id, include_forgotten=True)
         if fresh_note is None or fresh_note.is_forgotten or fresh_note.revision != start_revision:
+            if (fresh_note is None or fresh_note.is_forgotten) and self.media_service is not None:
+                self.media_service.purge_for_notes(space_id, [note_id])
             if self.quota_service is not None:
                 self.quota_service.record_usage(
                     f"space:{space_id}",
@@ -338,11 +364,26 @@ class IngestService:
                 trace_id=trace_id,
             )
 
-        # Selective Note Vectorization: skip costly Embedding API if LLM confirmed 0 extractable memories!
-        note_vector_skipped = len(batch.candidates) == 0
+        # Selective Note Vectorization: skip costly Embedding API if LLM confirmed 0 extractable memories (unless image visual text exists)!
+        note_vector_skipped = len(batch.candidates) == 0 and not visual_text
         if not note_vector_skipped:
             try:
-                self.vector_lifecycle.sync_note(fresh_note)
+                note_for_vec = (
+                    RawNote(
+                        note_id=fresh_note.note_id,
+                        space_id=fresh_note.space_id,
+                        content=extract_input,
+                        source_type=fresh_note.source_type,
+                        actor_id=fresh_note.actor_id,
+                        revision=fresh_note.revision,
+                        event_time=fresh_note.event_time,
+                        created_at=fresh_note.created_at,
+                        updated_at=fresh_note.updated_at,
+                    )
+                    if visual_text
+                    else fresh_note
+                )
+                self.vector_lifecycle.sync_note(note_for_vec)
                 embed_calls += 1
             except Exception as exc:
                 # C10: Record embedding degradation honestly without losing the RawNote
@@ -367,9 +408,9 @@ class IngestService:
             self.quota_service.record_usage(
                 f"space:{space_id}",
                 notes=1 if count_note_in_quota else 0,
-                llm_calls=batch.llm_calls,
+                llm_calls=batch.llm_calls + vlm_calls,
                 embed_calls=embed_calls,
-                tokens_used=batch.tokens_used,
+                tokens_used=batch.tokens_used + vlm_tokens,
             )
 
         duration = (time.perf_counter() - t0) * 1000.0
@@ -410,6 +451,7 @@ class IngestService:
         actor_id: str = "user",
         event_time: str = "",
         idempotency_key: str = "",
+        media_ids: list[str] | tuple[str, ...] = (),
     ) -> IngestResult:
         t0 = time.perf_counter()
         note, short_circuit = self._preflight_and_persist_note(
@@ -419,6 +461,7 @@ class IngestService:
             actor_id=actor_id,
             event_time=event_time,
             idempotency_key=idempotency_key,
+            media_ids=media_ids,
             t0=t0,
         )
         if short_circuit is not None or note is None:
@@ -854,6 +897,8 @@ class IngestService:
                     )
                     self.vector_lifecycle.sync_memory(saved_trim)
 
+            if self.media_service is not None:
+                self.media_service.purge_for_notes(space_id, [note_id])
             self.trace_repo.redact_for_forgotten(space_id, note_ids=(note_id,))
             if self.sync_tracker is not None:
                 self.sync_tracker.bump(space_id, reason="note_forgotten")

@@ -320,6 +320,38 @@ class ApiDispatcher:
             require_llm_slot=require_llm_slot,
         )
 
+    def resolve_media_file(
+        self,
+        query_params: dict[str, list[str]] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, str, bytes]:
+        """Serve raw binary image/thumbnail with Bearer auth OR HMAC-signed URL verification."""
+        qp = query_params or {}
+        media_id = (qp.get("id") or [""])[0].strip()
+        req_space = (qp.get("space_id") or [""])[0].strip() or self.container.config.default_space
+        sig = (qp.get("sig") or [""])[0].strip()
+        is_thumb = (qp.get("thumb") or [""])[0].strip().lower() in ("1", "true", "yes")
+
+        if not media_id:
+            return 400, "application/json; charset=utf-8", json.dumps({"error": "id is required"}).encode("utf-8")
+
+        try:
+            if sig and self.container.media_service.verify_media_sig(req_space, media_id, sig):
+                eff_space = req_space
+            else:
+                token = _extract_token(qp, headers)
+                _, eff_space, _ = self._resolve_auth_and_space("/api/media/file", qp, {}, token)
+            img_bytes, mime = self.container.media_service.read_binary_file(
+                eff_space, media_id, thumb=is_thumb
+            )
+            return 200, mime, img_bytes
+        except UnauthorizedError as exc:
+            return 401, "application/json; charset=utf-8", json.dumps({"error": str(exc)}).encode("utf-8")
+        except PermissionDeniedError as exc:
+            return 403, "application/json; charset=utf-8", json.dumps({"error": str(exc)}).encode("utf-8")
+        except NotFoundError as exc:
+            return 404, "application/json; charset=utf-8", json.dumps({"error": str(exc)}).encode("utf-8")
+
     def dispatch(
         self,
         method: str,
@@ -724,45 +756,93 @@ class ApiDispatcher:
                     tr_out["ingest"] = ing_res.to_dict()
                 return 200, tr_out
 
+            if method == "POST" and path == "/api/media/upload":
+                self._enforce_rate_and_quota(
+                    user=user, space_id=space_id, client_ip=client_ip, require_note_slot=False
+                )
+                w = _safe_int(payload.get("width", 0), name="width", default=0, min_val=0, max_val=20000)
+                h = _safe_int(payload.get("height", 0), name="height", default=0, min_val=0, max_val=20000)
+                media_obj = self.container.media_service.upload_image(
+                    space_id=space_id,
+                    image_base64=str(payload.get("image_base64", "")),
+                    thumb_base64=str(payload.get("thumb_base64", "")),
+                    width=int(w or 0),
+                    height=int(h or 0),
+                    note_id=str(payload.get("note_id", "")),
+                    vision_hint=str(payload.get("vision_hint", "")),
+                    analyze_immediately=bool(payload.get("analyze_immediately", False)),
+                )
+                return 200, {"media": media_obj, "used_bytes": self.container.media_service.get_space_used_bytes(space_id)}
+
+            if method == "GET" and path == "/api/media/list":
+                lim = _safe_int(qp.get("limit", ["60"])[0], name="limit", default=60, min_val=1, max_val=200)
+                items = self.container.media_service.list_for_space(space_id, limit=int(lim or 60))
+                return 200, {
+                    "space_id": space_id,
+                    "count": len(items),
+                    "used_bytes": self.container.media_service.get_space_used_bytes(space_id),
+                    "quota_bytes": int(self.container.config.space_media_quota_mb) * 1024 * 1024,
+                    "media": items,
+                }
+
+            if method == "POST" and path == "/api/media/delete":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                deleted = self.container.media_service.delete_media(
+                    space_id=space_id, media_id=str(payload.get("media_id", ""))
+                )
+                return 200, {"deleted": deleted}
+
             if method == "POST" and path == "/api/notes/record":
                 self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
                 content = str(payload.get("content", "")).strip()
-                if not content:
+                raw_media_ids = payload.get("media_ids") or []
+                media_ids = [
+                    str(m).strip()
+                    for m in (raw_media_ids if isinstance(raw_media_ids, list) else [])
+                    if str(m).strip()
+                ][:12]
+                if not content and not media_ids:
                     raise ValidationError("content is required")
                 idem = str(payload.get("idempotency_key", "")).strip()
                 actor_name = str(payload.get("actor_id") or (user.username if user else "user"))
 
-                # Fast length & noise check BEFORE consuming note/LLM quota
-                guard_res = self.container.input_guard.inspect_note(content)
-                if guard_res.allowed and not idem:
-                    is_dup, dup_reason = self.container.quota_service.check_duplicate_note(space_id, content)
-                    if is_dup:
-                        self.container.quota_service.record_usage(f"space:{space_id}", blocked_noise=1)
-                        self.container.quota_service.log_security_event(
-                            action="ingest_duplicate_blocked",
-                            status="duplicate",
-                            actor_user_id=user.user_id if user else actor_name,
-                            space_id=space_id,
-                            detail={"preview": content[:40]},
-                            client_ip=client_ip,
-                        )
-                        return 200, {
-                            "note": RawNote(
-                                note_id="filtered_duplicate",
+                # Fast length & noise check BEFORE consuming note/LLM quota (skip noise filter when images attached)
+                if media_ids:
+                    guard_allowed = True
+                    if len(content) > int(self.container.settings_store.get_all().get("max_note_chars", 2000)):
+                        raise ValidationError("单条记录字数超出上限")
+                else:
+                    guard_res = self.container.input_guard.inspect_note(content)
+                    guard_allowed = guard_res.allowed
+                    if guard_allowed and not idem:
+                        is_dup, dup_reason = self.container.quota_service.check_duplicate_note(space_id, content)
+                        if is_dup:
+                            self.container.quota_service.record_usage(f"space:{space_id}", blocked_noise=1)
+                            self.container.quota_service.log_security_event(
+                                action="ingest_duplicate_blocked",
+                                status="duplicate",
+                                actor_user_id=user.user_id if user else actor_name,
                                 space_id=space_id,
-                                content=content,
-                                source_type="web",
-                                actor_id=actor_name,
-                            ).to_dict(),
-                            "extraction_status": "filtered_noise",
-                            "filtered": True,
-                            "filter_reason": dup_reason,
-                            "changes": [],
-                            "error_message": dup_reason,
-                            "trace_id": "",
-                        }
+                                detail={"preview": content[:40]},
+                                client_ip=client_ip,
+                            )
+                            return 200, {
+                                "note": RawNote(
+                                    note_id="filtered_duplicate",
+                                    space_id=space_id,
+                                    content=content,
+                                    source_type="web",
+                                    actor_id=actor_name,
+                                ).to_dict(),
+                                "extraction_status": "filtered_noise",
+                                "filtered": True,
+                                "filter_reason": dup_reason,
+                                "changes": [],
+                                "error_message": dup_reason,
+                                "trace_id": "",
+                            }
 
-                if guard_res.allowed:
+                if guard_allowed:
                     self._check_daily_quota(
                         user=user,
                         space_id=space_id,
@@ -790,11 +870,17 @@ class ApiDispatcher:
                         actor_id=actor_name,
                         event_time=str(payload.get("event_time", "")),
                         idempotency_key=idem,
+                        media_ids=media_ids,
                     )
+                    out_dict = res_ing.to_dict()
+                    if media_ids:
+                        out_dict["media"] = self.container.media_service.list_for_notes(
+                            space_id, [res_ing.note.note_id]
+                        ).get(res_ing.note.note_id, [])
                     if res_ing.extraction_status == "queued":
                         self.container.ingest_worker.notify()
-                        return 202, res_ing.to_dict()
-                    return 200, res_ing.to_dict()
+                        return 202, out_dict
+                    return 200, out_dict
 
                 res_ing = self.container.ingest_service.record_note(
                     space_id=space_id,
@@ -803,8 +889,14 @@ class ApiDispatcher:
                     actor_id=actor_name,
                     event_time=str(payload.get("event_time", "")),
                     idempotency_key=idem,
+                    media_ids=media_ids,
                 )
-                return 200, res_ing.to_dict()
+                out_dict = res_ing.to_dict()
+                if media_ids:
+                    out_dict["media"] = self.container.media_service.list_for_notes(
+                        space_id, [res_ing.note.note_id]
+                    ).get(res_ing.note.note_id, [])
+                return 200, out_dict
 
             if method == "GET" and path == "/api/notes/ingest-status":
                 status_obj = self.container.job_repo.get_space_status(space_id)
@@ -829,6 +921,11 @@ class ApiDispatcher:
                         n.to_dict()
                         for n in self.container.note_repo.list_notes(space_id=space_id, limit=int(lim or 40))
                     ]
+                media_by_note = self.container.media_service.list_for_notes(
+                    space_id, [n["note_id"] for n in notes_out]
+                )
+                for n_obj in notes_out:
+                    n_obj["media"] = media_by_note.get(n_obj["note_id"], [])
                 return 200, {"space_id": space_id, "count": len(notes_out), "notes": notes_out}
 
             if method == "POST" and path == "/api/notes/forget":
@@ -853,6 +950,12 @@ class ApiDispatcher:
             if method == "GET" and path == "/api/memories/detail":
                 ident = qp.get("id", [""])[0]
                 detail = self.container.retrieval_service.read_memory_detail(space_id, ident)
+                src_nids = [str(s.get("note_id", "")) for s in detail.get("sources", []) if s.get("note_id")]
+                media_grouped = self.container.media_service.list_for_notes(space_id, src_nids)
+                flat_media: list[dict[str, Any]] = []
+                for nid in src_nids:
+                    flat_media.extend(media_grouped.get(nid, []))
+                detail["media"] = flat_media
                 try:
                     detail["markdown"] = self.container.markdown_sync.render_memory_markdown(
                         space_id, ident
@@ -1368,6 +1471,23 @@ def create_fastapi_app(container: AppContainer) -> Any:
             return Response(status_code=202)
         return JSONResponse(content=resp_obj, status_code=code)
 
+    @app.get("/api/media/file")
+    async def api_media_file(request: Request) -> Response:
+        qp: dict[str, list[str]] = {}
+        for k, v in request.query_params.multi_items():
+            qp.setdefault(k, []).append(v)
+        hdrs = {k: v for k, v in request.headers.items()}
+        code, mime, raw = await asyncio.to_thread(dispatcher.resolve_media_file, qp, hdrs)
+        return Response(
+            content=raw,
+            status_code=code,
+            media_type=mime,
+            headers={
+                "X-Content-Type-Options": "nosniff",
+                "Cache-Control": "private, max-age=3600" if code == 200 else "no-store",
+            },
+        )
+
     @app.get("/api/sync/stream")
     async def api_sync_stream(request: Request) -> Response:
         qp: dict[str, list[str]] = {}
@@ -1514,6 +1634,21 @@ def run_web_server(container: AppContainer, host: str = "127.0.0.1", port: int =
                         "endpoint": "/mcp",
                         "auth_required": bool(container.config.auth_required),
                         "auth_header": "Authorization: Bearer <token>",
+                    },
+                )
+                return
+
+            if parsed.path == "/api/media/file":
+                qp_m = parse_qs(parsed.query, keep_blank_values=True)
+                hdrs_m = {k: v for k, v in self.headers.items()}
+                code_m, mime_m, raw_m = dispatcher.resolve_media_file(qp_m, hdrs_m)
+                self._write_raw(
+                    code_m,
+                    mime_m,
+                    raw_m,
+                    extra_headers={
+                        "X-Content-Type-Options": "nosniff",
+                        "Cache-Control": "private, max-age=3600" if code_m == 200 else "no-store",
                     },
                 )
                 return
