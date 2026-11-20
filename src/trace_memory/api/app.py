@@ -89,11 +89,13 @@ from trace_memory.domain.proposals import (
     PermissionDeniedError,
     QuotaExceededError,
     RateLimitError,
+    RelationSpec,
     TraceMemoryError,
     UnauthorizedError,
     ValidationError,
     VersionConflictError,
 )
+from trace_memory.domain.relations import extract_relations_from_markdown
 from trace_memory.services.auth_service import UserAccount
 
 
@@ -158,6 +160,40 @@ def _safe_int(
     if max_val is not None and val > max_val:
         val = max_val
     return val
+
+
+def _safe_float(
+    raw: Any,
+    *,
+    name: str,
+    default: float,
+    min_val: float | None = None,
+    max_val: float | None = None,
+) -> float:
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return default
+    try:
+        val = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(f"参数 {name} 必须为数值") from exc
+    if min_val is not None and val < min_val:
+        val = min_val
+    if max_val is not None and val > max_val:
+        val = max_val
+    return val
+
+
+def _safe_bool(raw: Any, *, default: bool = True) -> bool:
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return default
+    if isinstance(raw, bool):
+        return raw
+    s = str(raw).strip().lower()
+    if s in ("1", "true", "yes", "on"):
+        return True
+    if s in ("0", "false", "no", "off"):
+        return False
+    return default
 
 
 class ApiDispatcher:
@@ -771,6 +807,20 @@ class ApiDispatcher:
                 exp_v = _safe_int(payload.get("expected_version"), name="expected_version", min_val=1)
                 raw_tags = payload.get("tags") or []
                 clean_tags = tuple(str(t).strip()[:32] for t in raw_tags[:20] if str(t).strip())
+                rel_specs: list[RelationSpec] = []
+                if action in ("create", "update"):
+                    for r_obj in payload.get("relations") or []:
+                        if isinstance(r_obj, dict) and str(r_obj.get("target") or "").strip():
+                            rel_specs.append(
+                                RelationSpec(
+                                    relation_type=str(r_obj.get("relation_type") or "relates_to").strip()[:48],
+                                    target=str(r_obj.get("target")).strip()[:120],
+                                    context=str(r_obj.get("context") or "").strip()[:160],
+                                )
+                            )
+                    if not rel_specs and raw_summary:
+                        for rt, tgt, ctx in extract_relations_from_markdown(raw_summary):
+                            rel_specs.append(RelationSpec(relation_type=rt, target=tgt, context=ctx))
                 prop = ChangeProposal(
                     space_id=space_id,
                     action=action,
@@ -788,6 +838,7 @@ class ApiDispatcher:
                     tags=clean_tags,
                     lock_for_user=bool(payload.get("lock_for_user", True)),
                     evidences=evidences,
+                    relations=tuple(rel_specs),
                     reason=str(payload.get("reason", "Web console mutation"))[:200],
                 )
                 res = self.container.change_service.apply(prop)
@@ -815,6 +866,47 @@ class ApiDispatcher:
                     if r.to_target_text != "[FORGOTTEN]"
                 ]
                 return 200, {"nodes": [{"memory": m, "hop": 0} for m in all_mems], "edges": all_rels}
+
+            if method == "GET" and path == "/api/graph/canvas":
+                seed = qp.get("seed", [""])[0]
+                memory_type = qp.get("memory_type", [""])[0]
+                subject = qp.get("subject", [""])[0]
+                max_hops = _safe_int(
+                    qp.get("max_hops", [None])[0], name="max_hops", default=2, min_val=1, max_val=4
+                )
+                max_nodes = _safe_int(
+                    qp.get("max_nodes", [None])[0], name="max_nodes", default=120, min_val=1, max_val=250
+                )
+                include_semantic = _safe_bool(qp.get("include_semantic", [None])[0], default=True)
+                semantic_threshold = _safe_float(
+                    qp.get("semantic_threshold", [None])[0],
+                    name="semantic_threshold",
+                    default=0.52,
+                    min_val=0.25,
+                    max_val=0.98,
+                )
+                max_sem_per_node = _safe_int(
+                    qp.get("max_semantic_per_node", [None])[0],
+                    name="max_semantic_per_node",
+                    default=3,
+                    min_val=1,
+                    max_val=8,
+                )
+                include_unresolved = _safe_bool(qp.get("include_unresolved", [None])[0], default=True)
+                include_co_evidence = _safe_bool(qp.get("include_co_evidence", [None])[0], default=True)
+                return 200, self.container.retrieval_service.build_graph_canvas(
+                    space_id=space_id,
+                    seed=seed,
+                    memory_type=memory_type,
+                    subject=subject,
+                    max_hops=int(max_hops or 2),
+                    max_nodes=int(max_nodes or 120),
+                    include_semantic=include_semantic,
+                    semantic_threshold=semantic_threshold,
+                    max_semantic_per_node=int(max_sem_per_node or 3),
+                    include_unresolved=include_unresolved,
+                    include_co_evidence=include_co_evidence,
+                )
 
             if method == "POST" and path == "/api/ask":
                 self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)

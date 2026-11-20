@@ -10,13 +10,14 @@ enum MemorySheetTab: String, CaseIterable, Identifiable {
 
 struct MemoriesAndAskHostView: View {
     @EnvironmentObject var store: TodoStore
-    @State private var mode: Int = 0  // 0 = 记忆库, 1 = 问答
+    @State private var mode: Int = 0  // 0 = 记忆库, 1 = 关系星图, 2 = 问答
 
     var body: some View {
         VStack(spacing: 0) {
             Picker("模式", selection: $mode) {
                 Text("🗂️ 记忆库").tag(0)
-                Text("💬 证据问答").tag(1)
+                Text("🕸️ 关系星图").tag(1)
+                Text("💬 证据问答").tag(2)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
@@ -27,6 +28,8 @@ struct MemoriesAndAskHostView: View {
 
             if mode == 0 {
                 MemoriesView()
+            } else if mode == 1 {
+                KnowledgeGraphCanvasView()
             } else {
                 AskMemoryView()
             }
@@ -681,6 +684,7 @@ struct MemoryEditorAndDetailSheet: View {
 struct NewMemorySheet: View {
     @EnvironmentObject var store: TodoStore
     @Environment(\.dismiss) private var dismiss
+    var initialTitle: String = ""
     var onCreated: (() -> Void)? = nil
 
     @State private var memoryType: String = "semantic"
@@ -727,6 +731,11 @@ struct NewMemorySheet: View {
             .iosScrollDismissesKeyboard()
             .iosKeyboardDoneToolbar()
             .navigationTitle("✨ 新建长期记忆")
+            .onAppear {
+                if title.isEmpty && !initialTitle.isEmpty {
+                    title = initialTitle
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { dismiss() }
@@ -792,6 +801,696 @@ struct NewMemorySheet: View {
             dismiss()
         } catch {
             errorMsg = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - Obsidian-Style Force-Directed Knowledge Graph Canvas (SwiftUI Native)
+
+private struct IdentifiableMemoryId: Identifiable {
+    let id: String
+}
+
+private struct GhostCreationTarget: Identifiable {
+    let id = UUID()
+    let title: String
+}
+
+struct KnowledgeGraphCanvasView: View {
+    @EnvironmentObject var store: TodoStore
+    @State private var seedText: String = ""
+    @State private var selectedType: String = ""
+    @State private var selectedSubject: String = ""
+    @State private var includeSemantic: Bool = true
+    @State private var isLightCanvas: Bool = false
+    @State private var isLoading: Bool = false
+    @State private var errorMsg: String?
+
+    @State private var nodes: [GraphCanvasNodeModel] = []
+    @State private var edges: [GraphCanvasEdgeModel] = []
+    @State private var stats: GraphCanvasStatsModel?
+
+    @State private var positions: [String: CGPoint] = [:]
+    @State private var velocities: [String: CGPoint] = [:]
+    @State private var alpha: Double = 0.0
+    @State private var camOffset: CGSize = .zero
+    @State private var zoomScale: CGFloat = 1.0
+    @State private var baseZoomScale: CGFloat = 1.0
+    @State private var canvasSize: CGSize = CGSize(width: 600, height: 480)
+
+    @State private var selectedNodeId: String?
+    @State private var draggingNodeId: String?
+    @State private var dragStartCam: CGSize = .zero
+    @State private var isGestureActive: Bool = false
+
+    @State private var detailSheetTarget: IdentifiableMemoryId?
+    @State private var ghostCreateTarget: GhostCreationTarget?
+
+    private let physicsTimer = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
+
+    private let typeChips: [(code: String, label: String)] = [
+        ("", "全部"),
+        ("task", "任务"),
+        ("semantic", "事实"),
+        ("preference", "偏好"),
+        ("episodic", "情景"),
+        ("dream", "Dream✦")
+    ]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            filterHeader
+            Divider()
+            ZStack(alignment: .bottom) {
+                graphStage
+                if let selNode = nodes.first(where: { $0.id == selectedNodeId }) {
+                    inspectorCard(for: selNode)
+                        .padding(12)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+        }
+        .task(id: "\(store.serverURL)|\(store.spaceId)") {
+            await reloadGraph()
+        }
+        .onReceive(physicsTimer) { _ in
+            guard alpha > 0.005 || draggingNodeId != nil else { return }
+            stepPhysics()
+        }
+        .sheet(item: $detailSheetTarget) { item in
+            MemoryEditorAndDetailSheet(
+                memoryId: item.id,
+                initialTab: .provenance,
+                onChanged: {
+                    Task {
+                        await reloadGraph()
+                        await store.refresh()
+                    }
+                }
+            )
+            .environmentObject(store)
+        }
+        .sheet(item: $ghostCreateTarget) { ghost in
+            NewMemorySheet(initialTitle: ghost.title) {
+                Task {
+                    await reloadGraph()
+                    await store.refresh()
+                }
+            }
+            .environmentObject(store)
+        }
+    }
+
+    private var filterHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "point.3.connected.trianglepath.dotted")
+                        .foregroundStyle(.purple)
+                    TextField("输入种子 ID / 链接 / 关键词聚焦子图（留空全局）...", text: $seedText)
+                        .textFieldStyle(.plain)
+                        .onSubmit { Task { await reloadGraph() } }
+                    if !seedText.isEmpty {
+                        Button {
+                            seedText = ""
+                            Task { await reloadGraph() }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(.background)
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(Color.purple.opacity(0.25), lineWidth: 1)
+                )
+
+                Button {
+                    Task { await reloadGraph() }
+                } label: {
+                    Text(isLoading ? "加载..." : "刷新")
+                        .font(.caption.bold())
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 8)
+                        .background(Color.blue.opacity(0.14))
+                        .foregroundStyle(.blue)
+                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    ForEach(typeChips, id: \.code) { opt in
+                        let isSel = selectedType == opt.code
+                        Button {
+                            selectedType = opt.code
+                            Task { await reloadGraph() }
+                        } label: {
+                            Text(opt.label)
+                                .font(.caption.weight(isSel ? .bold : .medium))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(isSel ? Color(red: 0.16, green: 0.20, blue: 0.30) : Color.primary.opacity(0.06))
+                                .foregroundStyle(isSel ? .white : .primary)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    if let subjects = stats?.subjects, subjects.count > 1 {
+                        Menu {
+                            Button("全部主体") {
+                                selectedSubject = ""
+                                Task { await reloadGraph() }
+                            }
+                            ForEach(subjects, id: \.self) { subj in
+                                Button(subj == "self" ? "本人 (self)" : subj) {
+                                    selectedSubject = subj
+                                    Task { await reloadGraph() }
+                                }
+                            }
+                        } label: {
+                            Label(selectedSubject.isEmpty ? "主体" : (selectedSubject == "self" ? "本人" : selectedSubject), systemImage: "person.crop.circle")
+                                .font(.caption.weight(.medium))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color.primary.opacity(0.06))
+                                .clipShape(Capsule())
+                        }
+                    }
+
+                    Toggle(isOn: $includeSemantic) {
+                        Text("语义虚线")
+                            .font(.caption)
+                    }
+                    .toggleStyle(.button)
+                    .controlSize(.small)
+                    .onChange(of: includeSemantic) { _, _ in
+                        Task { await reloadGraph() }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private var graphStage: some View {
+        GeometryReader { geo in
+            ZStack {
+                LinearGradient(
+                    colors: isLightCanvas
+                        ? [Color(red: 0.98, green: 0.99, blue: 1.0), Color(red: 0.94, green: 0.96, blue: 0.98)]
+                        : [Color(red: 0.07, green: 0.10, blue: 0.18), Color(red: 0.04, green: 0.06, blue: 0.10)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+
+                Canvas { context, size in
+                    drawGraph(in: &context, size: size)
+                }
+                .gesture(canvasDragGesture(in: geo.size))
+                .simultaneousGesture(
+                    MagnifyGesture()
+                        .onChanged { val in
+                            zoomScale = min(3.2, max(0.32, baseZoomScale * val.magnification))
+                        }
+                        .onEnded { _ in
+                            baseZoomScale = zoomScale
+                        }
+                )
+
+                if nodes.isEmpty && !isLoading {
+                    VStack(spacing: 8) {
+                        Image(systemName: "point.3.connected.trianglepath.dotted")
+                            .font(.system(size: 30))
+                            .foregroundStyle(.secondary)
+                        Text(errorMsg ?? "当前空间暂无可展示的图谱节点")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                // Top-left HUD pill
+                VStack {
+                    HStack {
+                        if let st = stats {
+                            Text("节点 \(st.totalNodes) · 双链 \(st.wikilinkEdges) · Dream \(st.derivedEdges) · 语义 \(st.semanticEdges)")
+                                .font(.system(size: 11, weight: .semibold))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(isLightCanvas ? Color.white.opacity(0.88) : Color.black.opacity(0.55))
+                                .foregroundStyle(isLightCanvas ? Color.primary : Color.white)
+                                .clipShape(Capsule())
+                        }
+                        Spacer()
+                    }
+                    Spacer()
+                    HStack(spacing: 6) {
+                        hudButton("+") {
+                            zoomScale = min(3.2, zoomScale * 1.25)
+                            baseZoomScale = zoomScale
+                        }
+                        hudButton("−") {
+                            zoomScale = max(0.32, zoomScale * 0.8)
+                            baseZoomScale = zoomScale
+                        }
+                        hudButton("⟲") {
+                            camOffset = .zero
+                            zoomScale = 1.0
+                            baseZoomScale = 1.0
+                        }
+                        hudButton("⚡") {
+                            alpha = 0.85
+                        }
+                        hudButton(isLightCanvas ? "🌙" : "☀️") {
+                            isLightCanvas.toggle()
+                        }
+                        Spacer()
+                    }
+                }
+                .padding(12)
+            }
+            .onAppear { canvasSize = geo.size }
+            .onChange(of: geo.size) { _, newSize in canvasSize = newSize }
+        }
+    }
+
+    private func hudButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13, weight: .bold))
+                .frame(width: 32, height: 32)
+                .background(isLightCanvas ? Color.white.opacity(0.92) : Color(red: 0.10, green: 0.14, blue: 0.24).opacity(0.9))
+                .foregroundStyle(isLightCanvas ? Color.primary : Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.gray.opacity(0.28), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func inspectorCard(for node: GraphCanvasNodeModel) -> some View {
+        let neighborEdges = edges.filter { $0.source == node.id || $0.target == node.id }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Circle()
+                    .fill(colorForNode(node))
+                    .frame(width: 9, height: 9)
+                Text(node.title)
+                    .font(.subheadline.bold())
+                    .lineLimit(1)
+                Spacer()
+                Text(node.isGhost ? "悬空引用" : "\(node.memoryType) · v\(node.version)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { selectedNodeId = nil }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Text(node.summary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+
+            if !neighborEdges.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(neighborEdges) { edge in
+                            let otherId = edge.source == node.id ? edge.target : edge.source
+                            if let other = nodes.first(where: { $0.id == otherId }) {
+                                Button {
+                                    selectedNodeId = other.id
+                                    if let p = positions[other.id] {
+                                        camOffset = CGSize(width: -p.x * zoomScale, height: -p.y * zoomScale)
+                                    }
+                                } label: {
+                                    Text("↔ \(other.title)")
+                                        .font(.caption2.weight(.medium))
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.blue.opacity(0.14))
+                                        .foregroundStyle(.blue)
+                                        .clipShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                if node.isGhost {
+                    Button {
+                        ghostCreateTarget = GhostCreationTarget(title: node.title)
+                    } label: {
+                        Label("立即创建此节点并自动连线", systemImage: "sparkles")
+                            .font(.caption.bold())
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                } else {
+                    Button {
+                        seedText = node.memoryId
+                        Task { await reloadGraph() }
+                    } label: {
+                        Label("聚焦子图", systemImage: "scope")
+                            .font(.caption.bold())
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button {
+                        detailSheetTarget = IdentifiableMemoryId(id: node.memoryId)
+                    } label: {
+                        Label("原文溯源与编辑", systemImage: "doc.text.magnifyingglass")
+                            .font(.caption.bold())
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+            }
+        }
+        .padding(12)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+    }
+
+    private func colorForNode(_ n: GraphCanvasNodeModel) -> Color {
+        if n.isGhost { return Color.gray }
+        if n.assertionKind == "inferred" { return Color(red: 0.93, green: 0.28, blue: 0.60) }
+        switch n.memoryType {
+        case "task":
+            return n.taskStatus == "done"
+                ? Color(red: 0.06, green: 0.73, blue: 0.51)
+                : Color(red: 0.23, green: 0.51, blue: 0.96)
+        case "semantic":
+            return Color(red: 0.55, green: 0.36, blue: 0.96)
+        case "preference":
+            return Color(red: 0.96, green: 0.62, blue: 0.04)
+        case "episodic":
+            return Color(red: 0.08, green: 0.72, blue: 0.65)
+        default:
+            return Color.indigo
+        }
+    }
+
+    private func radiusForNode(_ n: GraphCanvasNodeModel) -> CGFloat {
+        if n.isGhost { return 6.5 }
+        return min(21.0, 7.2 + CGFloat(sqrt(Double(max(0, n.degree)))) * 3.0)
+    }
+
+    private func worldToScreen(_ pt: CGPoint, in size: CGSize) -> CGPoint {
+        CGPoint(
+            x: size.width * 0.5 + camOffset.width + pt.x * zoomScale,
+            y: size.height * 0.5 + camOffset.height + pt.y * zoomScale
+        )
+    }
+
+    private func screenToWorld(_ pt: CGPoint, in size: CGSize) -> CGPoint {
+        CGPoint(
+            x: (pt.x - size.width * 0.5 - camOffset.width) / max(0.25, zoomScale),
+            y: (pt.y - size.height * 0.5 - camOffset.height) / max(0.25, zoomScale)
+        )
+    }
+
+    private func hitTestNode(at screenPt: CGPoint, in size: CGSize) -> GraphCanvasNodeModel? {
+        let worldPt = screenToWorld(screenPt, in: size)
+        let pad: CGFloat = 6.0 / max(0.4, zoomScale)
+        for node in nodes.reversed() {
+            guard let pos = positions[node.id] else { continue }
+            let r = radiusForNode(node) + pad
+            if hypot(worldPt.x - pos.x, worldPt.y - pos.y) <= r {
+                return node
+            }
+        }
+        return nil
+    }
+
+    private func canvasDragGesture(in size: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if !isGestureActive {
+                    isGestureActive = true
+                    dragStartCam = camOffset
+                    if let hit = hitTestNode(at: value.startLocation, in: size) {
+                        draggingNodeId = hit.id
+                        alpha = max(alpha, 0.32)
+                    } else {
+                        draggingNodeId = nil
+                    }
+                }
+                if let dragId = draggingNodeId {
+                    positions[dragId] = screenToWorld(value.location, in: size)
+                    velocities[dragId] = .zero
+                    alpha = max(alpha, 0.25)
+                } else {
+                    camOffset = CGSize(
+                        width: dragStartCam.width + value.translation.width,
+                        height: dragStartCam.height + value.translation.height
+                    )
+                }
+            }
+            .onEnded { value in
+                let moved = hypot(value.translation.width, value.translation.height)
+                if moved < 5 {
+                    if let hit = hitTestNode(at: value.location, in: size) {
+                        withAnimation(.easeOut(duration: 0.16)) {
+                            selectedNodeId = hit.id
+                        }
+                    } else {
+                        withAnimation(.easeOut(duration: 0.16)) {
+                            selectedNodeId = nil
+                        }
+                    }
+                }
+                draggingNodeId = nil
+                isGestureActive = false
+            }
+    }
+
+    private func drawGraph(in context: inout GraphicsContext, size: CGSize) {
+        let focusId = selectedNodeId
+        var neighborSet = Set<String>()
+        if let fid = focusId {
+            for e in edges {
+                if e.source == fid { neighborSet.insert(e.target) }
+                if e.target == fid { neighborSet.insert(e.source) }
+            }
+        }
+
+        // 1. Edges
+        for edge in edges {
+            guard let p1 = positions[edge.source], let p2 = positions[edge.target] else { continue }
+            let s1 = worldToScreen(p1, in: size)
+            let s2 = worldToScreen(p2, in: size)
+            let isHighlighted = focusId != nil && (edge.source == focusId || edge.target == focusId)
+            let isDimmed = focusId != nil && !isHighlighted
+
+            var path = Path()
+            path.move(to: s1)
+            path.addLine(to: s2)
+
+            let baseColor: Color = {
+                switch edge.edgeKind {
+                case "derived_from": return Color.pink
+                case "wikilink": return Color.blue
+                case "co_evidence": return Color.teal
+                case "semantic": return Color.purple
+                default: return Color.gray
+                }
+            }()
+            let opacity = isDimmed ? 0.12 : (isHighlighted ? 0.92 : (edge.dashed ? 0.36 : 0.62))
+            let style = StrokeStyle(
+                lineWidth: isHighlighted ? 2.0 : 1.2,
+                dash: edge.dashed ? [4, 4] : []
+            )
+            context.stroke(path, with: .color(baseColor.opacity(opacity)), style: style)
+        }
+
+        // 2. Nodes & Labels
+        for node in nodes {
+            guard let worldPos = positions[node.id] else { continue }
+            let center = worldToScreen(worldPos, in: size)
+            let r = radiusForNode(node) * zoomScale
+            let isFocus = node.id == focusId
+            let isNb = neighborSet.contains(node.id)
+            let isDimmed = focusId != nil && !isFocus && !isNb
+            let nodeOpacity = isDimmed ? 0.18 : 1.0
+            let col = colorForNode(node)
+
+            if isFocus || isNb {
+                let haloRect = CGRect(x: center.x - r - 5, y: center.y - r - 5, width: (r + 5) * 2, height: (r + 5) * 2)
+                context.fill(Path(ellipseIn: haloRect), with: .color(col.opacity(0.24 * nodeOpacity)))
+            }
+
+            let rect = CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2)
+            if node.isGhost {
+                context.stroke(
+                    Path(ellipseIn: rect),
+                    with: .color(Color.gray.opacity(0.75 * nodeOpacity)),
+                    style: StrokeStyle(lineWidth: 1.5, dash: [3, 3])
+                )
+            } else {
+                context.fill(Path(ellipseIn: rect), with: .color(col.opacity(nodeOpacity)))
+                context.stroke(
+                    Path(ellipseIn: rect),
+                    with: .color((isFocus ? Color.white : Color.black.opacity(0.35)).opacity(nodeOpacity)),
+                    lineWidth: isFocus ? 2.2 : 1.0
+                )
+            }
+
+            if isFocus || isNb || node.degree >= 2 || zoomScale >= 0.78 || nodes.count <= 32 {
+                let shortTitle = node.title.count > 14 ? String(node.title.prefix(14)) + "…" : node.title
+                let text = Text(shortTitle)
+                    .font(.system(size: 11, weight: isFocus ? .bold : .medium))
+                    .foregroundColor((isLightCanvas ? Color.black : Color.white).opacity(nodeOpacity))
+                context.draw(text, at: CGPoint(x: center.x, y: center.y + r + 9), anchor: .center)
+            }
+        }
+    }
+
+    private func reloadGraph() async {
+        isLoading = true
+        errorMsg = nil
+        defer { isLoading = false }
+        do {
+            let res = try await store.client.fetchGraphCanvas(
+                seed: seedText.trimmingCharacters(in: .whitespacesAndNewlines),
+                memoryType: selectedType,
+                subject: selectedSubject,
+                includeSemantic: includeSemantic
+            )
+            nodes = res.nodes
+            edges = res.edges
+            stats = res.stats
+
+            var nextPos: [String: CGPoint] = [:]
+            var nextVel: [String: CGPoint] = [:]
+            for (idx, node) in res.nodes.enumerated() {
+                if let existing = positions[node.id] {
+                    nextPos[node.id] = existing
+                    nextVel[node.id] = .zero
+                } else {
+                    let angle = Double(idx) * 2.39996323
+                    let dist = 28.0 * sqrt(Double(idx + 1))
+                    nextPos[node.id] = CGPoint(x: cos(angle) * dist, y: sin(angle) * dist)
+                    nextVel[node.id] = .zero
+                }
+            }
+            positions = nextPos
+            velocities = nextVel
+            if let sel = selectedNodeId, !res.nodes.contains(where: { $0.id == sel }) {
+                selectedNodeId = nil
+            }
+            alpha = 0.92
+        } catch {
+            errorMsg = error.localizedDescription
+        }
+    }
+
+    private func stepPhysics() {
+        let count = nodes.count
+        guard count > 0 else { alpha = 0; return }
+
+        var pos = positions
+        var vel = velocities
+        let curAlpha = CGFloat(alpha)
+
+        for i in 0..<count {
+            let idA = nodes[i].id
+            guard let pA = pos[idA] else { continue }
+            var vA = vel[idA] ?? .zero
+            if idA != draggingNodeId {
+                vA.x -= pA.x * 0.015 * curAlpha
+                vA.y -= pA.y * 0.015 * curAlpha
+            }
+            for j in (i + 1)..<count {
+                let idB = nodes[j].id
+                guard let pB = pos[idB] else { continue }
+                var vB = vel[idB] ?? .zero
+                var dx = pB.x - pA.x
+                var dy = pB.y - pA.y
+                var d2 = dx * dx + dy * dy
+                if d2 < 1 {
+                    dx = CGFloat(i % 2 == 0 ? 1 : -1)
+                    dy = CGFloat(j % 2 == 0 ? 1 : -1)
+                    d2 = 2
+                }
+                let dist = sqrt(d2)
+                let rep = (1450.0 * curAlpha) / (d2 + 120.0)
+                let fx = (dx / dist) * rep
+                let fy = (dy / dist) * rep
+                if idA != draggingNodeId { vA.x -= fx; vA.y -= fy }
+                if idB != draggingNodeId { vB.x += fx; vB.y += fy }
+                vel[idB] = vB
+            }
+            vel[idA] = vA
+        }
+
+        for edge in edges {
+            guard let pS = pos[edge.source], let pT = pos[edge.target] else { continue }
+            let dx = pT.x - pS.x
+            let dy = pT.y - pS.y
+            let dist = max(1.0, hypot(dx, dy))
+            let rest: CGFloat = edge.edgeKind == "semantic" ? 140.0 : 105.0
+            let k: CGFloat = (edge.edgeKind == "semantic" ? 0.028 : 0.052) * CGFloat(edge.weight) * curAlpha
+            let f = (dist - rest) * k
+            let fx = (dx / dist) * f
+            let fy = (dy / dist) * f
+            if edge.source != draggingNodeId {
+                var vs = vel[edge.source] ?? .zero
+                vs.x += fx; vs.y += fy
+                vel[edge.source] = vs
+            }
+            if edge.target != draggingNodeId {
+                var vt = vel[edge.target] ?? .zero
+                vt.x -= fx; vt.y -= fy
+                vel[edge.target] = vt
+            }
+        }
+
+        for node in nodes {
+            let nid = node.id
+            if nid == draggingNodeId {
+                vel[nid] = .zero
+                continue
+            }
+            var v = vel[nid] ?? .zero
+            var p = pos[nid] ?? .zero
+            v.x *= 0.80
+            v.y *= 0.80
+            let sp = hypot(v.x, v.y)
+            if sp > 16 {
+                v.x = (v.x / sp) * 16
+                v.y = (v.y / sp) * 16
+            }
+            p.x += v.x
+            p.y += v.y
+            vel[nid] = v
+            pos[nid] = p
+        }
+
+        positions = pos
+        velocities = vel
+        if draggingNodeId == nil {
+            alpha *= 0.968
         }
     }
 }

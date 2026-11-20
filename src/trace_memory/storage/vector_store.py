@@ -69,6 +69,13 @@ class VectorStore(Protocol):
 
     def count(self, collection: str, space_id: str = "") -> int: ...
 
+    def get_space_vectors(
+        self,
+        collection: str,
+        space_id: str,
+        doc_ids: set[str] | None = None,
+    ) -> dict[str, tuple[list[float], float]]: ...
+
 
 class SQLiteVectorStore:
     """Zero-dependency persistent Cosine Similarity vector store with metadata pre-filtering."""
@@ -171,6 +178,29 @@ class SQLiteVectorStore:
                 (collection,),
             )
         return int(row["cnt"]) if row else 0
+
+    def get_space_vectors(
+        self,
+        collection: str,
+        space_id: str,
+        doc_ids: set[str] | None = None,
+    ) -> dict[str, tuple[list[float], float]]:
+        rows = self.db.query_all(
+            "SELECT doc_id, vector_json, norm FROM vector_records WHERE collection = ? AND space_id = ?",
+            (collection, space_id),
+        )
+        out: dict[str, tuple[list[float], float]] = {}
+        for r in rows:
+            did = str(r["doc_id"])
+            if doc_ids is not None and did not in doc_ids:
+                continue
+            vec = json.loads(r["vector_json"])
+            norm = float(r["norm"] or 0.0)
+            if norm <= 1e-12:
+                norm = _vector_norm(vec)
+            if norm > 1e-12:
+                out[did] = (vec, norm)
+        return out
 
 
 class QdrantVectorStore:
@@ -293,6 +323,38 @@ class QdrantVectorStore:
                 must=[FieldCondition(key="space_id", match=MatchValue(value=space_id))]
             )
         return int(self.client.count(collection_name=collection, count_filter=q_filter).count)
+
+    def get_space_vectors(
+        self,
+        collection: str,
+        space_id: str,
+        doc_ids: set[str] | None = None,
+    ) -> dict[str, tuple[list[float], float]]:
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+        q_filter = Filter(
+            must=[FieldCondition(key="space_id", match=MatchValue(value=space_id))]
+        )
+        points, _ = self.client.scroll(
+            collection_name=collection,
+            scroll_filter=q_filter,
+            limit=500,
+            with_payload=True,
+            with_vectors=True,
+        )
+        out: dict[str, tuple[list[float], float]] = {}
+        for pt in points:
+            payload = dict(pt.payload or {})
+            did = str(payload.get("doc_id", pt.id))
+            if doc_ids is not None and did not in doc_ids:
+                continue
+            raw_vec = pt.vector
+            if isinstance(raw_vec, list) and raw_vec and isinstance(raw_vec[0], (int, float)):
+                vec = [float(x) for x in raw_vec]
+                norm = _vector_norm(vec)
+                if norm > 1e-12:
+                    out[did] = (vec, norm)
+        return out
 
 
 class EmbeddingProviderProtocol(Protocol):

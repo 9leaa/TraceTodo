@@ -1081,3 +1081,127 @@ struct AdminContentSummary: Codable {
 struct AdminUsersResponse: Codable {
     let users: [AdminUserItemModel]
 }
+
+// MARK: - Obsidian-Style Knowledge Graph Canvas Models
+
+struct GraphCanvasNodeModel: Codable, Identifiable, Hashable {
+    let id: String
+    let memoryId: String
+    let isGhost: Bool
+    let title: String
+    let summary: String
+    let uri: String
+    let permalink: String
+    let memoryType: String
+    let assertionKind: String
+    let userLocked: Bool
+    let version: Int
+    let subject: String
+    let tags: [String]
+    let hop: Int
+    let degree: Int
+    let explicitDegree: Int
+    let evidenceCount: Int
+    let quadrant: String
+    let taskStatus: String
+    let dueAt: String
+    let updatedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case memoryId = "memory_id"
+        case isGhost = "is_ghost"
+        case title
+        case summary
+        case uri
+        case permalink
+        case memoryType = "memory_type"
+        case assertionKind = "assertion_kind"
+        case userLocked = "user_locked"
+        case version
+        case subject
+        case tags
+        case hop
+        case degree
+        case explicitDegree = "explicit_degree"
+        case evidenceCount = "evidence_count"
+        case quadrant
+        case taskStatus = "task_status"
+        case dueAt = "due_at"
+        case updatedAt = "updated_at"
+    }
+}
+
+struct GraphCanvasEdgeModel: Codable, Identifiable, Hashable {
+    let id: String
+    let source: String
+    let target: String
+    let edgeKind: String
+    let relationType: String
+    let label: String
+    let weight: Double
+    let directed: Bool
+    let dashed: Bool
+    let resolved: Bool
+    let context: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case source
+        case target
+        case edgeKind = "edge_kind"
+        case relationType = "relation_type"
+        case label
+        case weight
+        case directed
+        case dashed
+        case resolved
+        case context
+    }
+}
+
+struct GraphCanvasStatsModel: Codable, Hashable {
+    let totalNodes: Int
+    let realNodes: Int
+    let ghostNodes: Int
+    let totalEdges: Int
+    let wikilinkEdges: Int
+    let derivedEdges: Int
+    let coEvidenceEdges: Int
+    let semanticEdges: Int
+    let ghostEdges: Int
+    let isolatedNodes: Int
+    let subjects: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case totalNodes = "total_nodes"
+        case realNodes = "real_nodes"
+        case ghostNodes = "ghost_nodes"
+        case totalEdges = "total_edges"
+        case wikilinkEdges = "wikilink_edges"
+        case derivedEdges = "derived_edges"
+        case coEvidenceEdges = "co_evidence_edges"
+        case semanticEdges = "semantic_edges"
+        case ghostEdges = "ghost_edges"
+        case isolatedNodes = "isolated_nodes"
+        case subjects
+    }
+}
+
+struct GraphCanvasResponse: Codable {
+    let spaceId: String
+    let mode: String
+    let seed: String
+    let nodes: [GraphCanvasNodeModel]
+    let edges: [GraphCanvasEdgeModel]
+    let stats: GraphCanvasStatsModel
+
+    enum CodingKeys: String, CodingKey {
+        case spaceId = "space_id"
+        case mode
+        case seed
+        case nodes
+        case edges
+        case stats
+    }
+}

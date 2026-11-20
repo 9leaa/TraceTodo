@@ -9,6 +9,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     case list = "列表"
     case supervision = "监工"
     case memories = "记忆"
+    case graph = "图谱"
     case ask = "问答"
     case settings = "设置"
 
@@ -21,6 +22,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .list: return "list.bullet.rectangle.portrait"
         case .supervision: return "person.2.fill"
         case .memories: return "brain.head.profile"
+        case .graph: return "point.3.connected.trianglepath.dotted"
         case .ask: return "bubble.left.and.text.bubble.right.fill"
         case .settings: return "gearshape.fill"
         }
@@ -245,6 +247,8 @@ struct MainContentView: View {
                             SupervisionBoardView()
                         case .memories:
                             MemoriesView()
+                        case .graph:
+                            KnowledgeGraphCanvasView()
                         case .ask:
                             AskMemoryView()
                         case .settings:

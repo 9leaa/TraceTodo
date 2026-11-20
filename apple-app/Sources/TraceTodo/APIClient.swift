@@ -337,6 +337,33 @@ struct TraceMemoryAPIClient {
         return try JSONDecoder().decode(AskResponse.self, from: data)
     }
 
+    func fetchGraphCanvas(
+        seed: String = "",
+        memoryType: String = "",
+        subject: String = "",
+        maxHops: Int = 2,
+        includeSemantic: Bool = true,
+        semanticThreshold: Double = 0.52,
+        includeUnresolved: Bool = true
+    ) async throws -> GraphCanvasResponse {
+        try await get(
+            "/api/graph/canvas",
+            queryItems: [
+                URLQueryItem(name: "seed", value: seed),
+                URLQueryItem(name: "memory_type", value: memoryType),
+                URLQueryItem(name: "subject", value: subject),
+                URLQueryItem(name: "max_hops", value: String(maxHops)),
+                URLQueryItem(name: "include_semantic", value: includeSemantic ? "1" : "0"),
+                URLQueryItem(name: "semantic_threshold", value: String(format: "%.2f", semanticThreshold)),
+                URLQueryItem(name: "include_unresolved", value: includeUnresolved ? "1" : "0")
+            ]
+        )
+    }
+
+    func runDream() async throws {
+        try await postRaw("/api/dream", body: [:])
+    }
+
     func seedDemoData() async throws {
         try await postRaw("/api/seed-demo", body: [:])
     }
