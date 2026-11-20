@@ -605,15 +605,68 @@ class ApiDispatcher:
                 elapsed_s = _safe_int(
                     payload.get("elapsed_seconds", 0), name="elapsed_seconds", default=0, min_val=0, max_val=86400
                 )
+                ev_str = str(payload.get("event", "complete_session"))
+                reason_str = str(payload.get("reason", ""))[:200]
                 res = self.container.task_matrix_service.record_focus_event(
                     space_id=space_id,
                     memory_id=str(payload.get("memory_id", "")),
-                    event=str(payload.get("event", "complete_session")),
-                    reason=str(payload.get("reason", ""))[:200],
+                    event=ev_str,
+                    reason=reason_str,
                     elapsed_seconds=int(elapsed_s or 0),
                     expected_version=exp_ver,
                 )
+                if res.memory is not None:
+                    plan_m = int(res.memory.payload.get("focus_minutes", 25) or 25)
+                    self.container.focus_service.insert_session_row(
+                        space_id=space_id,
+                        task_memory_id=res.memory.memory_id,
+                        task_title=res.memory.title,
+                        mode=str(payload.get("mode", "pomodoro")),
+                        planned_minutes=plan_m,
+                        duration_seconds=int(elapsed_s or 0) or (plan_m * 60),
+                        status="completed" if ev_str == "complete_session" else "aborted",
+                        abort_reason=reason_str,
+                        actor_id=user.username if user else "user",
+                    )
                 return 200, res.to_dict()
+
+            if method == "GET" and path == "/api/focus/overview":
+                lim = _safe_int(qp.get("limit", ["50"])[0], name="limit", default=50, min_val=1, max_val=200)
+                date_q = qp.get("date", [""])[0].strip()
+                return 200, self.container.focus_service.get_overview(
+                    space_id=space_id, limit=int(lim or 50), focus_date=date_q
+                )
+
+            if method == "POST" and path == "/api/focus/record":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                exp_ver = _safe_int(payload.get("expected_version"), name="expected_version", min_val=1)
+                plan_min = _safe_int(payload.get("planned_minutes", 25), name="planned_minutes", default=25, min_val=1, max_val=240)
+                dur_sec = _safe_int(payload.get("duration_seconds", 0), name="duration_seconds", default=0, min_val=0, max_val=86400)
+                out_focus = self.container.focus_service.record_session(
+                    space_id=space_id,
+                    mode=str(payload.get("mode", "pomodoro")),
+                    status=str(payload.get("status", "completed")),
+                    planned_minutes=int(plan_min or 25),
+                    duration_seconds=int(dur_sec or 0),
+                    task_memory_id=str(payload.get("task_memory_id", "")),
+                    task_title=str(payload.get("task_title", "")),
+                    abort_reason=str(payload.get("abort_reason", "")),
+                    note=str(payload.get("note", "")),
+                    started_at=str(payload.get("started_at", "")),
+                    ended_at=str(payload.get("ended_at", "")),
+                    expected_version=exp_ver,
+                    complete_task=bool(payload.get("complete_task", False)),
+                    actor_id=user.username if user else "user",
+                )
+                return 200, out_focus
+
+            if method == "POST" and path == "/api/focus/delete":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                deleted = self.container.focus_service.delete_session(
+                    space_id=space_id,
+                    session_id=str(payload.get("session_id", "")),
+                )
+                return 200, {"deleted": deleted}
 
             if method == "GET" and path == "/api/supervision/board":
                 assignee = qp.get("assignee", [""])[0]
@@ -1086,6 +1139,29 @@ class ApiDispatcher:
         )
         if rich_res.status != "idempotent_replay":
             created += 1
+
+        # Seed sample Pomodoro & Stopwatch focus sessions idempotently
+        demo_task_id = rich_res.memory.memory_id if rich_res.memory else ""
+        self.container.focus_service.insert_session_row(
+            space_id=space_id,
+            session_id=f"fcs_demo_pomo_{hashlib.md5(space_id.encode('utf-8')).hexdigest()[:8]}",
+            task_memory_id=demo_task_id,
+            task_title="完成周六技术分享 PPT 与现场 Demo 联调",
+            mode="pomodoro",
+            planned_minutes=25,
+            duration_seconds=1500,
+            status="completed",
+        )
+        self.container.focus_service.insert_session_row(
+            space_id=space_id,
+            session_id=f"fcs_demo_sw_{hashlib.md5(space_id.encode('utf-8')).hexdigest()[:8]}",
+            task_memory_id="",
+            task_title="深度阅读向量检索论文（自由专注）",
+            mode="stopwatch",
+            planned_minutes=0,
+            duration_seconds=1080,
+            status="completed",
+        )
         return {"seeded_notes": created, "space_id": space_id}
 
     def dispatch_mcp_http(

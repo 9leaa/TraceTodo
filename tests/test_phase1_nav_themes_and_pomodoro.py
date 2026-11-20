@@ -124,6 +124,136 @@ class TestPhase1NavThemesAndPreferences(unittest.TestCase):
         for label in ('case tasks = "待办"', 'case calendar = "日历"', 'case focus = "专注"', 'case notes = "随记"', 'case memories = "记忆"'):
             self.assertIn(label, swift_app)
 
+    def test_pomodoro_and_stopwatch_focus_center_4grid_and_timeline(self) -> None:
+        # Create a task in alice's space
+        _, saved = self.api.dispatch(
+            "POST",
+            "/api/tasks/save",
+            body={
+                "space_id": "alice",
+                "title": "重构混合向量索引模块",
+                "importance": 5,
+                "urgency": 4,
+                "focus_minutes": 25,
+            },
+        )
+        task_id = saved["memory"]["memory_id"]
+        task_ver = saved["memory"]["version"]
+
+        # 1) Record a completed 25m Pomodoro bound to the task today
+        code_p, res_p = self.api.dispatch(
+            "POST",
+            "/api/focus/record",
+            body={
+                "space_id": "alice",
+                "mode": "pomodoro",
+                "status": "completed",
+                "planned_minutes": 25,
+                "duration_seconds": 1500,
+                "task_memory_id": task_id,
+                "expected_version": task_ver,
+            },
+        )
+        self.assertEqual(code_p, 200)
+        self.assertEqual(res_p["task"]["payload"]["focus_sessions_completed"], 1)
+        self.assertEqual(res_p["stats"]["today_pomodoros"], 1)
+        self.assertEqual(res_p["stats"]["today_seconds"], 1500)
+
+        # 2) Record a 20m free-focus Stopwatch session today (no task_memory_id)
+        code_sw, res_sw = self.api.dispatch(
+            "POST",
+            "/api/focus/record",
+            body={
+                "space_id": "alice",
+                "mode": "stopwatch",
+                "status": "completed",
+                "duration_seconds": 1200,
+                "task_title": "阅读论文自由专注",
+            },
+        )
+        self.assertEqual(code_sw, 200)
+        self.assertEqual(res_sw["session"]["task_title"], "阅读论文自由专注")
+        # Stopwatch adds to duration, while today_pomodoros counts completed pomodoros
+        self.assertEqual(res_sw["stats"]["today_pomodoros"], 1)
+        self.assertEqual(res_sw["stats"]["today_seconds"], 2700)
+
+        # 3) Record a historical Pomodoro from an earlier Beijing date
+        code_old, _ = self.api.dispatch(
+            "POST",
+            "/api/focus/record",
+            body={
+                "space_id": "alice",
+                "mode": "pomodoro",
+                "status": "completed",
+                "planned_minutes": 25,
+                "duration_seconds": 1500,
+                "ended_at": "2026-10-01T15:00:00+08:00",
+            },
+        )
+        self.assertEqual(code_old, 200)
+
+        # 4) Record an aborted Pomodoro (should not inflate completed stats, but records interruption)
+        code_ab, res_ab = self.api.dispatch(
+            "POST",
+            "/api/focus/record",
+            body={
+                "space_id": "alice",
+                "mode": "pomodoro",
+                "status": "aborted",
+                "planned_minutes": 25,
+                "duration_seconds": 300,
+                "task_memory_id": task_id,
+                "abort_reason": "临时线上告警",
+            },
+        )
+        self.assertEqual(code_ab, 200)
+        self.assertEqual(res_ab["stats"]["aborted_sessions"], 1)
+
+        # Verify 4-grid overview & timeline ordering
+        code_ov, ov = self.api.dispatch("GET", "/api/focus/overview", {"space_id": ["alice"]})
+        self.assertEqual(code_ov, 200)
+        st = ov["stats"]
+        self.assertEqual(st["today_pomodoros"], 1)
+        self.assertEqual(st["total_pomodoros"], 2)
+        self.assertEqual(st["today_seconds"], 2700)
+        self.assertEqual(st["total_seconds"], 4200)
+        self.assertEqual(len(ov["sessions"]), 4)
+
+        # Space isolation: bob cannot attach alice's task & sees empty stats
+        code_forbid, _ = self.api.dispatch(
+            "POST",
+            "/api/focus/record",
+            body={"space_id": "bob", "task_memory_id": task_id, "mode": "pomodoro"},
+        )
+        self.assertEqual(code_forbid, 403)
+        _, bob_ov = self.api.dispatch("GET", "/api/focus/overview", {"space_id": ["bob"]})
+        self.assertEqual(bob_ov["stats"]["total_seconds"], 0)
+
+        # Delete aborted session cleanly
+        aborted_sid = res_ab["session"]["session_id"]
+        code_del, del_res = self.api.dispatch(
+            "POST",
+            "/api/focus/delete",
+            body={"space_id": "alice", "session_id": aborted_sid},
+        )
+        self.assertEqual(code_del, 200)
+        self.assertTrue(del_res["deleted"])
+
+    def test_focus_center_ui_markers_present_in_web_and_swift(self) -> None:
+        html = (REPO_ROOT / "src" / "trace_memory" / "api" / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('id="focusModeSegBar"', html)
+        self.assertIn('id="focusStatsGrid"', html)
+        self.assertIn('id="focusTimelineList"', html)
+        self.assertIn("function startUnifiedFocus(", html)
+
+        swift_focus = (REPO_ROOT / "apple-app" / "Sources" / "TraceTodo" / "FocusLockView.swift").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("enum FocusTimerMode", swift_focus)
+        self.assertIn("struct FocusCenterView: View", swift_focus)
+        self.assertIn("今日番茄", swift_focus)
+        self.assertIn("专注历史时间轴", swift_focus)
+
 
 if __name__ == "__main__":
     unittest.main()

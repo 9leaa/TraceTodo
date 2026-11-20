@@ -345,6 +345,29 @@ CREATE TABLE IF NOT EXISTS space_preferences (
     extra_json TEXT NOT NULL DEFAULT '{}',
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS focus_sessions (
+    session_id TEXT PRIMARY KEY,
+    space_id TEXT NOT NULL,
+    task_memory_id TEXT NOT NULL DEFAULT '',
+    task_title TEXT NOT NULL DEFAULT '自由专注',
+    mode TEXT NOT NULL DEFAULT 'pomodoro',
+    planned_minutes INTEGER NOT NULL DEFAULT 25,
+    duration_seconds INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'completed',
+    abort_reason TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    started_at TEXT NOT NULL,
+    ended_at TEXT NOT NULL,
+    focus_date TEXT NOT NULL,
+    actor_id TEXT NOT NULL DEFAULT 'user',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_focus_sessions_space_date
+    ON focus_sessions(space_id, focus_date DESC, ended_at DESC);
+CREATE INDEX IF NOT EXISTS idx_focus_sessions_task
+    ON focus_sessions(space_id, task_memory_id);
 """
 
 

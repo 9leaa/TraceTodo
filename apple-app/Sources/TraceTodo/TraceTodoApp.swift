@@ -334,7 +334,12 @@ struct MainContentView: View {
             }
             #endif
 
-            if let focusTask = store.activeFocusTask {
+            if let launch = store.activeFocusLaunch {
+                FocusLockView(launch: launch)
+                    .environmentObject(store)
+                    .transition(.opacity)
+                    .zIndex(100)
+            } else if let focusTask = store.activeFocusTask {
                 FocusLockView(task: focusTask)
                     .environmentObject(store)
                     .transition(.opacity)
