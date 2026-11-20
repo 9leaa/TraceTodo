@@ -656,6 +656,8 @@ struct SettingsSyncView: View {
 
     var body: some View {
         Form {
+            ThemeAndModulesSettingsSections()
+
             Section("账号登录与今日配额") {
                 if let user = store.currentUser {
                     LabeledContent("当前账号", value: "\(user.displayName) (@\(user.username))")

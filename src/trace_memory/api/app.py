@@ -344,6 +344,7 @@ class ApiDispatcher:
                     "default_space": self.container.config.default_space,
                     "vector_backend": self.container.vector_store.backend_name,
                     "llm_provider": self.container.llm.provider_name,
+                    "vision_model": self.container.config.vision_model,
                     "auth_required": bool(self.container.config.auth_required),
                     "allow_registration": bool(settings["allow_registration"]),
                     "has_users": self.container.auth_service.has_users(),
@@ -353,6 +354,14 @@ class ApiDispatcher:
                     "async_ingest_ready": self.container.ingest_worker.is_running,
                     "daily_scheduler_ready": self.container.daily_scheduler.is_running,
                 }
+
+            if method == "GET" and path == "/api/preferences":
+                return 200, self.container.preferences_service.get_preferences(space_id)
+
+            if method == "POST" and path == "/api/preferences":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                updated_prefs = self.container.preferences_service.update_preferences(space_id, payload)
+                return 200, updated_prefs
 
             if method == "GET" and path == "/api/sync/state":
                 st = self.container.sync_tracker.get_state(space_id)
@@ -717,6 +726,22 @@ class ApiDispatcher:
                     if job_obj is not None and job_obj["space_id"] == space_id:
                         status_obj["job"] = job_obj
                 return 200, status_obj
+
+            if method == "GET" and path == "/api/notes/list":
+                q = qp.get("q", [""])[0].strip()[:300]
+                lim = _safe_int(qp.get("limit", ["40"])[0], name="limit", default=40, min_val=1, max_val=200)
+                if q:
+                    hits = self.container.note_repo.search_bm25(space_id=space_id, query=q, limit=int(lim or 40))
+                    notes_out = [
+                        {**n.to_dict(), "bm25_score": round(score, 4)}
+                        for n, score in hits
+                    ]
+                else:
+                    notes_out = [
+                        n.to_dict()
+                        for n in self.container.note_repo.list_notes(space_id=space_id, limit=int(lim or 40))
+                    ]
+                return 200, {"space_id": space_id, "count": len(notes_out), "notes": notes_out}
 
             if method == "POST" and path == "/api/notes/forget":
                 self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)

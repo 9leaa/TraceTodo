@@ -246,3 +246,37 @@ struct FocusLockView: View {
         #endif
     }
 }
+
+struct FocusCenterView: View {
+    @EnvironmentObject var store: TodoStore
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("🍅 番茄专注中心")
+                    .font(.title3.bold())
+                Text("选择一个待办事项立即开启沉浸专注")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                let todos = (store.matrix?.sortedTasks ?? []).filter { !$0.payload.isDone }
+                ForEach(todos.prefix(8)) { task in
+                    HStack {
+                        Text(task.title)
+                            .font(.subheadline.weight(.medium))
+                        Spacer()
+                        Button("🎯 开始专注") {
+                            store.activeFocusTask = task
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(store.activeTheme.primaryColor)
+                    }
+                    .padding(12)
+                    .background(.background)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+            }
+            .padding(16)
+        }
+    }
+}

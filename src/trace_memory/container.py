@@ -20,6 +20,7 @@ from trace_memory.services.guard_service import (
 from trace_memory.services.ingest_queue import IngestJobRepository, IngestWorkerPool
 from trace_memory.services.ingest_service import IngestService
 from trace_memory.services.markdown_sync import MarkdownSyncService
+from trace_memory.services.preferences_service import PreferencesService
 from trace_memory.services.retrieval_service import RetrievalService
 from trace_memory.services.sync_and_scheduler import (
     DailyTaskMaintenanceScheduler,
@@ -73,6 +74,7 @@ class AppContainer:
     ingest_worker: IngestWorkerPool
     sync_tracker: SpaceSyncTracker
     daily_scheduler: DailyTaskMaintenanceScheduler
+    preferences_service: PreferencesService
 
     @classmethod
     def build(
@@ -151,6 +153,7 @@ class AppContainer:
             guard=quota_service,
         )
         sync_tracker = SpaceSyncTracker(db=db)
+        preferences_service = PreferencesService(db=db, sync_tracker=sync_tracker)
         change_service = ChangeService(
             note_repo=note_repo,
             memory_repo=memory_repo,
@@ -262,6 +265,7 @@ class AppContainer:
             ingest_worker=ingest_worker,
             sync_tracker=sync_tracker,
             daily_scheduler=daily_scheduler,
+            preferences_service=preferences_service,
         )
 
     def close(self) -> None:

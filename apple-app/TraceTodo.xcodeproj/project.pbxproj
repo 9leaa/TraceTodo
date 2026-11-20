@@ -21,6 +21,7 @@
 		A10000122B00000100000001 /* MemoriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000132B00000100000001 /* MemoriesView.swift */; };
 		A10000142B00000100000001 /* AuthAndAdminViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000152B00000100000001 /* AuthAndAdminViews.swift */; };
 		A10000152B00000100000001 /* SharedWidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000162B00000100000001 /* SharedWidgetBridge.swift */; };
+		A10000162B00000100000001 /* ThemeAndPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000182B00000100000001 /* ThemeAndPreferences.swift */; };
 		A10000132B00000100000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000142B00000100000001 /* Assets.xcassets */; };
 		B10000012B00000100000001 /* TraceTodoWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000012B00000100000001 /* TraceTodoWidgets.swift */; };
 		B10000032B00000100000001 /* SharedWidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000162B00000100000001 /* SharedWidgetBridge.swift */; };
@@ -69,6 +70,7 @@
 		A20000132B00000100000001 /* MemoriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoriesView.swift; sourceTree = "<group>"; };
 		A20000152B00000100000001 /* AuthAndAdminViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthAndAdminViews.swift; sourceTree = "<group>"; };
 		A20000162B00000100000001 /* SharedWidgetBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedWidgetBridge.swift; sourceTree = "<group>"; };
+		A20000182B00000100000001 /* ThemeAndPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeAndPreferences.swift; sourceTree = "<group>"; };
 		A20000172B00000100000001 /* Config/TraceTodo.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Config/TraceTodo.entitlements; sourceTree = "<group>"; };
 		A20000142B00000100000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Config/Assets.xcassets; sourceTree = "<group>"; };
 		A30000012B00000100000001 /* TraceTodo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TraceTodo.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -140,6 +142,7 @@
 				A20000132B00000100000001 /* MemoriesView.swift */,
 				A20000152B00000100000001 /* AuthAndAdminViews.swift */,
 				A20000162B00000100000001 /* SharedWidgetBridge.swift */,
+				A20000182B00000100000001 /* ThemeAndPreferences.swift */,
 			);
 			path = Sources/TraceTodo;
 			sourceTree = "<group>";
@@ -249,6 +252,7 @@
 				A10000122B00000100000001 /* MemoriesView.swift in Sources */,
 				A10000142B00000100000001 /* AuthAndAdminViews.swift in Sources */,
 				A10000152B00000100000001 /* SharedWidgetBridge.swift in Sources */,
+				A10000162B00000100000001 /* ThemeAndPreferences.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

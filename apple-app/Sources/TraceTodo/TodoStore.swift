@@ -49,8 +49,21 @@ final class TodoStore: ObservableObject {
     @Published var isPresentingAuthSheet: Bool = false
 
     @Published var isPresentingNewTaskSheet: Bool = false
+    @Published var isPresentingSettingsSheet: Bool = false
+    @Published var isPresentingSupervisionSheet: Bool = false
     @Published var editingTaskTarget: TaskItemModel?
     @Published var activeFocusTask: TaskItemModel?
+
+    @Published var activeTheme: AppThemeKind = .classic
+    @Published var enabledModules: [String: Bool] = [
+        "calendar": true,
+        "focus": true,
+        "notes": true,
+        "journal": true,
+        "countdown": true,
+        "supervision": true
+    ]
+    @Published var defaultPomodoroMinutes: Int = 25
 
     static var defaultServerURL: String {
         SharedWidgetBridge.cloudServerURL
@@ -72,6 +85,19 @@ final class TodoStore: ObservableObject {
         }
         self.spaceId = UserDefaults.standard.string(forKey: "tm_space_id") ?? "default"
         self.authToken = UserDefaults.standard.string(forKey: "tm_auth_token") ?? ""
+        if let savedTheme = UserDefaults.standard.string(forKey: "tm_theme_id"),
+           let parsedTheme = AppThemeKind(rawValue: savedTheme) {
+            self.activeTheme = parsedTheme
+        }
+        if let savedMods = UserDefaults.standard.dictionary(forKey: "tm_enabled_modules") as? [String: Bool] {
+            for (k, v) in savedMods {
+                self.enabledModules[k] = v
+            }
+        }
+        let savedPom = UserDefaults.standard.integer(forKey: "tm_pomodoro_minutes")
+        if savedPom > 0 {
+            self.defaultPomodoroMinutes = savedPom
+        }
         syncSharedWidgetConfig()
         loadOfflineState()
     }
@@ -201,6 +227,7 @@ final class TodoStore: ObservableObject {
                     self.lastKnownBeijingDate = bjDate
                 }
             }
+            await refreshPreferences()
             #if os(iOS)
             WidgetCenter.shared.reloadAllTimelines()
             #endif
@@ -327,6 +354,7 @@ final class TodoStore: ObservableObject {
                 self.matrix = fresh
                 self.isOnline = true
                 saveMatrixCache(fresh)
+                await refreshPreferences()
                 #if os(iOS)
                 WidgetCenter.shared.reloadAllTimelines()
                 #endif
@@ -562,6 +590,48 @@ final class TodoStore: ObservableObject {
             await refresh()
         } catch {
             showBanner("载入失败，请确认 trace-memory 服务已启动")
+        }
+    }
+
+    func isModuleEnabled(_ key: ModuleToggleKey) -> Bool {
+        enabledModules[key.rawValue] ?? true
+    }
+
+    func refreshPreferences() async {
+        guard let prefs = try? await client.fetchPreferences() else { return }
+        applyPreferencesResponse(prefs)
+    }
+
+    private func applyPreferencesResponse(_ prefs: SpacePreferencesResponse) {
+        if let th = AppThemeKind(rawValue: prefs.themeId) {
+            self.activeTheme = th
+            UserDefaults.standard.set(th.rawValue, forKey: "tm_theme_id")
+        }
+        for (k, v) in prefs.enabledModules {
+            self.enabledModules[k] = v
+        }
+        UserDefaults.standard.set(self.enabledModules, forKey: "tm_enabled_modules")
+        if let pm = prefs.pomodoroMinutes, pm > 0 {
+            self.defaultPomodoroMinutes = pm
+            UserDefaults.standard.set(pm, forKey: "tm_pomodoro_minutes")
+        }
+    }
+
+    func selectTheme(_ theme: AppThemeKind) async {
+        self.activeTheme = theme
+        UserDefaults.standard.set(theme.rawValue, forKey: "tm_theme_id")
+        if let updated = try? await client.updatePreferences(body: ["theme_id": theme.rawValue]) {
+            applyPreferencesResponse(updated)
+            showBanner("🎨 已切换主题：\(theme.title)")
+        }
+    }
+
+    func setModuleEnabled(_ key: ModuleToggleKey, enabled: Bool) async {
+        self.enabledModules[key.rawValue] = enabled
+        UserDefaults.standard.set(self.enabledModules, forKey: "tm_enabled_modules")
+        if let updated = try? await client.updatePreferences(body: ["module_key": key.rawValue, "enabled": enabled]) {
+            applyPreferencesResponse(updated)
+            showBanner(enabled ? "✅ 已启用 \(key.title)" : "🙈 已隐藏 \(key.title)")
         }
     }
 

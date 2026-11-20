@@ -4,27 +4,30 @@ import AppKit
 #endif
 
 enum AppSection: String, CaseIterable, Identifiable {
-    case overview = "概览"
-    case matrix = "四象限"
-    case list = "列表"
-    case supervision = "监工"
+    case tasks = "待办"
+    case calendar = "日历"
+    case focus = "专注"
+    case notes = "随记"
     case memories = "记忆"
-    case graph = "图谱"
-    case ask = "问答"
-    case settings = "设置"
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
-        case .overview: return "gauge.with.dots.needle.33percent"
-        case .matrix: return "square.grid.2x2.fill"
-        case .list: return "list.bullet.rectangle.portrait"
-        case .supervision: return "person.2.fill"
+        case .tasks: return "checklist"
+        case .calendar: return "calendar"
+        case .focus: return "timer"
+        case .notes: return "note.text"
         case .memories: return "brain.head.profile"
-        case .graph: return "point.3.connected.trianglepath.dotted"
-        case .ask: return "bubble.left.and.text.bubble.right.fill"
-        case .settings: return "gearshape.fill"
+        }
+    }
+
+    var toggleKey: ModuleToggleKey? {
+        switch self {
+        case .tasks, .memories: return nil
+        case .calendar: return .calendar
+        case .focus: return .focus
+        case .notes: return .notes
         }
     }
 }
@@ -32,55 +35,78 @@ enum AppSection: String, CaseIterable, Identifiable {
 struct MainContentView: View {
     @EnvironmentObject var store: TodoStore
     @Environment(\.scenePhase) private var scenePhase
-    @State private var selectedSection: AppSection = .overview
+    @State private var selectedSection: AppSection = .tasks
     @State private var topCaptureText: String = ""
+
+    private var visibleSections: [AppSection] {
+        AppSection.allCases.filter { sec in
+            guard let key = sec.toggleKey else { return true }
+            return store.isModuleEnabled(key)
+        }
+    }
 
     var body: some View {
         ZStack {
             #if os(iOS)
             TabView(selection: $selectedSection) {
                 NavigationStack {
-                    DashboardOverviewView()
-                        .navigationTitle("TraceTodo 概览")
-                        .toolbar { refreshToolbarItem }
+                    UnifiedTodoHostView()
+                        .navigationTitle("待办")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar { iosTopToolbar }
                         .iosKeyboardDoneToolbar()
                 }
-                .tabItem { Label("概览", systemImage: "gauge.with.dots.needle.33percent") }
-                .tag(AppSection.overview)
+                .tabItem { Label("待办", systemImage: AppSection.tasks.icon) }
+                .tag(AppSection.tasks)
 
-                NavigationStack {
-                    SortedTaskListView()
-                        .navigationTitle("优先级列表")
-                        .toolbar { refreshToolbarItem }
-                        .iosKeyboardDoneToolbar()
+                if store.isModuleEnabled(.calendar) {
+                    NavigationStack {
+                        CalendarPreviewHostView()
+                            .navigationTitle("日历")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbar { iosTopToolbar }
+                            .iosKeyboardDoneToolbar()
+                    }
+                    .tabItem { Label("日历", systemImage: AppSection.calendar.icon) }
+                    .tag(AppSection.calendar)
                 }
-                .tabItem { Label("列表", systemImage: "list.bullet.rectangle.portrait") }
-                .tag(AppSection.list)
 
-                NavigationStack {
-                    SupervisionBoardView()
-                        .navigationTitle("监工小队")
-                        .iosKeyboardDoneToolbar()
+                if store.isModuleEnabled(.focus) {
+                    NavigationStack {
+                        FocusCenterView()
+                            .navigationTitle("番茄专注")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbar { iosTopToolbar }
+                            .iosKeyboardDoneToolbar()
+                    }
+                    .tabItem { Label("专注", systemImage: AppSection.focus.icon) }
+                    .tag(AppSection.focus)
                 }
-                .tabItem { Label("监工", systemImage: "person.2.fill") }
-                .tag(AppSection.supervision)
+
+                if store.isModuleEnabled(.notes) {
+                    NavigationStack {
+                        QuickNotesStreamView()
+                            .navigationTitle("随记")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbar { iosTopToolbar }
+                            .iosKeyboardDoneToolbar()
+                    }
+                    .tabItem { Label("随记", systemImage: AppSection.notes.icon) }
+                    .tag(AppSection.notes)
+                }
 
                 NavigationStack {
                     MemoriesAndAskHostView()
                         .navigationTitle("记忆与问答")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar { iosTopToolbar }
                         .iosKeyboardDoneToolbar()
                 }
-                .tabItem { Label("记忆", systemImage: "brain.head.profile") }
-                .tag(AppSection.ask)
-
-                NavigationStack {
-                    SettingsSyncView()
-                        .navigationTitle("设置与同步")
-                        .iosKeyboardDoneToolbar()
-                }
-                .tabItem { Label("设置", systemImage: "gearshape.fill") }
-                .tag(AppSection.settings)
+                .tabItem { Label("记忆", systemImage: AppSection.memories.icon) }
+                .tag(AppSection.memories)
             }
+            .tint(store.activeTheme.primaryColor)
+            .preferredColorScheme(store.activeTheme.isDark ? .dark : .light)
             .task {
                 NotificationManager.shared.refreshAuthorizationStatus()
                 await store.refresh()
@@ -99,7 +125,7 @@ struct MainContentView: View {
                 Task { await store.refresh() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .traceTodoOpenOverview)) { _ in
-                selectedSection = .overview
+                selectedSection = .tasks
                 Task { await store.refresh() }
             }
             .onOpenURL { url in
@@ -107,129 +133,157 @@ struct MainContentView: View {
             }
             #else
             VStack(spacing: 0) {
-                // Top Crisp White Header Bar matching reference UI
-                HStack(spacing: 14) {
-                    if let appIconImg = NSApp.applicationIconImage {
-                        Image(nsImage: appIconImg)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 36, height: 36)
-                            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    } else {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [Color(red: 0.24, green: 0.51, blue: 0.96), Color(red: 0.48, green: 0.35, blue: 0.97)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
+                // Top Header Bar with Theme Vector Micro-Illustration
+                ZStack(alignment: .trailing) {
+                    ThemeHeaderArtworkView(theme: store.activeTheme)
+
+                    HStack(spacing: 14) {
+                        if let appIconImg = NSApp.applicationIconImage {
+                            Image(nsImage: appIconImg)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 36, height: 36)
+                                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        } else {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [store.activeTheme.primaryColor, store.activeTheme.accentColor],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
                                     )
-                                )
-                                .frame(width: 34, height: 34)
-                            Image(systemName: "square.grid.2x2.fill")
-                                .font(.system(size: 15, weight: .bold))
-                                .foregroundStyle(.white)
+                                    .frame(width: 34, height: 34)
+                                Image(systemName: "square.grid.2x2.fill")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundStyle(.white)
+                            }
                         }
-                    }
 
-                    Divider().frame(height: 24)
+                        Divider().frame(height: 24)
 
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(Color(red: 0.62, green: 0.67, blue: 0.75))
-                        TextField("一句话极速录入待办或记忆（如：明天必须修复支付超时 bug）...", text: $topCaptureText)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 13.5))
-                            .foregroundStyle(Color(red: 0.14, green: 0.18, blue: 0.26))
-                            .onSubmit { submitTopCapture() }
+                        HStack(spacing: 8) {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundStyle(.secondary)
+                            TextField("一句话极速录入待办或记忆（如：明天必须修复支付超时 bug）...", text: $topCaptureText)
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 13.5))
+                                .onSubmit { submitTopCapture() }
 
-                        if store.isBusy {
-                            ProgressView().controlSize(.small)
-                        } else if !topCaptureText.trimmingCharacters(in: .whitespaces).isEmpty {
-                            Button("AI 录入") { submitTopCapture() }
-                                .font(.caption.bold())
-                                .buttonStyle(.borderedProminent)
-                                .tint(Color(red: 0.20, green: 0.54, blue: 0.96))
+                            if store.isBusy {
+                                ProgressView().controlSize(.small)
+                            } else if !topCaptureText.trimmingCharacters(in: .whitespaces).isEmpty {
+                                Button("AI 录入") { submitTopCapture() }
+                                    .font(.caption.bold())
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(store.activeTheme.primaryColor)
+                            }
                         }
-                    }
 
-                    Spacer()
+                        Spacer()
 
-                    Button {
-                        store.isPresentingNewTaskSheet = true
-                    } label: {
-                        Label("新建任务", systemImage: "plus.rectangle.fill")
-                            .font(.system(size: 12.5, weight: .semibold))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
-                            .background(Color(red: 0.20, green: 0.54, blue: 0.96))
-                            .foregroundStyle(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-
-                    // Overdue / Status Bell Indicator
-                    ZStack(alignment: .topTrailing) {
                         Button {
-                            selectedSection = .overview
-                            Task { await store.refresh() }
+                            store.isPresentingNewTaskSheet = true
                         } label: {
-                            Image(systemName: "bell")
-                                .font(.system(size: 16))
-                                .foregroundStyle(Color(red: 0.42, green: 0.47, blue: 0.56))
+                            Label("新建任务", systemImage: "plus.rectangle.fill")
+                                .font(.system(size: 12.5, weight: .semibold))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .background(store.activeTheme.primaryColor)
+                                .foregroundStyle(.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
                         .buttonStyle(.plain)
-                        .contentShape(Rectangle())
-                        .help("刷新与查看逾期/顺延提醒")
 
-                        let alertCnt = (store.matrix?.summaryCounts.overdue ?? 0) + store.q1Count
-                        if alertCnt > 0 {
-                            Text("\(alertCnt)")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .background(Color(red: 0.20, green: 0.54, blue: 0.96))
+                        if store.isModuleEnabled(.supervision) {
+                            Button {
+                                store.isPresentingSupervisionSheet = true
+                            } label: {
+                                Label("监工", systemImage: "person.2.fill")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Color.primary.opacity(0.06))
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        Button {
+                            store.isPresentingSettingsSheet = true
+                        } label: {
+                            Label("外观/设置", systemImage: "paintpalette.fill")
+                                .font(.system(size: 12, weight: .medium))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.primary.opacity(0.06))
                                 .clipShape(Capsule())
-                                .offset(x: 6, y: -5)
                         }
-                    }
+                        .buttonStyle(.plain)
 
-                    Button {
-                        store.isPresentingAuthSheet = true
-                    } label: {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(store.isOnline ? Color.green : Color.orange)
-                                .frame(width: 7, height: 7)
-                            Text(store.currentUser?.displayName ?? store.spaceId)
-                                .font(.system(size: 12.5, weight: .medium))
-                                .foregroundStyle(Color(red: 0.28, green: 0.33, blue: 0.42))
+                        // Overdue / Status Bell Indicator
+                        ZStack(alignment: .topTrailing) {
+                            Button {
+                                selectedSection = .tasks
+                                Task { await store.refresh() }
+                            } label: {
+                                Image(systemName: "bell")
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .contentShape(Rectangle())
+                            .help("刷新与查看逾期/顺延提醒")
+
+                            let alertCnt = (store.matrix?.summaryCounts.overdue ?? 0) + store.q1Count
+                            if alertCnt > 0 {
+                                Text("\(alertCnt)")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(store.activeTheme.primaryColor)
+                                    .clipShape(Capsule())
+                                    .offset(x: 6, y: -5)
+                            }
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color(red: 0.95, green: 0.96, blue: 0.98))
-                        .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
 
-                    Button {
-                        Task { await store.refresh() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 14))
-                            .foregroundStyle(Color(red: 0.42, green: 0.47, blue: 0.56))
+                        Button {
+                            store.isPresentingAuthSheet = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(store.isOnline ? Color.green : Color.orange)
+                                    .frame(width: 7, height: 7)
+                                Text(store.currentUser?.displayName ?? store.spaceId)
+                                    .font(.system(size: 12.5, weight: .medium))
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.primary.opacity(0.06))
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            Task { await store.refresh() }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
                     }
-                    .frame(width: 30, height: 30)
-                    .contentShape(Rectangle())
-                    .buttonStyle(.plain)
+                    .padding(.horizontal, 18)
                 }
-                .padding(.horizontal, 18)
                 .frame(height: 58)
-                .background(Color.white)
-                .overlay(Rectangle().fill(Color.black.opacity(0.06)).frame(height: 1), alignment: .bottom)
+                .background(store.activeTheme.surfaceBackground)
+                .overlay(Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1), alignment: .bottom)
 
-                // Main 3-Column Body: Floating White Left Rail + Center Canvas + Right Blue-Header Timeline
+                // Main 3-Column Body: Converged 5-Tab Left Rail + Center Canvas + Right Timeline
                 HStack(spacing: 0) {
                     leftFloatingRail
                         .padding(.vertical, 16)
@@ -237,31 +291,25 @@ struct MainContentView: View {
 
                     Group {
                         switch selectedSection {
-                        case .overview:
-                            DashboardOverviewView()
-                        case .matrix:
-                            QuadrantMatrixView()
-                        case .list:
-                            SortedTaskListView()
-                        case .supervision:
-                            SupervisionBoardView()
+                        case .tasks:
+                            UnifiedTodoHostView()
+                        case .calendar:
+                            CalendarPreviewHostView()
+                        case .focus:
+                            FocusCenterView()
+                        case .notes:
+                            QuickNotesStreamView()
                         case .memories:
-                            MemoriesView()
-                        case .graph:
-                            KnowledgeGraphCanvasView()
-                        case .ask:
-                            AskMemoryView()
-                        case .settings:
-                            SettingsSyncView()
+                            MemoriesAndAskHostView()
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                     RightTimelineRailView()
                 }
-                .background(Color(red: 0.96, green: 0.97, blue: 0.99))
+                .background(store.activeTheme.canvasBackground)
             }
-            .preferredColorScheme(.light)
+            .preferredColorScheme(store.activeTheme.isDark ? .dark : .light)
             .frame(minWidth: 1120, minHeight: 700)
             .task {
                 NotificationManager.shared.refreshAuthorizationStatus()
@@ -281,7 +329,7 @@ struct MainContentView: View {
                 Task { await store.refresh() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .traceTodoOpenOverview)) { _ in
-                selectedSection = .overview
+                selectedSection = .tasks
                 Task { await store.refresh() }
             }
             #endif
@@ -293,6 +341,11 @@ struct MainContentView: View {
                     .zIndex(100)
             }
         }
+        .onChange(of: store.enabledModules) { _, _ in
+            if let key = selectedSection.toggleKey, !store.isModuleEnabled(key) {
+                selectedSection = .tasks
+            }
+        }
         .sheet(isPresented: $store.isPresentingNewTaskSheet) {
             TaskEditorSheet(existingTask: nil)
                 .environmentObject(store)
@@ -300,6 +353,36 @@ struct MainContentView: View {
         .sheet(item: $store.editingTaskTarget) { target in
             TaskEditorSheet(existingTask: target)
                 .environmentObject(store)
+        }
+        .sheet(isPresented: $store.isPresentingSupervisionSheet) {
+            NavigationStack {
+                SupervisionBoardView()
+                    .environmentObject(store)
+                    .navigationTitle("好友监工小队")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("关闭") { store.isPresentingSupervisionSheet = false }
+                        }
+                    }
+            }
+            #if os(macOS)
+            .frame(minWidth: 680, minHeight: 540)
+            #endif
+        }
+        .sheet(isPresented: $store.isPresentingSettingsSheet) {
+            NavigationStack {
+                SettingsSyncView()
+                    .environmentObject(store)
+                    .navigationTitle("外观主题与设置")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("完成") { store.isPresentingSettingsSheet = false }
+                        }
+                    }
+            }
+            #if os(macOS)
+            .frame(minWidth: 620, minHeight: 580)
+            #endif
         }
         .sheet(isPresented: Binding(
             get: { store.isPresentingAuthSheet || store.needsLoginGate },
@@ -318,7 +401,7 @@ struct MainContentView: View {
     #if os(macOS)
     private var leftFloatingRail: some View {
         VStack(spacing: 6) {
-            ForEach(AppSection.allCases) { sec in
+            ForEach(visibleSections) { sec in
                 let isSel = selectedSection == sec
                 Button {
                     selectedSection = sec
@@ -327,22 +410,22 @@ struct MainContentView: View {
                         ZStack {
                             if isSel {
                                 Circle()
-                                    .fill(Color(red: 0.18, green: 0.22, blue: 0.31))
+                                    .fill(store.activeTheme.primaryColor)
                                     .frame(width: 34, height: 34)
                             }
                             Image(systemName: sec.icon)
                                 .font(.system(size: 14.5, weight: .semibold))
-                                .foregroundStyle(isSel ? .white : Color(red: 0.56, green: 0.61, blue: 0.70))
+                                .foregroundStyle(isSel ? .white : .secondary)
                         }
                         .frame(height: 34)
 
                         Text(sec.rawValue)
                             .font(.system(size: 11, weight: isSel ? .bold : .medium))
-                            .foregroundStyle(isSel ? Color(red: 0.14, green: 0.18, blue: 0.26) : Color(red: 0.52, green: 0.57, blue: 0.66))
+                            .foregroundStyle(isSel ? .primary : .secondary)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
-                    .background(isSel ? Color(red: 0.95, green: 0.97, blue: 1.00) : Color.clear)
+                    .background(isSel ? store.activeTheme.railSelectedBg : Color.clear)
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
@@ -351,12 +434,11 @@ struct MainContentView: View {
 
             Spacer(minLength: 8)
 
-            // Bottom TIP insight card matching left rail TIP widget in reference image
             VStack(spacing: 6) {
                 Text("TIP")
                     .font(.system(size: 10, weight: .bold))
                     .tracking(1.2)
-                    .foregroundStyle(Color(red: 0.48, green: 0.53, blue: 0.62))
+                    .foregroundStyle(.secondary)
 
                 Image(systemName: "lightbulb.max.fill")
                     .font(.system(size: 16))
@@ -364,12 +446,12 @@ struct MainContentView: View {
 
                 Text(railTipText)
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Color(red: 0.32, green: 0.37, blue: 0.46))
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(5)
                     .padding(8)
                     .frame(maxWidth: .infinity)
-                    .background(Color(red: 0.91, green: 0.94, blue: 0.97))
+                    .background(Color.primary.opacity(0.05))
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
             .padding(.horizontal, 6)
@@ -377,10 +459,10 @@ struct MainContentView: View {
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 6)
-        .frame(width: 108)
-        .background(Color.white)
+        .frame(width: 102)
+        .background(store.activeTheme.surfaceBackground)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .shadow(color: Color.black.opacity(0.05), radius: 14, x: 0, y: 6)
+        .shadow(color: Color.black.opacity(0.06), radius: 14, x: 0, y: 6)
     }
 
     private var railTipText: String {
@@ -406,23 +488,37 @@ struct MainContentView: View {
         if host == "new" {
             store.isPresentingNewTaskSheet = true
         } else if host == "memories" {
-            selectedSection = .ask
+            selectedSection = .memories
         } else if host == "supervision" {
-            selectedSection = .supervision
-        } else if host == "list" {
-            selectedSection = .list
+            store.isPresentingSupervisionSheet = true
+        } else if host == "focus" {
+            selectedSection = .focus
+        } else if host == "calendar" {
+            selectedSection = .calendar
         } else {
-            selectedSection = .overview
+            selectedSection = .tasks
         }
         Task { await store.refresh() }
     }
 
-    private var refreshToolbarItem: some ToolbarContent {
+    private var iosTopToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .automatic) {
             Button {
                 store.isPresentingNewTaskSheet = true
             } label: {
                 Image(systemName: "plus")
+            }
+            if store.isModuleEnabled(.supervision) {
+                Button {
+                    store.isPresentingSupervisionSheet = true
+                } label: {
+                    Image(systemName: "person.2")
+                }
+            }
+            Button {
+                store.isPresentingSettingsSheet = true
+            } label: {
+                Image(systemName: "paintpalette")
             }
             Button {
                 Task { await store.refresh() }
