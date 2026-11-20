@@ -303,6 +303,18 @@ struct TraceMemoryAPIClient {
         )
     }
 
+    func fetchFocusOverview(limit: Int = 60) async throws -> FocusOverviewResponse {
+        try await get("/api/focus/overview", queryItems: [URLQueryItem(name: "limit", value: String(limit))])
+    }
+
+    func recordFocusSession(body: [String: Any]) async throws {
+        try await postRaw("/api/focus/record", body: body)
+    }
+
+    func deleteFocusSession(sessionId: String) async throws {
+        try await postRaw("/api/focus/delete", body: ["session_id": sessionId])
+    }
+
     func fetchSupervisionBoard(assignee: String = "") async throws -> SupervisionBoardResponse {
         var items: [URLQueryItem] = []
         if !assignee.isEmpty {

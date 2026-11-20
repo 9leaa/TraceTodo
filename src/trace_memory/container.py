@@ -12,6 +12,7 @@ from trace_memory.services.ask_service import AskService
 from trace_memory.services.auth_service import AdminService, AuthService
 from trace_memory.services.change_service import ChangeService
 from trace_memory.services.dream_service import DreamService
+from trace_memory.services.focus_service import FocusService
 from trace_memory.services.guard_service import (
     InputGuardService,
     RateLimitAndQuotaService,
@@ -75,6 +76,7 @@ class AppContainer:
     sync_tracker: SpaceSyncTracker
     daily_scheduler: DailyTaskMaintenanceScheduler
     preferences_service: PreferencesService
+    focus_service: FocusService
 
     @classmethod
     def build(
@@ -207,6 +209,12 @@ class AppContainer:
             task_matrix_service=task_matrix_service,
             sync_tracker=sync_tracker,
         )
+        focus_service = FocusService(
+            db=db,
+            memory_repo=memory_repo,
+            task_matrix_service=task_matrix_service,
+            sync_tracker=sync_tracker,
+        )
         ask_service = AskService(
             note_repo=note_repo,
             memory_repo=memory_repo,
@@ -266,6 +274,7 @@ class AppContainer:
             sync_tracker=sync_tracker,
             daily_scheduler=daily_scheduler,
             preferences_service=preferences_service,
+            focus_service=focus_service,
         )
 
     def close(self) -> None:

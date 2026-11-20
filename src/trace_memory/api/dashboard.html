@@ -1436,6 +1436,55 @@
     [data-theme="deep_forest"] .card-checklist { background: var(--surface-alt); border-color: var(--border); }
     [data-theme="deep_forest"] .tag { background: var(--surface-alt); color: var(--text); }
     [data-theme="deep_forest"] .focus-row { border-bottom-color: var(--border); }
+
+    /* Pomodoro & Stopwatch Focus Center */
+    .focus-center-grid {
+      display: grid;
+      grid-template-columns: minmax(320px, 430px) 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+    @media (max-width: 960px) { .focus-center-grid { grid-template-columns: 1fr; } }
+    .focus-timer-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 22px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 8px 24px rgba(15,23,42,0.05);
+    }
+    .focus-4grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .focus-stat-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 15px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      box-shadow: 0 4px 14px rgba(15,23,42,0.04);
+    }
+    .focus-stat-box .f-lbl { font-size: 12px; color: var(--muted); font-weight: 600; }
+    .focus-stat-box .f-val { font-size: 26px; font-weight: 800; color: var(--heading); font-variant-numeric: tabular-nums; }
+    .focus-stat-box .f-sub { font-size: 11px; color: var(--muted); }
+    .focus-hist-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
   </style>
 </head>
 <body>
@@ -1574,11 +1623,72 @@
         <div class="summary-header" style="flex-wrap:wrap;gap:10px;">
           <div>
             <div class="summary-title">FOCUS · 番茄专注中心</div>
-            <div style="font-size:12px;color:var(--muted);">番茄倒计时 / 正计时双模式 · 专注统计与时间轴</div>
+            <div style="font-size:12px;color:var(--muted);">番茄倒计时 / 正计时双模式 · 统一计时内核 · 专注历史时间轴</div>
+          </div>
+          <div class="seg-pill-bar" id="focusModeSegBar">
+            <button type="button" class="seg-pill-btn active" id="fcModePomodoroBtn" onclick="setFocusCenterMode('pomodoro')">🍅 番茄计时</button>
+            <button type="button" class="seg-pill-btn" id="fcModeStopwatchBtn" onclick="setFocusCenterMode('stopwatch')">⏱️ 正计时</button>
           </div>
         </div>
-        <div id="focusCenterRoot" class="card-box">
-          <p style="color:var(--muted);font-size:13px;">正在加载专注中心...</p>
+
+        <div class="focus-center-grid" id="focusCenterRoot">
+          <!-- Left: Unified Timer Engine Card -->
+          <div class="focus-timer-card">
+            <div style="width:100%;display:grid;gap:8px;">
+              <select id="fcTaskSelect" style="width:100%;font-weight:600;" onchange="onFocusTaskSelectChange()">
+                <option value="">🌱 自由专注（不绑定具体待办）</option>
+              </select>
+              <input id="fcCustomTitleInput" placeholder="可选：输入自由专注主题（如：深度阅读论文）..." style="width:100%;" />
+            </div>
+
+            <div class="btn-group" id="fcDurationPills" style="justify-content:center;">
+              <button type="button" class="chip-btn" data-pmin="15" onclick="selectPomodoroDuration(15)">15 分钟</button>
+              <button type="button" class="chip-btn active" data-pmin="25" onclick="selectPomodoroDuration(25)" style="border-color:var(--primary);color:var(--primary);font-weight:700;">25 分钟</button>
+              <button type="button" class="chip-btn" data-pmin="45" onclick="selectPomodoroDuration(45)">45 分钟</button>
+              <button type="button" class="chip-btn" data-pmin="60" onclick="selectPomodoroDuration(60)">60 分钟</button>
+            </div>
+
+            <div style="position:relative;width:216px;height:216px;display:flex;align-items:center;justify-content:center;">
+              <svg width="216" height="216" viewBox="0 0 216 216">
+                <circle cx="108" cy="108" r="94" fill="none" stroke="var(--border)" stroke-width="11" />
+                <circle id="fcRingArc" cx="108" cy="108" r="94" fill="none" stroke="var(--primary)" stroke-width="11" stroke-linecap="round" stroke-dasharray="0 591" transform="rotate(-90 108 108)" style="transition:stroke-dasharray 0.35s linear;" />
+              </svg>
+              <div style="position:absolute;text-align:center;display:flex;flex-direction:column;gap:4px;">
+                <div id="fcClockDisplay" style="font-size:44px;font-weight:800;letter-spacing:1px;font-variant-numeric:tabular-nums;color:var(--heading);line-height:1.05;">25:00</div>
+                <div id="fcStatusHint" style="font-size:12px;color:var(--muted);">准备开始 25 分钟番茄专注</div>
+              </div>
+            </div>
+
+            <div id="fcIdleControls" style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;width:100%;">
+              <button type="button" class="duodo-btn" style="padding:10px 22px;font-size:14px;" onclick="startUnifiedFocus(false)">▶ 开始专注</button>
+              <button type="button" onclick="startUnifiedFocus(true)">🔒 全屏沉浸锁屏</button>
+            </div>
+
+            <div id="fcActiveControls" style="display:none;gap:8px;flex-wrap:wrap;justify-content:center;width:100%;">
+              <button type="button" id="fcPauseResumeBtn" onclick="togglePauseUnifiedFocus()">⏸ 暂停</button>
+              <button type="button" class="primary" onclick="finishFocusSession(false)">✅ 结束并记录</button>
+              <button type="button" onclick="enterFocusLockOverlay()">🔒 锁屏视图</button>
+              <button type="button" style="color:#dc2626;" onclick="abortInlineFocusPrompt()">✕ 中断</button>
+            </div>
+          </div>
+
+          <!-- Right: 4-Grid Stats Overview + Focus History Timeline -->
+          <div style="display:flex;flex-direction:column;gap:14px;min-width:0;">
+            <div class="focus-4grid" id="focusStatsGrid">
+              <div class="focus-stat-box"><span class="f-lbl">🍅 今日番茄</span><span class="f-val" id="fStatTodayPomo">0</span><span class="f-sub">今日完成番茄轮次</span></div>
+              <div class="focus-stat-box"><span class="f-lbl">🏆 总番茄</span><span class="f-val" id="fStatTotalPomo">0</span><span class="f-sub">历史累计完成番茄</span></div>
+              <div class="focus-stat-box"><span class="f-lbl">⏱️ 今日专注时长</span><span class="f-val" id="fStatTodayDur">0m</span><span class="f-sub">含番茄与正计时</span></div>
+              <div class="focus-stat-box"><span class="f-lbl">⏳ 总专注时长</span><span class="f-val" id="fStatTotalDur">0m</span><span class="f-sub">累计深度工作沉淀</span></div>
+            </div>
+
+            <div class="card-box">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <h3 style="margin:0;">📜 专注历史时间轴</h3>
+                <button type="button" class="ghost-dark" onclick="loadFocusCenter()">🔄 刷新记录</button>
+              </div>
+              <div id="focusTimelineList" class="list-stack"></div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -2699,7 +2809,7 @@
         showToast('🎉 子步骤已全部勾选完成！可点击「✅ 完成」归档主任务');
       }
       await loadTasks();
-      if (focusState && focusState.task.memory_id === memId) {
+      if (focusState && focusState.task && focusState.task.memory_id === memId) {
         focusState.task = res.memory;
         renderFocusSubtasks();
       }
@@ -2959,34 +3069,165 @@
       } catch (e) {}
     }
 
-    function openFocusLock(memId) {
-      const t = cachedTasksById[memId];
-      if (!t) return;
-      const mins = Number(t.payload?.focus_minutes || 25);
+    // ---------------- Unified Pomodoro & Stopwatch Engine + Focus Lock ----------------
+    let fcSelectedMode = 'pomodoro';
+    let fcPlannedMinutes = Number(localStorage.getItem('tm_pomodoro_minutes') || 25) || 25;
+
+    function formatDurationHuman(totalSec) {
+      const sec = Math.max(0, Math.round(Number(totalSec || 0)));
+      const mins = Math.floor(sec / 60);
+      if (mins < 60) return `${mins}m`;
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return m > 0 ? `${h}h ${m}m` : `${h}h`;
+    }
+
+    function formatClockMMSS(totalSec) {
+      const sec = Math.max(0, Math.floor(Number(totalSec || 0)));
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      if (h > 0) {
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      }
+      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    function refreshFocusTaskSelector() {
+      const sel = document.getElementById('fcTaskSelect');
+      if (!sel) return;
+      const curVal = sel.value;
+      const openTodos = (lastLoadedTasks || []).filter(t => t.payload?.task_status !== 'done');
+      sel.innerHTML = `<option value="">🌱 自由专注（不绑定具体待办）</option>` +
+        openTodos.map(t => `<option value="${esc(t.memory_id)}">🎯 [${esc((t.payload?.quadrant || 'Q4').slice(0, 2))}] ${esc(t.title)}</option>`).join('');
+      if (curVal && openTodos.some(t => t.memory_id === curVal)) {
+        sel.value = curVal;
+      }
+      onFocusTaskSelectChange();
+    }
+
+    function onFocusTaskSelectChange() {
+      const sel = document.getElementById('fcTaskSelect');
+      const customInp = document.getElementById('fcCustomTitleInput');
+      if (!sel || !customInp) return;
+      customInp.style.display = sel.value ? 'none' : 'block';
+    }
+
+    function setFocusCenterMode(mode) {
+      if (focusState) {
+        return showToast('当前专注进行中，请先结束或中断后再切换计时模式');
+      }
+      fcSelectedMode = mode === 'stopwatch' ? 'stopwatch' : 'pomodoro';
+      document.getElementById('fcModePomodoroBtn')?.classList.toggle('active', fcSelectedMode === 'pomodoro');
+      document.getElementById('fcModeStopwatchBtn')?.classList.toggle('active', fcSelectedMode === 'stopwatch');
+      const pills = document.getElementById('fcDurationPills');
+      if (pills) pills.style.display = fcSelectedMode === 'pomodoro' ? 'inline-flex' : 'none';
+      syncIdleFocusClockUI();
+    }
+
+    function selectPomodoroDuration(mins) {
+      if (focusState) {
+        return showToast('专注进行中无法修改本轮预设时长');
+      }
+      fcPlannedMinutes = Number(mins) || 25;
+      localStorage.setItem('tm_pomodoro_minutes', String(fcPlannedMinutes));
+      document.querySelectorAll('#fcDurationPills button').forEach(b => {
+        const active = Number(b.getAttribute('data-pmin')) === fcPlannedMinutes;
+        b.classList.toggle('active', active);
+        b.style.borderColor = active ? 'var(--primary)' : '';
+        b.style.color = active ? 'var(--primary)' : '';
+        b.style.fontWeight = active ? '700' : '';
+      });
+      syncIdleFocusClockUI();
+    }
+
+    function syncIdleFocusClockUI() {
+      if (focusState) return;
+      const clk = document.getElementById('fcClockDisplay');
+      const hint = document.getElementById('fcStatusHint');
+      const arc = document.getElementById('fcRingArc');
+      if (clk) clk.textContent = fcSelectedMode === 'stopwatch' ? '00:00' : formatClockMMSS(fcPlannedMinutes * 60);
+      if (hint) hint.textContent = fcSelectedMode === 'stopwatch' ? '正计时模式 · 随时结算专注时长' : `准备开始 ${fcPlannedMinutes} 分钟番茄专注`;
+      if (arc) arc.setAttribute('stroke-dasharray', '0 591');
+      const idle = document.getElementById('fcIdleControls');
+      const act = document.getElementById('fcActiveControls');
+      if (idle) idle.style.display = 'flex';
+      if (act) act.style.display = 'none';
+    }
+
+    function startUnifiedFocus(openLockOverlay = false, explicitMemId = null) {
+      if (focusState) {
+        if (openLockOverlay) enterFocusLockOverlay();
+        return;
+      }
+      const selMemId = explicitMemId !== null ? explicitMemId : (document.getElementById('fcTaskSelect')?.value || '');
+      const taskObj = selMemId ? cachedTasksById[selMemId] : null;
+      const customTitle = (document.getElementById('fcCustomTitleInput')?.value || '').trim();
+      const mode = explicitMemId ? 'pomodoro' : fcSelectedMode;
+      const planMins = taskObj?.payload?.focus_minutes ? Number(taskObj.payload.focus_minutes) : fcPlannedMinutes;
+      const titleText = taskObj ? taskObj.title : (customTitle || '自由专注');
+
       focusState = {
-        task: t,
-        totalSeconds: mins * 60,
-        remainingSeconds: mins * 60,
+        mode,
+        task: taskObj || null,
+        taskTitle: titleText,
+        plannedMinutes: planMins,
+        totalSeconds: mode === 'pomodoro' ? planMins * 60 : 0,
+        remainingSeconds: mode === 'pomodoro' ? planMins * 60 : 0,
+        elapsedSeconds: 0,
+        paused: false,
+        startedAtIso: new Date().toISOString(),
         timer: null,
       };
-      document.getElementById('focusTaskTitle').textContent = t.title;
+
+      document.getElementById('focusTaskTitle').textContent = titleText;
       document.getElementById('focusAbortBox').style.display = 'none';
       document.getElementById('focusAbortReason').value = '';
       renderFocusSubtasks();
       updateFocusTimerUI();
-      document.getElementById('focusOverlay').classList.add('open');
+
+      if (openLockOverlay) {
+        enterFocusLockOverlay();
+      }
 
       focusState.timer = setInterval(() => {
-        if (!focusState) return;
-        focusState.remainingSeconds -= 1;
+        if (!focusState || focusState.paused) return;
+        focusState.elapsedSeconds += 1;
+        if (focusState.mode === 'pomodoro') {
+          focusState.remainingSeconds = Math.max(0, focusState.totalSeconds - focusState.elapsedSeconds);
+        }
         updateFocusTimerUI();
-        if (focusState.remainingSeconds <= 0) {
+        if (focusState.mode === 'pomodoro' && focusState.remainingSeconds <= 0) {
           clearInterval(focusState.timer);
           playBellChime();
-          fireBrowserNotification('⏰ 专注时间到！', `《${focusState.task.title}》已完成一轮深度专注`);
+          fireBrowserNotification('⏰ 番茄专注完成！', `《${focusState.taskTitle}》已完成 ${focusState.plannedMinutes} 分钟深度专注`);
           finishFocusSession(false);
         }
       }, 1000);
+    }
+
+    function openFocusLock(memId) {
+      if (focusState) {
+        clearInterval(focusState.timer);
+        focusState = null;
+      }
+      startUnifiedFocus(true, memId);
+    }
+
+    function enterFocusLockOverlay() {
+      if (!focusState) return;
+      document.getElementById('focusTaskTitle').textContent = focusState.taskTitle;
+      renderFocusSubtasks();
+      updateFocusTimerUI();
+      document.getElementById('focusOverlay').classList.add('open');
+    }
+
+    function togglePauseUnifiedFocus() {
+      if (!focusState) return;
+      focusState.paused = !focusState.paused;
+      const btn = document.getElementById('fcPauseResumeBtn');
+      if (btn) btn.textContent = focusState.paused ? '▶ 继续' : '⏸ 暂停';
+      updateFocusTimerUI();
     }
 
     function renderFocusSubtasks() {
@@ -3006,33 +3247,67 @@
     }
 
     function updateFocusTimerUI() {
-      if (!focusState) return;
-      const rem = Math.max(0, focusState.remainingSeconds);
-      const m = String(Math.floor(rem / 60)).padStart(2, '0');
-      const s = String(rem % 60).padStart(2, '0');
-      document.getElementById('focusTimerText').textContent = `${m}:${s}`;
-      const pct = Math.round(((focusState.totalSeconds - rem) / focusState.totalSeconds) * 100);
+      if (!focusState) {
+        syncIdleFocusClockUI();
+        return;
+      }
+      const isSw = focusState.mode === 'stopwatch';
+      const displaySec = isSw ? focusState.elapsedSeconds : Math.max(0, focusState.remainingSeconds);
+      const clockTxt = formatClockMMSS(displaySec);
+      const ratio = isSw
+        ? ((focusState.elapsedSeconds % 1500) / 1500)
+        : (focusState.totalSeconds > 0 ? (focusState.totalSeconds - displaySec) / focusState.totalSeconds : 0);
+      const pct = Math.min(100, Math.max(0, Math.round(ratio * 100)));
+
+      document.getElementById('focusTimerText').textContent = clockTxt;
       document.getElementById('focusProgressBar').style.width = `${pct}%`;
+
+      const fcClk = document.getElementById('fcClockDisplay');
+      const fcHint = document.getElementById('fcStatusHint');
+      const fcArc = document.getElementById('fcRingArc');
+      if (fcClk) fcClk.textContent = clockTxt;
+      if (fcHint) {
+        fcHint.textContent = `${focusState.paused ? '⏸ 已暂停 · ' : (isSw ? '⏱️ 正计时中 · ' : '🍅 专注中 · ')}${focusState.taskTitle}`;
+      }
+      if (fcArc) {
+        const dash = Math.round(Math.min(1, Math.max(0, ratio)) * 591);
+        fcArc.setAttribute('stroke-dasharray', `${dash} 591`);
+      }
+      const idle = document.getElementById('fcIdleControls');
+      const act = document.getElementById('fcActiveControls');
+      if (idle) idle.style.display = 'none';
+      if (act) act.style.display = 'flex';
     }
 
     async function finishFocusSession(markDone) {
       if (!focusState) return;
       clearInterval(focusState.timer);
-      const t = focusState.task;
-      const res = await apiPost('/api/tasks/focus', {
-        memory_id: t.memory_id,
-        event: 'complete_session',
-        expected_version: t.version,
-      });
-      const nextVer = res.memory?.version || t.version;
-      if (markDone) {
-        await transitionTask(t.memory_id, 'complete_task', nextVer);
-      } else {
-        loadTasks();
-      }
+      const st = focusState;
       focusState = null;
       document.getElementById('focusOverlay').classList.remove('open');
-      showToast('🎉 已记录一轮深度专注');
+      syncIdleFocusClockUI();
+
+      const effDur = st.mode === 'pomodoro' && st.remainingSeconds <= 0
+        ? st.totalSeconds
+        : Math.max(1, st.elapsedSeconds || st.totalSeconds || (st.plannedMinutes * 60));
+
+      const res = await apiPost('/api/focus/record', {
+        mode: st.mode,
+        status: 'completed',
+        planned_minutes: st.plannedMinutes,
+        duration_seconds: effDur,
+        task_memory_id: st.task ? st.task.memory_id : '',
+        task_title: st.taskTitle,
+        expected_version: st.task ? st.task.version : null,
+        complete_task: Boolean(markDone && st.task),
+        started_at: st.startedAtIso,
+      });
+      if (res.error) {
+        showToast(`记录专注失败: ${res.error}`);
+      } else {
+        showToast(st.mode === 'stopwatch' ? `🎉 正计时专注已入账 (${formatDurationHuman(effDur)})` : '🍅 已完成一轮番茄专注并计入统计');
+      }
+      await Promise.all([loadTasks(), loadFocusCenter()]);
     }
 
     function completeFocusAndTask() {
@@ -3044,23 +3319,94 @@
       box.style.display = 'grid';
     }
 
+    async function abortInlineFocusPrompt() {
+      if (!focusState) return;
+      const reason = prompt('专注尚未完成，请输入中断原因（如：临时急事 / 休息）：', '临时中断');
+      if (reason === null) return;
+      await recordAbortedFocus(reason.trim() || '提前退出专注');
+    }
+
     async function confirmAbortFocus() {
       if (!focusState) return;
       const reason = document.getElementById('focusAbortReason').value.trim();
       if (!reason) return showToast('请填写或点选一个中断原因');
+      await recordAbortedFocus(reason);
+    }
+
+    async function recordAbortedFocus(reason) {
+      if (!focusState) return;
       clearInterval(focusState.timer);
-      const elapsed = focusState.totalSeconds - focusState.remainingSeconds;
-      await apiPost('/api/tasks/focus', {
-        memory_id: focusState.task.memory_id,
-        event: 'abort_session',
-        reason,
-        elapsed_seconds: elapsed,
-        expected_version: focusState.task.version,
-      });
+      const st = focusState;
       focusState = null;
       document.getElementById('focusOverlay').classList.remove('open');
+      syncIdleFocusClockUI();
+
+      await apiPost('/api/focus/record', {
+        mode: st.mode,
+        status: 'aborted',
+        planned_minutes: st.plannedMinutes,
+        duration_seconds: Math.max(1, st.elapsedSeconds),
+        task_memory_id: st.task ? st.task.memory_id : '',
+        task_title: st.taskTitle,
+        abort_reason: reason,
+        expected_version: st.task ? st.task.version : null,
+        started_at: st.startedAtIso,
+      });
       showToast(`已记录中断原因：「${reason}」`);
-      loadTasks();
+      await Promise.all([loadTasks(), loadFocusCenter()]);
+    }
+
+    async function loadFocusCenter() {
+      refreshFocusTaskSelector();
+      const data = await apiGet('/api/focus/overview?limit=60');
+      if (!data || data.error) return;
+      const s = data.stats || {};
+      const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      setTxt('fStatTodayPomo', String(s.today_pomodoros ?? 0));
+      setTxt('fStatTotalPomo', String(s.total_pomodoros ?? 0));
+      setTxt('fStatTodayDur', formatDurationHuman(s.today_seconds ?? 0));
+      setTxt('fStatTotalDur', formatDurationHuman(s.total_seconds ?? 0));
+
+      const sessions = data.sessions || [];
+      const listEl = document.getElementById('focusTimelineList');
+      if (!listEl) return;
+      if (!sessions.length) {
+        listEl.innerHTML = `<div style="color:var(--muted);font-size:13px;padding:18px 4px;text-align:center;">暂无专注记录，在左侧开启第一轮番茄钟或正计时吧 🍅</div>`;
+        return;
+      }
+      listEl.innerHTML = sessions.map(item => {
+        const isAborted = item.status === 'aborted';
+        const isSw = item.mode === 'stopwatch';
+        const startHHMM = (item.started_at || '').slice(11, 16);
+        const endHHMM = (item.ended_at || '').slice(11, 16);
+        const modeBadge = isAborted
+          ? `<span class="tag rollover-warn">⚠️ 中断 · ${formatDurationHuman(item.duration_seconds)}</span>`
+          : (isSw
+              ? `<span class="tag" style="background:#e0f2fe;color:#0369a1;font-weight:600;">⏱️ 正计时 · ${formatDurationHuman(item.duration_seconds)}</span>`
+              : `<span class="tag" style="background:#dcfce7;color:#15803d;font-weight:600;">🍅 番茄 · ${formatDurationHuman(item.duration_seconds)}</span>`);
+        return `
+          <div class="focus-hist-item">
+            <div style="display:grid;gap:3px;min-width:0;">
+              <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">
+                ${modeBadge}
+                <strong style="font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.task_title || '自由专注')}</strong>
+              </div>
+              <div style="font-size:11.5px;color:var(--muted);">
+                📅 ${esc(item.focus_date)} · ${esc(startHHMM)}–${esc(endHHMM)}
+                ${isAborted && item.abort_reason ? ` · 原因：${esc(item.abort_reason)}` : ''}
+              </div>
+            </div>
+            <button type="button" style="padding:4px 8px;font-size:11.5px;color:var(--muted);" title="删除此条记录" onclick="deleteFocusRecord('${esc(item.session_id)}')">🗑️</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function deleteFocusRecord(sessionId) {
+      const res = await apiPost('/api/focus/delete', { session_id: sessionId });
+      if (res.error) return showToast(`删除失败: ${res.error}`);
+      showToast('已删除该条专注记录');
+      loadFocusCenter();
     }
 
     // ---------------- Friend Supervision Board ----------------

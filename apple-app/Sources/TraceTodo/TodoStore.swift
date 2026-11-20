@@ -53,6 +53,8 @@ final class TodoStore: ObservableObject {
     @Published var isPresentingSupervisionSheet: Bool = false
     @Published var editingTaskTarget: TaskItemModel?
     @Published var activeFocusTask: TaskItemModel?
+    @Published var activeFocusLaunch: ActiveFocusLaunchConfig?
+    @Published private(set) var focusOverview: FocusOverviewResponse?
 
     @Published var activeTheme: AppThemeKind = .classic
     @Published var enabledModules: [String: Bool] = [
@@ -228,6 +230,7 @@ final class TodoStore: ObservableObject {
                 }
             }
             await refreshPreferences()
+            await refreshFocusOverview()
             #if os(iOS)
             WidgetCenter.shared.reloadAllTimelines()
             #endif
@@ -355,6 +358,7 @@ final class TodoStore: ObservableObject {
                 self.isOnline = true
                 saveMatrixCache(fresh)
                 await refreshPreferences()
+            await refreshFocusOverview()
                 #if os(iOS)
                 WidgetCenter.shared.reloadAllTimelines()
                 #endif
@@ -519,6 +523,64 @@ final class TodoStore: ObservableObject {
             await refresh()
         } catch {
             showBanner("象限切换失败：\(error.localizedDescription)")
+        }
+    }
+
+    func refreshFocusOverview() async {
+        if let ov = try? await client.fetchFocusOverview(limit: 60) {
+            self.focusOverview = ov
+        }
+    }
+
+    func recordUnifiedFocusSession(
+        mode: FocusTimerMode,
+        status: String,
+        plannedMinutes: Int,
+        durationSeconds: Int,
+        task: TaskItemModel?,
+        customTitle: String,
+        abortReason: String = "",
+        completeTask: Bool = false,
+        startedAtIso: String = ""
+    ) async {
+        var body: [String: Any] = [
+            "mode": mode.rawValue,
+            "status": status,
+            "planned_minutes": plannedMinutes,
+            "duration_seconds": max(1, durationSeconds),
+            "task_memory_id": task?.memoryId ?? "",
+            "task_title": task?.title ?? (customTitle.isEmpty ? "自由专注" : customTitle),
+            "abort_reason": abortReason,
+            "complete_task": completeTask
+        ]
+        if let v = task?.version {
+            body["expected_version"] = v
+        }
+        if !startedAtIso.isEmpty {
+            body["started_at"] = startedAtIso
+        }
+        do {
+            try await client.recordFocusSession(body: body)
+            if status == "aborted" {
+                showBanner("已记录中断原因：「\(abortReason)」")
+            } else {
+                showBanner(mode == .stopwatch ? "🎉 正计时专注已记录" : "🍅 已完成一轮番茄专注")
+            }
+        } catch {
+            showBanner("记录专注失败：\(error.localizedDescription)")
+        }
+        activeFocusTask = nil
+        activeFocusLaunch = nil
+        await refresh()
+        await refreshFocusOverview()
+    }
+
+    func removeFocusSession(_ sessionId: String) async {
+        do {
+            try await client.deleteFocusSession(sessionId: sessionId)
+            await refreshFocusOverview()
+        } catch {
+            showBanner("删除记录失败：\(error.localizedDescription)")
         }
     }
 

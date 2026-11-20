@@ -6,50 +6,168 @@ import AppKit
 import AudioToolbox
 #endif
 
-/// Optional iOS FamilyControls / Screen Time extension hook.
-/// System-level app blocking requires the Apple FamilyControls entitlement in Xcode Signing & Capabilities.
-enum ScreenTimeLockCapability {
-    static var isSystemAppBlockConfigured: Bool {
-        #if os(iOS) && canImport(FamilyControls)
-        return false
-        #else
-        return false
-        #endif
+enum FocusTimerMode: String, CaseIterable, Codable, Identifiable {
+    case pomodoro = "pomodoro"
+    case stopwatch = "stopwatch"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .pomodoro: return "🍅 番茄计时"
+        case .stopwatch: return "⏱️ 正计时"
+        }
     }
+}
+
+struct FocusStatsModel: Codable {
+    let todayDate: String
+    let todayPomodoros: Int
+    let totalPomodoros: Int
+    let todaySeconds: Int
+    let totalSeconds: Int
+    let todayMinutes: Double
+    let totalMinutes: Double
+
+    enum CodingKeys: String, CodingKey {
+        case todayDate = "today_date"
+        case todayPomodoros = "today_pomodoros"
+        case totalPomodoros = "total_pomodoros"
+        case todaySeconds = "today_seconds"
+        case totalSeconds = "total_seconds"
+        case todayMinutes = "today_minutes"
+        case totalMinutes = "total_minutes"
+    }
+}
+
+struct FocusSessionItemModel: Codable, Identifiable, Hashable {
+    let sessionId: String
+    let taskMemoryId: String
+    let taskTitle: String
+    let mode: String
+    let plannedMinutes: Int
+    let durationSeconds: Int
+    let status: String
+    let abortReason: String
+    let startedAt: String
+    let endedAt: String
+    let focusDate: String
+
+    var id: String { sessionId }
+
+    enum CodingKeys: String, CodingKey {
+        case sessionId = "session_id"
+        case taskMemoryId = "task_memory_id"
+        case taskTitle = "task_title"
+        case mode
+        case plannedMinutes = "planned_minutes"
+        case durationSeconds = "duration_seconds"
+        case status
+        case abortReason = "abort_reason"
+        case startedAt = "started_at"
+        case endedAt = "ended_at"
+        case focusDate = "focus_date"
+    }
+}
+
+struct FocusOverviewResponse: Codable {
+    let spaceId: String
+    let stats: FocusStatsModel
+    let sessions: [FocusSessionItemModel]
+
+    enum CodingKeys: String, CodingKey {
+        case spaceId = "space_id"
+        case stats
+        case sessions
+    }
+}
+
+struct ActiveFocusLaunchConfig: Identifiable, Equatable {
+    let id = UUID()
+    let mode: FocusTimerMode
+    let task: TaskItemModel?
+    let customTitle: String
+    let plannedMinutes: Int
+}
+
+func formatFocusDurationHuman(_ totalSec: Int) -> String {
+    let mins = max(0, totalSec) / 60
+    if mins < 60 {
+        return "\(mins)m"
+    }
+    let h = mins / 60
+    let m = mins % 60
+    return m > 0 ? "\(h)h \(m)m" : "\(h)h"
+}
+
+func formatFocusClockString(_ seconds: Int) -> String {
+    let s = max(0, seconds)
+    let h = s / 3600
+    let m = (s % 3600) / 60
+    let rem = s % 60
+    if h > 0 {
+        return String(format: "%02d:%02d:%02d", h, m, rem)
+    }
+    return String(format: "%02d:%02d", m, rem)
+}
+
+/// Optional iOS FamilyControls / Screen Time extension hook.
+enum ScreenTimeLockCapability {
+    static var isSystemAppBlockConfigured: Bool { false }
 
     static var statusNote: String {
         #if os(iOS)
-        return isSystemAppBlockConfigured
-            ? "系统级屏幕使用时间 App 限制已就绪"
-            : "当前为应用内高对比专注锁屏（如需禁用抖音/小红书，可在 Xcode 添加 FamilyControls Entitlement）"
+        return "当前为应用内高对比专注锁屏（如需禁用娱乐应用，可在 Xcode 添加 FamilyControls Entitlement）"
         #else
-        return "macOS 全屏沉浸式专注锁屏 · 超时自动提示"
+        return "macOS 全屏沉浸式专注锁屏 · 到点自动提示并计入专注时间轴"
         #endif
     }
 }
 
 struct FocusLockView: View {
     @EnvironmentObject var store: TodoStore
-    let task: TaskItemModel
+    let mode: FocusTimerMode
+    let task: TaskItemModel?
+    let customTitle: String
+    let plannedMinutes: Int
 
     @State private var totalSeconds: Int = 25 * 60
-    @State private var remainingSeconds: Int = 25 * 60
+    @State private var elapsedSeconds: Int = 0
+    @State private var startedAtIso: String = ISO8601DateFormatter().string(from: Date())
     @State private var showAbortPrompt: Bool = false
     @State private var abortReason: String = ""
     @State private var isFinishing: Bool = false
 
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
+    init(task: TaskItemModel) {
+        self.mode = .pomodoro
+        self.task = task
+        self.customTitle = task.title
+        self.plannedMinutes = max(1, task.payload.focusMinutes ?? 25)
+    }
+
+    init(launch: ActiveFocusLaunchConfig) {
+        self.mode = launch.mode
+        self.task = launch.task
+        self.customTitle = launch.task?.title ?? (launch.customTitle.isEmpty ? "自由专注" : launch.customTitle)
+        self.plannedMinutes = max(1, launch.plannedMinutes)
+    }
+
+    private var remainingSeconds: Int {
+        max(0, totalSeconds - elapsedSeconds)
+    }
+
     private var progress: Double {
+        if mode == .stopwatch {
+            return Double(elapsedSeconds % 1500) / 1500.0
+        }
         guard totalSeconds > 0 else { return 0 }
-        return Double(totalSeconds - remainingSeconds) / Double(totalSeconds)
+        return min(1.0, Double(elapsedSeconds) / Double(totalSeconds))
     }
 
     private var formattedTimer: String {
-        let rem = max(0, remainingSeconds)
-        let m = rem / 60
-        let s = rem % 60
-        return String(format: "%02d:%02d", m, s)
+        formatFocusClockString(mode == .stopwatch ? elapsedSeconds : remainingSeconds)
     }
 
     var body: some View {
@@ -62,18 +180,17 @@ struct FocusLockView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 22) {
-                Text("🔒 沉浸专注锁屏模式 · DEEP WORK")
+                Text(mode == .stopwatch ? "🔒 沉浸正计时专注 · DEEP WORK" : "🔒 沉浸番茄锁屏专注 · DEEP WORK")
                     .font(.caption.bold())
                     .tracking(1.3)
                     .foregroundStyle(Color(red: 0.77, green: 0.71, blue: 0.99))
 
-                Text(task.title)
+                Text(task?.title ?? customTitle)
                     .font(.title2.bold())
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
 
-                // Countdown Ring
                 ZStack {
                     Circle()
                         .stroke(Color.white.opacity(0.14), lineWidth: 12)
@@ -88,18 +205,17 @@ struct FocusLockView: View {
 
                     VStack(spacing: 4) {
                         Text(formattedTimer)
-                            .font(.system(size: 52, weight: .heavy, design: .rounded))
+                            .font(.system(size: 50, weight: .heavy, design: .rounded))
                             .monospacedDigit()
                             .foregroundStyle(.white)
-                        Text("已专注 \(task.payload.focusSessionsCompleted ?? 0) 轮")
+                        Text(task != nil ? "已专注 \(task?.payload.focusSessionsCompleted ?? 0) 轮" : "🌱 自由专注模式")
                             .font(.caption)
                             .foregroundStyle(Color.white.opacity(0.65))
                     }
                 }
                 .frame(width: 210, height: 210)
 
-                // Interactive Checklist inside Focus Lock
-                if !task.payload.subtaskList.isEmpty {
+                if let curTask = task, !curTask.payload.subtaskList.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("📋 执行清单")
                             .font(.caption.bold())
@@ -107,9 +223,9 @@ struct FocusLockView: View {
 
                         ScrollView {
                             VStack(alignment: .leading, spacing: 8) {
-                                ForEach(task.payload.subtaskList) { sub in
+                                ForEach(curTask.payload.subtaskList) { sub in
                                     Button {
-                                        Task { await store.toggleSubtask(task, subtask: sub) }
+                                        Task { await store.toggleSubtask(curTask, subtask: sub) }
                                     } label: {
                                         HStack(spacing: 10) {
                                             Image(systemName: sub.done ? "checkmark.circle.fill" : "circle")
@@ -168,17 +284,25 @@ struct FocusLockView: View {
                                 dismissAppKeyboard()
                                 showAbortPrompt = false
                             }
-                                .foregroundStyle(.white)
-                            Button("收起键盘") { dismissAppKeyboard() }
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.75))
+                            .foregroundStyle(.white)
                             Spacer()
                             Button("确认退出") {
                                 dismissAppKeyboard()
                                 let clean = abortReason.trimmingCharacters(in: .whitespacesAndNewlines)
                                 guard !clean.isEmpty else { return }
-                                let elapsed = max(1, totalSeconds - remainingSeconds)
-                                Task { await store.abortFocusSession(task, reason: clean, elapsedSeconds: elapsed) }
+                                isFinishing = true
+                                Task {
+                                    await store.recordUnifiedFocusSession(
+                                        mode: mode,
+                                        status: "aborted",
+                                        plannedMinutes: plannedMinutes,
+                                        durationSeconds: max(1, elapsedSeconds),
+                                        task: task,
+                                        customTitle: customTitle,
+                                        abortReason: clean,
+                                        startedAtIso: startedAtIso
+                                    )
+                                }
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(.red)
@@ -194,9 +318,21 @@ struct FocusLockView: View {
                         Button {
                             guard !isFinishing else { return }
                             isFinishing = true
-                            Task { await store.completeFocusSession(task, markTaskDone: true) }
+                            let effDur = mode == .stopwatch ? max(1, elapsedSeconds) : max(1, elapsedSeconds > 0 ? elapsedSeconds : totalSeconds)
+                            Task {
+                                await store.recordUnifiedFocusSession(
+                                    mode: mode,
+                                    status: "completed",
+                                    plannedMinutes: plannedMinutes,
+                                    durationSeconds: effDur,
+                                    task: task,
+                                    customTitle: customTitle,
+                                    completeTask: task != nil,
+                                    startedAtIso: startedAtIso
+                                )
+                            }
                         } label: {
-                            Text("✅ 完成任务并结束")
+                            Text(task != nil ? "✅ 完成任务并结束" : "✅ 结束并记录专注")
                                 .font(.headline)
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 12)
@@ -221,19 +357,28 @@ struct FocusLockView: View {
             .padding(24)
         }
         .onAppear {
-            let mins = max(1, task.payload.focusMinutes ?? 25)
-            totalSeconds = mins * 60
-            remainingSeconds = mins * 60
+            totalSeconds = plannedMinutes * 60
+            elapsedSeconds = 0
+            startedAtIso = ISO8601DateFormatter().string(from: Date())
         }
         .onReceive(ticker) { _ in
             guard !isFinishing else { return }
-            if remainingSeconds > 1 {
-                remainingSeconds -= 1
-            } else if remainingSeconds == 1 {
-                remainingSeconds = 0
+            elapsedSeconds += 1
+            if mode == .pomodoro && elapsedSeconds >= totalSeconds {
                 isFinishing = true
                 playCompletionSound()
-                Task { await store.completeFocusSession(task, markTaskDone: false) }
+                Task {
+                    await store.recordUnifiedFocusSession(
+                        mode: .pomodoro,
+                        status: "completed",
+                        plannedMinutes: plannedMinutes,
+                        durationSeconds: totalSeconds,
+                        task: task,
+                        customTitle: customTitle,
+                        completeTask: false,
+                        startedAtIso: startedAtIso
+                    )
+                }
             }
         }
     }
@@ -247,36 +392,381 @@ struct FocusLockView: View {
     }
 }
 
+/// Primary "专注" Tab: Pomodoro 25:00 / Stopwatch dual mode + 4-Grid Stats + History Timeline.
 struct FocusCenterView: View {
     @EnvironmentObject var store: TodoStore
+    @State private var mode: FocusTimerMode = .pomodoro
+    @State private var plannedMinutes: Int = 25
+    @State private var selectedTaskId: String = ""
+    @State private var freeFocusTitle: String = ""
+
+    // Inline active timer state (unified with lock overlay)
+    @State private var isRunningInline: Bool = false
+    @State private var isPausedInline: Bool = false
+    @State private var elapsedSeconds: Int = 0
+    @State private var startedAtIso: String = ""
+
+    private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    private var openTasks: [TaskItemModel] {
+        (store.matrix?.sortedTasks ?? []).filter { !$0.payload.isDone }
+    }
+
+    private var boundTask: TaskItemModel? {
+        openTasks.first(where: { $0.memoryId == selectedTaskId })
+    }
+
+    private var stats: FocusStatsModel {
+        store.focusOverview?.stats ?? FocusStatsModel(
+            todayDate: "",
+            todayPomodoros: 0,
+            totalPomodoros: 0,
+            todaySeconds: 0,
+            totalSeconds: 0,
+            todayMinutes: 0,
+            totalMinutes: 0
+        )
+    }
+
+    private var inlineDisplaySeconds: Int {
+        if mode == .stopwatch {
+            return isRunningInline ? elapsedSeconds : 0
+        }
+        let total = plannedMinutes * 60
+        return isRunningInline ? max(0, total - elapsedSeconds) : total
+    }
+
+    private var inlineProgress: Double {
+        guard isRunningInline else { return 0 }
+        if mode == .stopwatch {
+            return Double(elapsedSeconds % 1500) / 1500.0
+        }
+        let total = max(1, plannedMinutes * 60)
+        return min(1.0, Double(elapsedSeconds) / Double(total))
+    }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("🍅 番茄专注中心")
-                    .font(.title3.bold())
-                Text("选择一个待办事项立即开启沉浸专注")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                let todos = (store.matrix?.sortedTasks ?? []).filter { !$0.payload.isDone }
-                ForEach(todos.prefix(8)) { task in
-                    HStack {
-                        Text(task.title)
-                            .font(.subheadline.weight(.medium))
-                        Spacer()
-                        Button("🎯 开始专注") {
-                            store.activeFocusTask = task
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(store.activeTheme.primaryColor)
+            VStack(alignment: .leading, spacing: 18) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("🍅 番茄专注中心")
+                            .font(.title3.bold())
+                        Text("番茄计时 / 正计时双模式 · 统一专注内核")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .padding(12)
-                    .background(.background)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    Spacer()
+                    Picker("计时模式", selection: $mode) {
+                        ForEach(FocusTimerMode.allCases) { m in
+                            Text(m.label).tag(m)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 220)
+                    .disabled(isRunningInline)
+                }
+
+                #if os(macOS)
+                HStack(alignment: .top, spacing: 18) {
+                    timerCardView
+                        .frame(width: 390)
+                    rightStatsAndTimelineColumn
+                        .frame(maxWidth: .infinity)
+                }
+                #else
+                VStack(spacing: 16) {
+                    timerCardView
+                    rightStatsAndTimelineColumn
+                }
+                #endif
+            }
+            .padding(18)
+        }
+        .task {
+            plannedMinutes = store.defaultPomodoroMinutes
+            await store.refreshFocusOverview()
+        }
+        .onReceive(ticker) { _ in
+            guard isRunningInline && !isPausedInline else { return }
+            elapsedSeconds += 1
+            if mode == .pomodoro && elapsedSeconds >= plannedMinutes * 60 {
+                let dur = plannedMinutes * 60
+                stopInlineState()
+                Task {
+                    await store.recordUnifiedFocusSession(
+                        mode: .pomodoro,
+                        status: "completed",
+                        plannedMinutes: plannedMinutes,
+                        durationSeconds: dur,
+                        task: boundTask,
+                        customTitle: freeFocusTitle,
+                        startedAtIso: startedAtIso
+                    )
+                }
+            }
+        }
+    }
+
+    private var timerCardView: some View {
+        VStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                Picker("关联事项", selection: $selectedTaskId) {
+                    Text("🌱 自由专注（不绑定待办）").tag("")
+                    ForEach(openTasks) { t in
+                        Text("[\(t.payload.quadrantKind.shortCode)] \(t.title)").tag(t.memoryId)
+                    }
+                }
+                .disabled(isRunningInline)
+
+                if selectedTaskId.isEmpty {
+                    TextField("可选：自由专注主题（如：深度阅读论文）...", text: $freeFocusTitle)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(isRunningInline)
+                }
+            }
+
+            if mode == .pomodoro {
+                HStack(spacing: 8) {
+                    ForEach([15, 25, 45, 60], id: \.self) { mins in
+                        let sel = plannedMinutes == mins
+                        Button("\(mins)m") {
+                            if !isRunningInline { plannedMinutes = mins }
+                        }
+                        .font(.caption.bold())
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(sel ? store.activeTheme.primaryColor : Color.primary.opacity(0.06))
+                        .foregroundStyle(sel ? .white : .primary)
+                        .clipShape(Capsule())
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            ZStack {
+                Circle()
+                    .stroke(Color.primary.opacity(0.09), lineWidth: 11)
+                Circle()
+                    .trim(from: 0, to: inlineProgress)
+                    .stroke(
+                        LinearGradient(
+                            colors: [store.activeTheme.primaryColor, store.activeTheme.accentColor],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        style: StrokeStyle(lineWidth: 11, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                    .animation(.linear(duration: 0.35), value: inlineProgress)
+
+                VStack(spacing: 4) {
+                    Text(formatFocusClockString(inlineDisplaySeconds))
+                        .font(.system(size: 44, weight: .heavy, design: .rounded))
+                        .monospacedDigit()
+                    Text(isRunningInline ? (isPausedInline ? "⏸ 已暂停" : (boundTask?.title ?? (freeFocusTitle.isEmpty ? "自由专注中" : freeFocusTitle))) : (mode == .stopwatch ? "正计时随时结算" : "准备 \(plannedMinutes) 分钟番茄"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .padding(.horizontal, 12)
+                }
+            }
+            .frame(width: 205, height: 205)
+            .padding(.vertical, 4)
+
+            if !isRunningInline {
+                HStack(spacing: 10) {
+                    Button {
+                        elapsedSeconds = 0
+                        startedAtIso = ISO8601DateFormatter().string(from: Date())
+                        isPausedInline = false
+                        isRunningInline = true
+                    } label: {
+                        Label("开始专注", systemImage: "play.fill")
+                            .font(.subheadline.bold())
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 10)
+                            .background(store.activeTheme.primaryColor)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        store.activeFocusLaunch = ActiveFocusLaunchConfig(
+                            mode: mode,
+                            task: boundTask,
+                            customTitle: freeFocusTitle,
+                            plannedMinutes: plannedMinutes
+                        )
+                    } label: {
+                        Label("沉浸锁屏", systemImage: "lock.fill")
+                            .font(.subheadline.weight(.medium))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(Color.primary.opacity(0.07))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            } else {
+                HStack(spacing: 8) {
+                    Button(isPausedInline ? "▶ 继续" : "⏸ 暂停") {
+                        isPausedInline.toggle()
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button("✅ 完成记录") {
+                        let eff = max(1, elapsedSeconds)
+                        let stIso = startedAtIso
+                        stopInlineState()
+                        Task {
+                            await store.recordUnifiedFocusSession(
+                                mode: mode,
+                                status: "completed",
+                                plannedMinutes: plannedMinutes,
+                                durationSeconds: eff,
+                                task: boundTask,
+                                customTitle: freeFocusTitle,
+                                startedAtIso: stIso
+                            )
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(store.activeTheme.primaryColor)
+
+                    Button("✕ 中断", role: .destructive) {
+                        let eff = max(1, elapsedSeconds)
+                        let stIso = startedAtIso
+                        stopInlineState()
+                        Task {
+                            await store.recordUnifiedFocusSession(
+                                mode: mode,
+                                status: "aborted",
+                                plannedMinutes: plannedMinutes,
+                                durationSeconds: eff,
+                                task: boundTask,
+                                customTitle: freeFocusTitle,
+                                abortReason: "手动提前结束",
+                                startedAtIso: stIso
+                            )
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        }
+        .padding(18)
+        .background(.background)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+        )
+    }
+
+    private var rightStatsAndTimelineColumn: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                focusStatCard(title: "🍅 今日番茄", value: "\(stats.todayPomodoros)", subtitle: "今日完成轮次")
+                focusStatCard(title: "🏆 总番茄", value: "\(stats.totalPomodoros)", subtitle: "累计完成番茄")
+                focusStatCard(title: "⏱️ 今日专注时长", value: formatFocusDurationHuman(stats.todaySeconds), subtitle: "含番茄与正计时")
+                focusStatCard(title: "⏳ 总专注时长", value: formatFocusDurationHuman(stats.totalSeconds), subtitle: "历史累计时长")
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("📜 专注历史时间轴")
+                        .font(.headline)
+                    Spacer()
+                    Button("刷新") {
+                        Task { await store.refreshFocusOverview() }
+                    }
+                    .font(.caption)
+                    .buttonStyle(.borderless)
+                }
+
+                let sessions = store.focusOverview?.sessions ?? []
+                if sessions.isEmpty {
+                    Text("暂无专注历史记录，开启第一轮番茄或正计时后自动沉淀在此。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 16)
+                } else {
+                    ForEach(sessions) { sess in
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 6) {
+                                    Text(sess.status == "aborted" ? "⚠️ 中断" : (sess.mode == "stopwatch" ? "⏱️ 正计时" : "🍅 番茄"))
+                                        .font(.caption2.bold())
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 2)
+                                        .background((sess.status == "aborted" ? Color.orange : store.activeTheme.primaryColor).opacity(0.14))
+                                        .foregroundStyle(sess.status == "aborted" ? .orange : store.activeTheme.primaryColor)
+                                        .clipShape(Capsule())
+
+                                    Text(sess.taskTitle)
+                                        .font(.subheadline.weight(.semibold))
+                                        .lineLimit(1)
+                                }
+
+                                let sTime = sess.startedAt.count >= 16 ? String(sess.startedAt.dropFirst(11).prefix(5)) : ""
+                                let eTime = sess.endedAt.count >= 16 ? String(sess.endedAt.dropFirst(11).prefix(5)) : ""
+                                Text("\(sess.focusDate) · \(sTime)–\(eTime) · \(formatFocusDurationHuman(sess.durationSeconds))")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button(role: .destructive) {
+                                Task { await store.removeFocusSession(sess.sessionId) }
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(11)
+                        .background(Color.primary.opacity(0.03))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
                 }
             }
             .padding(16)
+            .background(.background)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+            )
         }
+    }
+
+    private func focusStatCard(title: String, value: String, subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 25, weight: .heavy, design: .rounded))
+                .monospacedDigit()
+            Text(subtitle)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.background)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+        )
+    }
+
+    private func stopInlineState() {
+        isRunningInline = false
+        isPausedInline = false
+        elapsedSeconds = 0
     }
 }
