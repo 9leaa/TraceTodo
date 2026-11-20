@@ -53,6 +53,7 @@ class TraceMemoryConfig:
     openai_api_key: str = ""
     llm_model: str = "gpt-4o-mini"
     vision_model: str = "qwen-vl-plus"
+    asr_model: str = "whisper-1"
     embedding_model: str = "text-embedding-3-small"
     llm_timeout_seconds: float = 30.0
 
@@ -86,6 +87,7 @@ class TraceMemoryConfig:
     default_daily_llm_limit: int = 80
     default_daily_token_limit: int = 100000
     max_request_body_bytes: int = 131072
+    max_media_body_bytes: int = 4194304
     trust_proxy_headers: bool = False
 
     # Concurrency & Async Ingest Queue settings
@@ -138,6 +140,7 @@ class TraceMemoryConfig:
             openai_api_key=env.get("TRACE_MEMORY_OPENAI_API_KEY", ""),
             llm_model=_get("TRACE_MEMORY_LLM_MODEL", "gpt-4o-mini"),
             vision_model=_get("TRACE_MEMORY_VISION_MODEL", "qwen-vl-plus"),
+            asr_model=_get("TRACE_MEMORY_ASR_MODEL", "whisper-1"),
             embedding_model=_get("TRACE_MEMORY_EMBEDDING_MODEL", "text-embedding-3-small"),
             dream_max_llm_calls=int(_get("TRACE_MEMORY_DREAM_MAX_LLM_CALLS", "5")),
             dream_max_tokens=int(_get("TRACE_MEMORY_DREAM_MAX_TOKENS", "8000")),
@@ -160,6 +163,7 @@ class TraceMemoryConfig:
             default_daily_llm_limit=int(_get("TRACE_MEMORY_DAILY_LLM_LIMIT", "80")),
             default_daily_token_limit=int(_get("TRACE_MEMORY_DAILY_TOKEN_LIMIT", "100000")),
             max_request_body_bytes=int(_get("TRACE_MEMORY_MAX_REQUEST_BODY_BYTES", "131072")),
+            max_media_body_bytes=int(_get("TRACE_MEMORY_MAX_MEDIA_BODY_BYTES", "4194304")),
             trust_proxy_headers=_as_bool(env.get("TRACE_MEMORY_TRUST_PROXY_HEADERS"), False),
             ingest_worker_count=max(1, int(_get("TRACE_MEMORY_INGEST_WORKERS", "8"))),
             llm_max_concurrency=max(1, int(_get("TRACE_MEMORY_LLM_MAX_CONCURRENCY", "12"))),

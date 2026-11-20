@@ -103,6 +103,14 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
         <key>NSAllowsArbitraryLoads</key>
         <true/>
     </dict>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>使用原生语音识别将你的口述极速转为待办或随记</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>使用麦克风录入语音待办与随记</string>
+    <key>NSCameraUsageDescription</key>
+    <string>拍照附加图片到记忆与随记中</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>选择图片附加到记忆与随记中</string>
 </dict>
 </plist>
 PLIST
@@ -163,6 +171,14 @@ if [ -f "$IOS_SIM_APP_DIR/TraceTodo" ]; then
         <key>NSAllowsArbitraryLoads</key>
         <true/>
     </dict>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>使用原生语音识别将你的口述极速转为待办或随记</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>使用麦克风录入语音待办与随记</string>
+    <key>NSCameraUsageDescription</key>
+    <string>拍照附加图片到记忆与随记中</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>选择图片附加到记忆与随记中</string>
 </dict>
 </plist>
 IOSPLIST

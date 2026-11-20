@@ -1485,6 +1485,32 @@
       border: 1px solid var(--border);
       background: var(--surface);
     }
+
+    /* Minimalist Voice Input Mic Button */
+    .voice-mic-btn {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 12.5px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .voice-mic-btn.recording {
+      background: #fee2e2;
+      border-color: #ef4444;
+      color: #dc2626;
+      font-weight: 700;
+      animation: micPulse 1.2s infinite ease-in-out;
+    }
+    @keyframes micPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
+      50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+    }
   </style>
 </head>
 <body>
@@ -1499,7 +1525,8 @@
 
     <div class="header-search-wrap">
       <span style="color:#94a3b8;">🔍</span>
-      <input id="quickNoteInput" placeholder="一句话极速录入待办或记忆（如：明天必须修复微信支付超时 bug）..." onkeydown="if(event.key==='Enter') recordQuickNote()" />
+      <input id="quickNoteInput" placeholder="一句话极速录入待办或记忆（支持 🎤 按住说话松手即入队）..." onkeydown="if(event.key==='Enter') recordQuickNote()" />
+      <button type="button" id="quickVoiceBtn" class="voice-mic-btn" title="点按流式听写 / 按住说话松手即入队" onpointerdown="onVoiceBtnDown(event, 'quickNoteInput', true)" onpointerup="onVoiceBtnUp(event)" onclick="onVoiceBtnClick(event, 'quickNoteInput', true)">🎤</button>
       <button type="button" id="quickNoteBtn" class="primary" style="padding:5px 12px;border-radius:8px;font-size:12px;" onclick="recordQuickNote(this)">AI 录入</button>
     </div>
 
@@ -1707,7 +1734,10 @@
               <input id="notesSearchInput" style="flex:1;max-width:320px;" placeholder="检索历史随记原文 (BM25)..." onkeydown="if(event.key==='Enter') loadNotesPanel()" />
               <button type="button" onclick="loadNotesPanel()">🔍 搜索随记</button>
             </div>
-            <button type="button" class="duodo-btn" onclick="submitNoteFromNotesTab(this)">✍️ 保存随记</button>
+            <div class="btn-group">
+              <button type="button" id="notesVoiceBtn" class="voice-mic-btn" title="点按语音听写 / 按住说话松手即保存" onpointerdown="onVoiceBtnDown(event, 'notesEditorInput', true)" onpointerup="onVoiceBtnUp(event)" onclick="onVoiceBtnClick(event, 'notesEditorInput', false)">🎤 语音输入</button>
+              <button type="button" class="duodo-btn" onclick="submitNoteFromNotesTab(this)">✍️ 保存随记</button>
+            </div>
           </div>
         </div>
         <div id="notesStreamList" class="list-stack"></div>
@@ -2015,7 +2045,10 @@
 
       <!-- Top Macaron Theme Color Card -->
       <div class="duodo-header-card bg-sky" id="sheetHeaderCard">
-        <input class="duodo-title-input" id="tsTitle" placeholder="请输入任务内容 ✍️" />
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input class="duodo-title-input" id="tsTitle" style="flex:1;" placeholder="请输入任务内容 ✍️" />
+          <button type="button" id="sheetVoiceBtn" class="voice-mic-btn" title="语音输入任务标题" onclick="onVoiceBtnClick(event, 'tsTitle', false)">🎤</button>
+        </div>
         <input class="duodo-sub-input" id="tsSummary" placeholder="可选补充备注 / 验收标准..." />
         <div class="color-dots" id="colorDotsRow">
           <div class="color-dot" data-color="lavender" style="background:#d8b4fe;" onclick="selectSheetColor('lavender')"></div>
@@ -5807,6 +5840,175 @@
       showToast('🧹 已遗忘该随记并级联清理派生记忆');
       await loadNotesPanel();
       loadTasks();
+    }
+
+    // ---------------- Web Speech API + Short-Audio Fallback Voice Dictation ----------------
+    let _voiceSession = null;
+
+    function _autoSubmitTargetIfRequested(targetId, shouldAutoSubmit) {
+      if (!shouldAutoSubmit) return;
+      const el = document.getElementById(targetId);
+      if (!el || !el.value.trim()) return;
+      if (targetId === 'quickNoteInput') {
+        recordQuickNote();
+      } else if (targetId === 'notesEditorInput') {
+        submitNoteFromNotesTab();
+      }
+    }
+
+    function onVoiceBtnDown(ev, targetId, autoSubmitOnHoldRelease) {
+      const btn = ev.currentTarget;
+      if (_voiceSession) return;
+      btn._downTs = Date.now();
+      btn._holdTimer = setTimeout(() => {
+        if (!_voiceSession) {
+          startVoiceDictation(btn, targetId, Boolean(autoSubmitOnHoldRelease), true);
+        }
+      }, 320);
+    }
+
+    function onVoiceBtnUp(ev) {
+      const btn = ev.currentTarget;
+      if (btn._holdTimer) {
+        clearTimeout(btn._holdTimer);
+        btn._holdTimer = null;
+      }
+      if (_voiceSession && _voiceSession.holdMode) {
+        btn._suppressNextClick = true;
+        stopVoiceDictation();
+      }
+    }
+
+    function onVoiceBtnClick(ev, targetId, autoSubmitDefault = false) {
+      const btn = ev.currentTarget;
+      if (btn._suppressNextClick) {
+        btn._suppressNextClick = false;
+        return;
+      }
+      if (_voiceSession) {
+        stopVoiceDictation();
+        return;
+      }
+      startVoiceDictation(btn, targetId, false, false);
+      void autoSubmitDefault;
+    }
+
+    async function startVoiceDictation(btn, targetId, autoSubmit, holdMode) {
+      const inputEl = document.getElementById(targetId);
+      if (!inputEl) return;
+      const baseText = inputEl.value ? inputEl.value.trimEnd() + ' ' : '';
+      const origLabel = btn.innerHTML;
+      btn.classList.add('recording');
+      btn.innerHTML = '🔴 听写中';
+
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRec) {
+        try {
+          const rec = new SpeechRec();
+          rec.lang = 'zh-CN';
+          rec.continuous = true;
+          rec.interimResults = true;
+          let finalTranscript = '';
+
+          rec.onresult = (e) => {
+            let interim = '';
+            for (let i = e.resultIndex; i < e.results.length; i++) {
+              const t = e.results[i][0].transcript;
+              if (e.results[i].isFinal) finalTranscript += t;
+              else interim += t;
+            }
+            inputEl.value = (baseText + finalTranscript + interim).trimStart();
+          };
+          rec.onerror = (e) => {
+            if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+              showToast('⚠️ 浏览器未授权麦克风/语音识别，正在尝试短音频兜底...');
+            }
+          };
+          rec.onend = () => {
+            const wasAuto = _voiceSession?.autoSubmit;
+            btn.classList.remove('recording');
+            btn.innerHTML = origLabel;
+            _voiceSession = null;
+            if (wasAuto && inputEl.value.trim()) {
+              _autoSubmitTargetIfRequested(targetId, true);
+            }
+          };
+          _voiceSession = { kind: 'webspeech', rec, btn, origLabel, targetId, autoSubmit, holdMode };
+          rec.start();
+          showToast(holdMode ? '🎤 按住说话中，松手自动入队...' : '🎤 实时语音听写已开启，再次点击结束');
+          return;
+        } catch (err) {
+          // Fall through to MediaRecorder short-audio fallback
+        }
+      }
+
+      // Fallback: Short Audio Recording -> POST /api/voice/transcribe (server deletes temp audio immediately)
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        btn.classList.remove('recording');
+        btn.innerHTML = origLabel;
+        showToast('当前浏览器环境不支持麦克风录音（需 localhost 或 HTTPS）');
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+        const recorder = new MediaRecorder(stream, { mimeType: mime });
+        const chunks = [];
+        recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size > 0) chunks.push(ev.data); };
+        recorder.onstop = async () => {
+          stream.getTracks().forEach(tr => tr.stop());
+          btn.classList.remove('recording');
+          btn.innerHTML = '⏳ 转写';
+          try {
+            const blob = new Blob(chunks, { type: mime });
+            const b64 = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(String(reader.result || ''));
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+            const res = await apiPost('/api/voice/transcribe', {
+              audio_base64: b64,
+              mime_type: mime,
+              language: 'zh-CN',
+              auto_ingest: false,
+            });
+            if (res.error) {
+              showToast(`语音转写失败: ${res.error}`);
+            } else if (res.text) {
+              inputEl.value = (baseText + res.text).trim();
+              if (autoSubmit) {
+                _autoSubmitTargetIfRequested(targetId, true);
+              } else {
+                showToast('🎤 短音频已转写完成（临时音频已自动销毁）');
+              }
+            }
+          } finally {
+            btn.innerHTML = origLabel;
+            _voiceSession = null;
+          }
+        };
+        _voiceSession = { kind: 'mediarecorder', recorder, btn, origLabel, targetId, autoSubmit, holdMode };
+        recorder.start();
+        setTimeout(() => { if (_voiceSession?.recorder === recorder && recorder.state === 'recording') stopVoiceDictation(); }, 58000);
+        showToast('🎤 短语音录制中，再次点击或松手自动转写...');
+      } catch (err) {
+        btn.classList.remove('recording');
+        btn.innerHTML = origLabel;
+        _voiceSession = null;
+        showToast(`无法访问麦克风: ${err?.message || err}`);
+      }
+    }
+
+    function stopVoiceDictation() {
+      if (!_voiceSession) return;
+      if (_voiceSession.kind === 'webspeech') {
+        try { _voiceSession.rec.stop(); } catch (e) { _voiceSession = null; }
+      } else if (_voiceSession.kind === 'mediarecorder') {
+        try {
+          if (_voiceSession.recorder.state === 'recording') _voiceSession.recorder.stop();
+        } catch (e) { _voiceSession = null; }
+      }
     }
 
     async function reloadAll() {

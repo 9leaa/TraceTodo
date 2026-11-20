@@ -28,6 +28,7 @@ from trace_memory.services.sync_and_scheduler import (
     SpaceSyncTracker,
 )
 from trace_memory.services.task_matrix_service import TaskMatrixService
+from trace_memory.services.voice_service import VoiceTranscriptionService
 from trace_memory.storage.database import Database
 from trace_memory.storage.hybrid_search import HybridSearchIndex
 from trace_memory.storage.repositories import (
@@ -77,6 +78,7 @@ class AppContainer:
     daily_scheduler: DailyTaskMaintenanceScheduler
     preferences_service: PreferencesService
     focus_service: FocusService
+    voice_service: VoiceTranscriptionService
 
     @classmethod
     def build(
@@ -215,6 +217,7 @@ class AppContainer:
             task_matrix_service=task_matrix_service,
             sync_tracker=sync_tracker,
         )
+        voice_service = VoiceTranscriptionService(config=cfg)
         ask_service = AskService(
             note_repo=note_repo,
             memory_repo=memory_repo,
@@ -275,6 +278,7 @@ class AppContainer:
             daily_scheduler=daily_scheduler,
             preferences_service=preferences_service,
             focus_service=focus_service,
+            voice_service=voice_service,
         )
 
     def close(self) -> None:

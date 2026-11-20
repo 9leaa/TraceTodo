@@ -689,6 +689,41 @@ class ApiDispatcher:
                 )
                 return 200, res.to_dict()
 
+            if method == "POST" and path == "/api/voice/transcribe":
+                self._enforce_rate_and_quota(
+                    user=user, space_id=space_id, client_ip=client_ip, require_llm_slot=True
+                )
+                tr_out = self.container.voice_service.transcribe_short_audio(
+                    audio_base64=str(payload.get("audio_base64", "")),
+                    mime_type=str(payload.get("mime_type", "audio/webm")),
+                    language=str(payload.get("language", "zh-CN")),
+                    hint_text=str(payload.get("hint_text", "")),
+                )
+                if int(tr_out.get("tokens_used", 0) or 0) > 0:
+                    self.container.quota_service.record_usage(
+                        f"space:{space_id}", llm_calls=1, tokens_used=int(tr_out["tokens_used"])
+                    )
+                if bool(payload.get("auto_ingest", False)) and tr_out.get("text"):
+                    actor_name = str(payload.get("actor_id") or (user.username if user else "user"))
+                    if self.container.ingest_worker.is_running:
+                        ing_res = self.container.ingest_service.enqueue_note(
+                            space_id=space_id,
+                            content=str(tr_out["text"]),
+                            source_type="web",
+                            actor_id=actor_name,
+                        )
+                        if ing_res.extraction_status == "queued":
+                            self.container.ingest_worker.notify()
+                    else:
+                        ing_res = self.container.ingest_service.record_note(
+                            space_id=space_id,
+                            content=str(tr_out["text"]),
+                            source_type="web",
+                            actor_id=actor_name,
+                        )
+                    tr_out["ingest"] = ing_res.to_dict()
+                return 200, tr_out
+
             if method == "POST" and path == "/api/notes/record":
                 self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
                 content = str(payload.get("content", "")).strip()
@@ -1395,7 +1430,11 @@ def create_fastapi_app(container: AppContainer) -> Any:
         body: dict[str, Any] = {}
         if request.method == "POST":
             raw_bytes = await request.body()
-            max_bytes = max(1024, int(container.config.max_request_body_bytes))
+            is_media_route = rest_of_path in ("voice/transcribe", "media/upload")
+            max_bytes = max(
+                1024,
+                int(container.config.max_media_body_bytes if is_media_route else container.config.max_request_body_bytes),
+            )
             if len(raw_bytes) > max_bytes:
                 return JSONResponse(
                     content={"error": f"请求体过大（上限 {max_bytes} 字节）", "code": "PAYLOAD_TOO_LARGE"},
@@ -1501,7 +1540,11 @@ def run_web_server(container: AppContainer, host: str = "127.0.0.1", port: int =
             except ValueError:
                 self._write_json(400, {"error": "Invalid Content-Length"})
                 return
-            max_bytes = max(1024, int(container.config.max_request_body_bytes))
+            is_media_route = parsed.path in ("/api/voice/transcribe", "/api/media/upload")
+            max_bytes = max(
+                1024,
+                int(container.config.max_media_body_bytes if is_media_route else container.config.max_request_body_bytes),
+            )
             if length > max_bytes:
                 self._write_json(413, {"error": f"请求体过大（上限 {max_bytes} 字节）", "code": "PAYLOAD_TOO_LARGE"})
                 return
