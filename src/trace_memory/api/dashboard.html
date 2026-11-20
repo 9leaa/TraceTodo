@@ -978,6 +978,7 @@
         <label style="font-size:12px;color:#64748b;">Space:</label>
         <input id="spaceInput" value="default" style="width:92px;padding:5px 8px;background:#f8fafc;" onchange="reloadAll()" />
       </span>
+      <button type="button" id="notifToggleBtn" class="ghost-dark" onclick="toggleWebNotifications()">🔔 通知</button>
       <button type="button" id="accountBtn" class="ghost-dark" onclick="openAuthModal()">🔐 登录 / 账号</button>
       <button type="button" class="ghost-dark" onclick="seedDemo(this)">✨ 演示</button>
       <button type="button" class="ghost-dark" onclick="exportMarkdown(this)">📂 导出</button>
@@ -2447,27 +2448,94 @@
     }
 
     // ---------------- Notifications & Quick Capture ----------------
+    function isWebNotifEnabled() {
+      return localStorage.getItem('tm_web_notif_enabled') !== '0';
+    }
+
+    function refreshNotifButtonUI() {
+      const btn = document.getElementById('notifToggleBtn');
+      if (!btn) return;
+      if (!isWebNotifEnabled()) {
+        btn.textContent = '🔕 通知已关';
+        btn.title = '点击开启任务消息通知';
+        return;
+      }
+      if ('Notification' in window && window.isSecureContext && Notification.permission === 'granted') {
+        btn.textContent = '🔔 通知已开';
+        btn.title = '系统浏览器通知 + 页内提示音已开启（点击测试或关闭）';
+      } else if ('Notification' in window && window.isSecureContext && Notification.permission === 'denied') {
+        btn.textContent = '🔔 页内提醒';
+        btn.title = '浏览器系统通知已被拒绝，当前使用页内提醒与提示音（可在浏览器地址栏开启权限）';
+      } else {
+        btn.textContent = '🔔 开启通知';
+        btn.title = '点击授权系统浏览器通知并发送测试提醒';
+      }
+    }
+
+    async function toggleWebNotifications() {
+      if (!isWebNotifEnabled()) {
+        localStorage.setItem('tm_web_notif_enabled', '1');
+      }
+      if ('Notification' in window && window.isSecureContext) {
+        if (Notification.permission === 'default') {
+          try {
+            const perm = await Notification.requestPermission();
+            refreshNotifButtonUI();
+            if (perm === 'granted') {
+              playBellChime();
+              fireBrowserNotification('🔔 TraceTodo 通知已开启', '后续任务到期或跨端同步新任务将及时提醒你');
+              showToast('✅ 已开启系统消息通知，已发送测试通知');
+              return;
+            }
+          } catch (e) {}
+        } else if (Notification.permission === 'granted') {
+          playBellChime();
+          fireBrowserNotification('🔔 TraceTodo 测试通知', '任务消息通知工作正常！');
+          showToast('🔔 已发送测试通知（系统通知 + 提示音正常）');
+          refreshNotifButtonUI();
+          return;
+        }
+      }
+      playBellChime();
+      refreshNotifButtonUI();
+      const extra = window.isSecureContext
+        ? '浏览器系统通知受限时已自动启用页内弹窗 + 提示音提醒'
+        : '当前为 HTTP 访问，已启用页内弹窗 + 提示音提醒（配置 HTTPS 后可解锁系统弹窗）';
+      showToast(`🔔 任务提醒已开启：${extra}`);
+    }
+
     function requestNotifIfEnabled() {
       const val = document.getElementById('tsReminder').value;
-      if (val !== '' && 'Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission().catch(() => {});
+      if (val !== '' && 'Notification' in window && window.isSecureContext && Notification.permission === 'default') {
+        Notification.requestPermission().then(refreshNotifButtonUI).catch(() => {});
       }
     }
 
     function fireBrowserNotification(title, body) {
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification(title, { body });
+      if (!isWebNotifEnabled()) return;
+      if ('Notification' in window && window.isSecureContext && Notification.permission === 'granted') {
+        try {
+          new Notification(title, { body, icon: '/icon.png' });
+        } catch (e) {}
       }
     }
 
     function checkTaskReminders() {
+      if (!isWebNotifEnabled()) return;
       const nowMs = Date.now();
       const sent = JSON.parse(localStorage.getItem('tm_sent_reminders') || '{}');
       Object.values(cachedTasksById).forEach(t => {
         const p = t.payload || {};
         if (p.task_status !== 'todo' || !p.due_at) return;
-        const offset = p.reminder_offset_minutes;
-        if (offset === null || offset === undefined) return;
+        let offset = p.reminder_offset_minutes;
+        if (offset === null || offset === undefined) {
+          // Default 15-minute reminder for non-all-day timed tasks
+          if (p.is_all_day === false) {
+            offset = 15;
+          } else {
+            return;
+          }
+        }
         const dueMs = Date.parse(p.due_at);
         if (Number.isNaN(dueMs)) return;
         const triggerMs = dueMs - Number(offset) * 60_000;
@@ -3563,12 +3631,73 @@
       }
     })();
 
+    let _knownSyncVersion = -1;
+    let _lastBeijingDate = '';
+    let _syncCheckInFlight = false;
+
+    function isAnyEditorModalOpen() {
+      const ids = ['taskSheetOverlay', 'memoryDetailOverlay', 'authOverlay', 'focusOverlay'];
+      return ids.some(id => {
+        const el = document.getElementById(id);
+        return el && el.classList.contains('open');
+      });
+    }
+
+    async function checkRemoteSyncState(forceReloadOnChange = true) {
+      if (_syncCheckInFlight || activeShareToken) return;
+      if (authRequiredFlag && !authToken) return;
+      _syncCheckInFlight = true;
+      try {
+        const st = await apiGet('/api/sync/state');
+        if (!st || st.error) return;
+        const ver = Number(st.sync_version || 0);
+        const bjDate = String(st.beijing_date || '');
+        const pending = Number(st.pending_ingest || 0);
+        updateIngestPendingPill(pending);
+
+        const versionChanged = _knownSyncVersion >= 0 && ver > _knownSyncVersion;
+        const dayChanged = Boolean(_lastBeijingDate && bjDate && bjDate !== _lastBeijingDate);
+
+        if (ver >= 0) _knownSyncVersion = ver;
+        if (bjDate) _lastBeijingDate = bjDate;
+
+        if ((versionChanged || dayChanged) && forceReloadOnChange && !isAnyEditorModalOpen()) {
+          const prevTaskIds = new Set(Object.keys(cachedTasksById || {}));
+          await reloadAll();
+          if (dayChanged) {
+            showToast(`🌅 北京时间已进入新的一天（${bjDate}），已自动刷新任务状态`);
+          } else if (versionChanged) {
+            const newTasks = Object.values(cachedTasksById || {}).filter(
+              t => !prevTaskIds.has(t.memory_id) && t.payload && t.payload.task_status === 'todo'
+            );
+            if (newTasks.length > 0 && isWebNotifEnabled()) {
+              const firstTitle = newTasks[0].title;
+              fireBrowserNotification('🔄 收到跨端同步的新任务', newTasks.length > 1 ? `${firstTitle} 等 ${newTasks.length} 项` : firstTitle);
+              showToast(`🔄 已自动同步跨端新任务：${firstTitle}`);
+            }
+          }
+        }
+      } catch (e) {
+        // Ignore transient offline errors during background sync probe
+      } finally {
+        _syncCheckInFlight = false;
+      }
+    }
+
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
-    window.addEventListener('online', reloadAll);
+    refreshNotifButtonUI();
+    window.addEventListener('online', () => { reloadAll(); checkRemoteSyncState(false); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        checkRemoteSyncState(true);
+        checkTaskReminders();
+      }
+    });
     setInterval(checkTaskReminders, 30_000);
-    reloadAll();
+    setInterval(() => checkRemoteSyncState(true), 10_000);
+    reloadAll().then(() => checkRemoteSyncState(false));
   </script>
 </body>
 </html>

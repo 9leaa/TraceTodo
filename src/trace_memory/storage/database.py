@@ -329,6 +329,13 @@ CREATE INDEX IF NOT EXISTS idx_ingest_jobs_status_space
 
 CREATE INDEX IF NOT EXISTS idx_ingest_jobs_note
     ON ingest_jobs(space_id, note_id);
+
+CREATE TABLE IF NOT EXISTS space_sync_state (
+    space_id TEXT PRIMARY KEY,
+    sync_version INTEGER NOT NULL DEFAULT 1,
+    last_reason TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL
+);
 """
 
 

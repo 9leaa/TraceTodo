@@ -9,7 +9,7 @@ import threading
 import time
 from typing import Any
 
-from trace_memory.domain.memories import MemoryEvidence, MemoryItem
+from trace_memory.domain.memories import MemoryEvidence, MemoryItem, parse_iso_datetime
 from trace_memory.domain.notes import RawNote, new_id, utc_now_iso
 from trace_memory.domain.proposals import (
     ChangeProposal,
@@ -69,6 +69,7 @@ class IngestService:
         input_guard: InputGuardService | None = None,
         quota_service: RateLimitAndQuotaService | None = None,
         job_repo: IngestJobRepository | None = None,
+        sync_tracker: Any = None,
     ) -> None:
         self.note_repo = note_repo
         self.memory_repo = memory_repo
@@ -80,6 +81,7 @@ class IngestService:
         self.input_guard = input_guard
         self.quota_service = quota_service
         self.job_repo = job_repo
+        self.sync_tracker = sync_tracker
 
     def _preflight_and_persist_note(
         self,
@@ -209,6 +211,8 @@ class IngestService:
             actor_id=actor_id,
             idempotency_key=idempotency_key,
         )
+        if self.sync_tracker is not None:
+            self.sync_tracker.bump(space_id, reason="note_queued")
         duration = (time.perf_counter() - t0) * 1000.0
         trace_id = self.trace_repo.record_trace(
             space_id=space_id,
@@ -510,6 +514,15 @@ class IngestService:
                     if payload.get("close_reason") in ("cancelled", "dropped")
                     else "complete_task"
                 )
+
+        # Auto-enable default 15-minute reminder for AI-extracted timed tasks (non-all-day due_at)
+        if cand.memory_type == "task" and effective_hint == "upsert":
+            due_str = str(payload.get("due_at", "") or "").strip()
+            if due_str and payload.get("reminder_offset_minutes") is None:
+                due_dt = parse_iso_datetime(due_str)
+                if due_dt is not None and not (due_dt.hour == 23 and due_dt.minute == 59):
+                    payload["is_all_day"] = False
+                    payload["reminder_offset_minutes"] = 15
 
         # Memory-driven task importance calibration: boost task importance if aligned with user preferences!
         if cand.memory_type == "task" and effective_hint == "upsert" and active_prefs:
@@ -842,6 +855,8 @@ class IngestService:
                     self.vector_lifecycle.sync_memory(saved_trim)
 
             self.trace_repo.redact_for_forgotten(space_id, note_ids=(note_id,))
+            if self.sync_tracker is not None:
+                self.sync_tracker.bump(space_id, reason="note_forgotten")
         else:
             # Partial span redaction (C07): scrub span in stored content while keeping non-selected memories intact!
             span = span_to_forget.strip()

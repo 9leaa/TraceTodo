@@ -79,6 +79,7 @@ CHANGE_ORIGINS = (
     "markdown_sync",
     "dream_consolidator",
     "system_rollover",
+    "system_daily_check",
     "friend_supervision",
 )
 

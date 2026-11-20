@@ -20,8 +20,12 @@
 		A10000112B00000100000001 /* DashboardOverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000122B00000100000001 /* DashboardOverviewView.swift */; };
 		A10000122B00000100000001 /* MemoriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000132B00000100000001 /* MemoriesView.swift */; };
 		A10000142B00000100000001 /* AuthAndAdminViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000152B00000100000001 /* AuthAndAdminViews.swift */; };
+		A10000152B00000100000001 /* SharedWidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000162B00000100000001 /* SharedWidgetBridge.swift */; };
 		A10000132B00000100000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000142B00000100000001 /* Assets.xcassets */; };
 		B10000012B00000100000001 /* TraceTodoWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000012B00000100000001 /* TraceTodoWidgets.swift */; };
+		B10000032B00000100000001 /* SharedWidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000162B00000100000001 /* SharedWidgetBridge.swift */; };
+		B10000042B00000100000001 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B20000032B00000100000001 /* WidgetKit.framework */; };
+		B10000052B00000100000001 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B20000042B00000100000001 /* SwiftUI.framework */; };
 		B10000022B00000100000001 /* TraceTodoWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B30000012B00000100000001 /* TraceTodoWidgets.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -64,10 +68,15 @@
 		A20000122B00000100000001 /* DashboardOverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardOverviewView.swift; sourceTree = "<group>"; };
 		A20000132B00000100000001 /* MemoriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoriesView.swift; sourceTree = "<group>"; };
 		A20000152B00000100000001 /* AuthAndAdminViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthAndAdminViews.swift; sourceTree = "<group>"; };
+		A20000162B00000100000001 /* SharedWidgetBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedWidgetBridge.swift; sourceTree = "<group>"; };
+		A20000172B00000100000001 /* Config/TraceTodo.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Config/TraceTodo.entitlements; sourceTree = "<group>"; };
 		A20000142B00000100000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Config/Assets.xcassets; sourceTree = "<group>"; };
 		A30000012B00000100000001 /* TraceTodo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TraceTodo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B20000012B00000100000001 /* TraceTodoWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Widgets/TraceTodoWidgets.swift; sourceTree = "<group>"; };
 		B20000022B00000100000001 /* Config/WidgetInfo.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Config/WidgetInfo.plist; sourceTree = "<group>"; };
+		B20000052B00000100000001 /* Config/TraceTodoWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Config/TraceTodoWidgets.entitlements; sourceTree = "<group>"; };
+		B20000032B00000100000001 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		B20000042B00000100000001 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		B30000012B00000100000001 /* TraceTodoWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TraceTodoWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -83,6 +92,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B10000042B00000100000001 /* WidgetKit.framework in Frameworks */,
+				B10000052B00000100000001 /* SwiftUI.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -128,6 +139,7 @@
 				A20000122B00000100000001 /* DashboardOverviewView.swift */,
 				A20000132B00000100000001 /* MemoriesView.swift */,
 				A20000152B00000100000001 /* AuthAndAdminViews.swift */,
+				A20000162B00000100000001 /* SharedWidgetBridge.swift */,
 			);
 			path = Sources/TraceTodo;
 			sourceTree = "<group>";
@@ -215,6 +227,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B10000012B00000100000001 /* TraceTodoWidgets.swift in Sources */,
+				B10000032B00000100000001 /* SharedWidgetBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -235,6 +248,7 @@
 				A10000112B00000100000001 /* DashboardOverviewView.swift in Sources */,
 				A10000122B00000100000001 /* MemoriesView.swift in Sources */,
 				A10000142B00000100000001 /* AuthAndAdminViews.swift in Sources */,
+				A10000152B00000100000001 /* SharedWidgetBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -286,6 +300,8 @@
 			buildSettings = {
 				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = Config/TraceTodo.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = Config/TraceTodo.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
@@ -313,6 +329,8 @@
 			buildSettings = {
 				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = Config/TraceTodo.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = Config/TraceTodo.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
@@ -339,6 +357,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = Config/TraceTodoWidgets.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = Config/TraceTodoWidgets.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
@@ -363,6 +383,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = Config/TraceTodoWidgets.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = Config/TraceTodoWidgets.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";

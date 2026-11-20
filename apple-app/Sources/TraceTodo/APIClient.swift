@@ -201,6 +201,15 @@ struct TraceMemoryAPIClient {
         try await get("/api/notes/ingest-status")
     }
 
+    func fetchSyncState() async throws -> SyncStateResponse {
+        try await get("/api/sync/state")
+    }
+
+    func refreshTaskStatuses() async throws -> TaskStatusRefreshResponse {
+        let data = try await postRaw("/api/tasks/refresh-status", body: [:])
+        return try JSONDecoder().decode(TaskStatusRefreshResponse.self, from: data)
+    }
+
     func saveTask(body: [String: Any]) async throws {
         try await postRaw("/api/tasks/save", body: body)
     }

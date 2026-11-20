@@ -21,6 +21,10 @@ from trace_memory.services.ingest_queue import IngestJobRepository, IngestWorker
 from trace_memory.services.ingest_service import IngestService
 from trace_memory.services.markdown_sync import MarkdownSyncService
 from trace_memory.services.retrieval_service import RetrievalService
+from trace_memory.services.sync_and_scheduler import (
+    DailyTaskMaintenanceScheduler,
+    SpaceSyncTracker,
+)
 from trace_memory.services.task_matrix_service import TaskMatrixService
 from trace_memory.storage.database import Database
 from trace_memory.storage.hybrid_search import HybridSearchIndex
@@ -67,6 +71,8 @@ class AppContainer:
     admin_service: AdminService
     job_repo: IngestJobRepository
     ingest_worker: IngestWorkerPool
+    sync_tracker: SpaceSyncTracker
+    daily_scheduler: DailyTaskMaintenanceScheduler
 
     @classmethod
     def build(
@@ -144,12 +150,14 @@ class AppContainer:
             auth=auth_service,
             guard=quota_service,
         )
+        sync_tracker = SpaceSyncTracker(db=db)
         change_service = ChangeService(
             note_repo=note_repo,
             memory_repo=memory_repo,
             relation_repo=relation_repo,
             trace_repo=trace_repo,
             vector_lifecycle=vector_lifecycle,
+            sync_tracker=sync_tracker,
         )
         job_repo = IngestJobRepository(db=db)
         ingest_service = IngestService(
@@ -163,6 +171,7 @@ class AppContainer:
             input_guard=input_guard,
             quota_service=quota_service,
             job_repo=job_repo,
+            sync_tracker=sync_tracker,
         )
         ingest_worker = IngestWorkerPool(
             job_repo=job_repo,
@@ -189,6 +198,11 @@ class AppContainer:
             llm=llm,
             retrieval_service=retrieval_service,
             trace_repo=trace_repo,
+        )
+        daily_scheduler = DailyTaskMaintenanceScheduler(
+            db=db,
+            task_matrix_service=task_matrix_service,
+            sync_tracker=sync_tracker,
         )
         ask_service = AskService(
             note_repo=note_repo,
@@ -246,8 +260,11 @@ class AppContainer:
             admin_service=admin_service,
             job_repo=job_repo,
             ingest_worker=ingest_worker,
+            sync_tracker=sync_tracker,
+            daily_scheduler=daily_scheduler,
         )
 
     def close(self) -> None:
+        self.daily_scheduler.stop()
         self.ingest_worker.stop()
         self.db.close()
