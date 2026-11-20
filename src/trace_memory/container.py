@@ -21,6 +21,7 @@ from trace_memory.services.guard_service import (
 from trace_memory.services.ingest_queue import IngestJobRepository, IngestWorkerPool
 from trace_memory.services.ingest_service import IngestService
 from trace_memory.services.markdown_sync import MarkdownSyncService
+from trace_memory.services.media_service import MediaAttachmentService
 from trace_memory.services.preferences_service import PreferencesService
 from trace_memory.services.retrieval_service import RetrievalService
 from trace_memory.services.sync_and_scheduler import (
@@ -79,6 +80,7 @@ class AppContainer:
     preferences_service: PreferencesService
     focus_service: FocusService
     voice_service: VoiceTranscriptionService
+    media_service: MediaAttachmentService
 
     @classmethod
     def build(
@@ -158,6 +160,7 @@ class AppContainer:
         )
         sync_tracker = SpaceSyncTracker(db=db)
         preferences_service = PreferencesService(db=db, sync_tracker=sync_tracker)
+        media_service = MediaAttachmentService(db=db, config=cfg, sync_tracker=sync_tracker)
         change_service = ChangeService(
             note_repo=note_repo,
             memory_repo=memory_repo,
@@ -165,6 +168,7 @@ class AppContainer:
             trace_repo=trace_repo,
             vector_lifecycle=vector_lifecycle,
             sync_tracker=sync_tracker,
+            media_service=media_service,
         )
         job_repo = IngestJobRepository(db=db)
         ingest_service = IngestService(
@@ -179,6 +183,7 @@ class AppContainer:
             quota_service=quota_service,
             job_repo=job_repo,
             sync_tracker=sync_tracker,
+            media_service=media_service,
         )
         ingest_worker = IngestWorkerPool(
             job_repo=job_repo,
@@ -228,6 +233,7 @@ class AppContainer:
             input_guard=input_guard,
             quota_service=quota_service,
             job_repo=job_repo,
+            media_service=media_service,
         )
         dream_service = DreamService(
             memory_repo=memory_repo,
@@ -279,6 +285,7 @@ class AppContainer:
             preferences_service=preferences_service,
             focus_service=focus_service,
             voice_service=voice_service,
+            media_service=media_service,
         )
 
     def close(self) -> None:

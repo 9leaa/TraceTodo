@@ -52,6 +52,7 @@ class AskService:
         input_guard: InputGuardService | None = None,
         quota_service: RateLimitAndQuotaService | None = None,
         job_repo: IngestJobRepository | None = None,
+        media_service: Any = None,
     ) -> None:
         self.note_repo = note_repo
         self.memory_repo = memory_repo
@@ -62,6 +63,7 @@ class AskService:
         self.input_guard = input_guard
         self.quota_service = quota_service
         self.job_repo = job_repo
+        self.media_service = media_service
 
     @staticmethod
     def detect_query_mode(question: str) -> str:
@@ -184,17 +186,52 @@ class AskService:
                     history_versions.append(ver.to_dict())
 
         notes_limit = max(5, min(8, 5 + len(pending_notes)))
+        sliced_notes = candidate_notes[:notes_limit]
+        llm_notes: list[RawNote] = []
+        for n in sliced_notes:
+            if self.media_service is not None:
+                vtxt = self.media_service.get_visual_text_for_note(space_id, n.note_id)
+                if vtxt:
+                    llm_notes.append(
+                        RawNote(
+                            note_id=n.note_id,
+                            space_id=n.space_id,
+                            content=f"{n.visible_content()}\n[附图视觉内容: {vtxt}]",
+                            source_type=n.source_type,
+                            actor_id=n.actor_id,
+                            revision=n.revision,
+                            event_time=n.event_time,
+                            created_at=n.created_at,
+                            updated_at=n.updated_at,
+                        )
+                    )
+                    continue
+            llm_notes.append(n)
+
         synthesis = self.llm.synthesize_answer(
             question=q_clean,
             query_mode=query_mode,
             memories=candidate_memories[:5],
-            notes=candidate_notes[:notes_limit],
+            notes=llm_notes,
             history_versions=history_versions,
         )
 
         # Citation Hallucination Guard: keep only IDs actually present in retrieved candidates!
         valid_mem_ids = [mid for mid in synthesis.cited_memory_ids if mid in seen_mem_ids]
         valid_note_ids = [nid for nid in synthesis.cited_note_ids if nid in seen_note_ids]
+
+        cited_media: list[dict[str, Any]] = []
+        if self.media_service is not None and synthesis.has_sufficient_evidence:
+            evidence_note_ids: list[str] = list(valid_note_ids)
+            for m in candidate_memories:
+                if m.memory_id in valid_mem_ids:
+                    for ev in m.evidences:
+                        if ev.note_id not in evidence_note_ids:
+                            evidence_note_ids.append(ev.note_id)
+            if evidence_note_ids:
+                by_note = self.media_service.list_for_notes(space_id, evidence_note_ids)
+                for nid in evidence_note_ids:
+                    cited_media.extend(by_note.get(nid, []))
 
         duration_ms = (time.perf_counter() - t0) * 1000.0
         if self.quota_service is not None:
@@ -234,6 +271,7 @@ class AskService:
                 "notes": [
                     n.to_dict() for n in candidate_notes if n.note_id in valid_note_ids
                 ],
+                "media": cited_media,
             },
             "trace_id": trace_id,
         }

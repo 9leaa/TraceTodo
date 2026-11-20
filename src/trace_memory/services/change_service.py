@@ -50,6 +50,7 @@ class ChangeService:
         trace_repo: TraceRepository,
         vector_lifecycle: VectorLifecycleService,
         sync_tracker: Any = None,
+        media_service: Any = None,
     ) -> None:
         self.note_repo = note_repo
         self.memory_repo = memory_repo
@@ -57,6 +58,7 @@ class ChangeService:
         self.trace_repo = trace_repo
         self.vector_lifecycle = vector_lifecycle
         self.sync_tracker = sync_tracker
+        self.media_service = media_service
 
     def _validate_evidence_permissions(
         self, space_id: str, evidences: tuple[MemoryEvidence, ...]
@@ -340,6 +342,9 @@ class ChangeService:
                             reason=f"Derived source memory {saved.memory_id} forgotten",
                         )
                     )
+
+            if self.media_service is not None and purged_note_ids:
+                self.media_service.purge_for_notes(proposal.space_id, purged_note_ids)
 
             self.trace_repo.redact_for_forgotten(
                 proposal.space_id,
