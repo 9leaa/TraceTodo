@@ -415,6 +415,7 @@ struct QuickNotesStreamView: View {
                             Task { await reloadNotes() }
                         }
                         Spacer()
+                        VoiceMicButton(text: $draftText, compact: false)
                         Button("✍️ 保存随记") {
                             let clean = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
                             guard !clean.isEmpty else { return }

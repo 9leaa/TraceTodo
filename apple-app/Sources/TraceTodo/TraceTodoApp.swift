@@ -166,10 +166,12 @@ struct MainContentView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "magnifyingglass")
                                 .foregroundStyle(.secondary)
-                            TextField("一句话极速录入待办或记忆（如：明天必须修复支付超时 bug）...", text: $topCaptureText)
+                            TextField("一句话极速录入待办或记忆（支持 🎤 语音听写）...", text: $topCaptureText)
                                 .textFieldStyle(.plain)
                                 .font(.system(size: 13.5))
                                 .onSubmit { submitTopCapture() }
+
+                            VoiceMicButton(text: $topCaptureText, compact: true)
 
                             if store.isBusy {
                                 ProgressView().controlSize(.small)
