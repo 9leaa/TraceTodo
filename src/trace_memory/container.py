@@ -12,6 +12,7 @@ from trace_memory.services.ask_service import AskService
 from trace_memory.services.auth_service import AdminService, AuthService
 from trace_memory.services.calendar_service import CalendarService
 from trace_memory.services.change_service import ChangeService
+from trace_memory.services.countdown_service import CountdownService
 from trace_memory.services.dream_service import DreamService
 from trace_memory.services.focus_service import FocusService
 from trace_memory.services.guard_service import (
@@ -83,6 +84,7 @@ class AppContainer:
     voice_service: VoiceTranscriptionService
     media_service: MediaAttachmentService
     calendar_service: CalendarService
+    countdown_service: CountdownService
 
     @classmethod
     def build(
@@ -224,10 +226,12 @@ class AppContainer:
             task_matrix_service=task_matrix_service,
             sync_tracker=sync_tracker,
         )
+        countdown_service = CountdownService(db=db, sync_tracker=sync_tracker)
         calendar_service = CalendarService(
             db=db,
             memory_repo=memory_repo,
             task_matrix_service=task_matrix_service,
+            countdown_provider=countdown_service.project_range,
         )
         voice_service = VoiceTranscriptionService(config=cfg)
         ask_service = AskService(
@@ -294,6 +298,7 @@ class AppContainer:
             voice_service=voice_service,
             media_service=media_service,
             calendar_service=calendar_service,
+            countdown_service=countdown_service,
         )
 
     def close(self) -> None:

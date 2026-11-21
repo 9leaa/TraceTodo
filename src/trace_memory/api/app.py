@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import timedelta
 import hashlib
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -720,6 +721,22 @@ class ApiDispatcher:
                 )
                 return 200, out_sched
 
+            if method == "GET" and path == "/api/countdowns/list":
+                return 200, self.container.countdown_service.list_countdowns(space_id=space_id)
+
+            if method == "POST" and path == "/api/countdowns/save":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                saved_cd = self.container.countdown_service.save_countdown(space_id=space_id, data=payload)
+                return 200, saved_cd
+
+            if method == "POST" and path == "/api/countdowns/delete":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                del_ok = self.container.countdown_service.delete_countdown(
+                    space_id=space_id,
+                    countdown_id=str(payload.get("countdown_id", "")),
+                )
+                return 200, {"deleted": del_ok}
+
             if method == "GET" and path == "/api/supervision/board":
                 assignee = qp.get("assignee", [""])[0]
                 board = self.container.task_matrix_service.build_supervision_board(
@@ -1320,6 +1337,57 @@ class ApiDispatcher:
             planned_minutes=0,
             duration_seconds=1080,
             status="completed",
+        )
+
+        # Seed showcase Solar/Lunar Countdowns & Anniversary idempotently
+        now_d = beijing_now().date()
+        sp_hash = hashlib.md5(space_id.encode("utf-8")).hexdigest()[:8]
+        self.container.countdown_service.save_countdown(
+            space_id=space_id,
+            data={
+                "countdown_id": f"cd_demo_cny_{sp_hash}",
+                "allow_custom_id": True,
+                "title": "春节团圆",
+                "kind": "countdown",
+                "calendar_type": "lunar",
+                "lunar_year": now_d.year,
+                "lunar_month": 1,
+                "lunar_day": 1,
+                "repeat_rule": "yearly",
+                "icon": "🧧",
+                "color_theme": "crimson",
+                "pinned": True,
+            },
+        )
+        self.container.countdown_service.save_countdown(
+            space_id=space_id,
+            data={
+                "countdown_id": f"cd_demo_next_{sp_hash}",
+                "allow_custom_id": True,
+                "title": "里程碑版本发布",
+                "kind": "countdown",
+                "calendar_type": "solar",
+                "target_date": (now_d + timedelta(days=1)).isoformat(),
+                "repeat_rule": "none",
+                "icon": "🚀",
+                "color_theme": "lavender",
+                "pinned": True,
+            },
+        )
+        self.container.countdown_service.save_countdown(
+            space_id=space_id,
+            data={
+                "countdown_id": f"cd_demo_anniv_{sp_hash}",
+                "allow_custom_id": True,
+                "title": "开启双链记忆之旅",
+                "kind": "anniversary",
+                "calendar_type": "solar",
+                "target_date": (now_d - timedelta(days=78)).isoformat(),
+                "repeat_rule": "yearly",
+                "icon": "🌱",
+                "color_theme": "mint",
+                "pinned": False,
+            },
         )
         return {"seeded_notes": created, "space_id": space_id}
 

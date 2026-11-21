@@ -500,7 +500,7 @@ struct MainContentView: View {
             store.isPresentingSupervisionSheet = true
         } else if host == "focus" {
             selectedSection = .focus
-        } else if host == "calendar" {
+        } else if host == "calendar" || host == "countdown" {
             selectedSection = .calendar
         } else {
             selectedSection = .tasks

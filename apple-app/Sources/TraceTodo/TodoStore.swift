@@ -55,6 +55,7 @@ final class TodoStore: ObservableObject {
     @Published var activeFocusTask: TaskItemModel?
     @Published var activeFocusLaunch: ActiveFocusLaunchConfig?
     @Published private(set) var focusOverview: FocusOverviewResponse?
+    @Published private(set) var countdownList: CountdownListResponse?
 
     @Published var activeTheme: AppThemeKind = .classic
     @Published var enabledModules: [String: Bool] = [
@@ -231,6 +232,7 @@ final class TodoStore: ObservableObject {
             }
             await refreshPreferences()
             await refreshFocusOverview()
+            await refreshCountdowns()
             #if os(iOS)
             WidgetCenter.shared.reloadAllTimelines()
             #endif
@@ -359,6 +361,7 @@ final class TodoStore: ObservableObject {
                 saveMatrixCache(fresh)
                 await refreshPreferences()
             await refreshFocusOverview()
+            await refreshCountdowns()
                 #if os(iOS)
                 WidgetCenter.shared.reloadAllTimelines()
                 #endif
@@ -662,6 +665,17 @@ final class TodoStore: ObservableObject {
     func refreshPreferences() async {
         guard let prefs = try? await client.fetchPreferences() else { return }
         applyPreferencesResponse(prefs)
+    }
+
+    func refreshCountdowns() async {
+        guard let cd = try? await client.fetchCountdowns() else { return }
+        self.countdownList = cd
+        if let encoded = try? JSONEncoder().encode(cd) {
+            SharedWidgetBridge.saveCountdownsSnapshotData(encoded)
+        }
+        #if os(iOS)
+        WidgetCenter.shared.reloadAllTimelines()
+        #endif
     }
 
     private func applyPreferencesResponse(_ prefs: SpacePreferencesResponse) {

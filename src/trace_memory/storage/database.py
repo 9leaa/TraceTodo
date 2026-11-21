@@ -389,6 +389,29 @@ CREATE INDEX IF NOT EXISTS idx_media_attachments_space_note
     ON media_attachments(space_id, note_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_media_attachments_space_time
     ON media_attachments(space_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS countdown_days (
+    countdown_id TEXT PRIMARY KEY,
+    space_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'countdown',
+    calendar_type TEXT NOT NULL DEFAULT 'solar',
+    target_date TEXT NOT NULL,
+    lunar_year INTEGER NOT NULL DEFAULT 0,
+    lunar_month INTEGER NOT NULL DEFAULT 0,
+    lunar_day INTEGER NOT NULL DEFAULT 0,
+    is_leap_month INTEGER NOT NULL DEFAULT 0,
+    repeat_rule TEXT NOT NULL DEFAULT 'none',
+    icon TEXT NOT NULL DEFAULT '🎯',
+    color_theme TEXT NOT NULL DEFAULT 'sky',
+    pinned INTEGER NOT NULL DEFAULT 0,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_countdown_days_space
+    ON countdown_days(space_id, pinned DESC, target_date ASC);
 """
 
 

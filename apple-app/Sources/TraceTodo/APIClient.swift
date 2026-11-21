@@ -448,4 +448,19 @@ struct TraceMemoryAPIClient {
     func scheduleCalendarSlot(body: [String: Any]) async throws {
         try await postRaw("/api/calendar/schedule", body: body)
     }
+
+    // MARK: - Phase 3: Countdowns & Anniversaries
+
+    func fetchCountdowns() async throws -> CountdownListResponse {
+        try await get("/api/countdowns/list")
+    }
+
+    func saveCountdown(body: [String: Any]) async throws -> CountdownItemModel {
+        let data = try await postRaw("/api/countdowns/save", body: body)
+        return try JSONDecoder().decode(CountdownItemModel.self, from: data)
+    }
+
+    func deleteCountdown(countdownId: String) async throws {
+        try await postRaw("/api/countdowns/delete", body: ["countdown_id": countdownId])
+    }
 }

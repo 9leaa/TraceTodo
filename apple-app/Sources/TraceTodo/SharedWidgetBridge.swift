@@ -11,6 +11,7 @@ enum SharedWidgetBridge {
     private static let kSpaceId = "tm_shared_space_id"
     private static let kAuthToken = "tm_shared_auth_token"
     private static let kMatrixSnapshot = "tm_shared_matrix_snapshot_json"
+    private static let kCountdownsSnapshot = "tm_shared_countdowns_snapshot_json"
     private static let kUpdatedAt = "tm_shared_snapshot_updated_at"
 
     private static var sharedDefaults: UserDefaults? {
@@ -47,5 +48,15 @@ enum SharedWidgetBridge {
 
     static func loadMatrixSnapshotData() -> Data? {
         sharedDefaults?.data(forKey: kMatrixSnapshot)
+    }
+
+    static func saveCountdownsSnapshotData(_ data: Data) {
+        guard let ud = sharedDefaults else { return }
+        ud.set(data, forKey: kCountdownsSnapshot)
+        ud.set(Date().timeIntervalSince1970, forKey: kUpdatedAt)
+    }
+
+    static func loadCountdownsSnapshotData() -> Data? {
+        sharedDefaults?.data(forKey: kCountdownsSnapshot)
     }
 }
