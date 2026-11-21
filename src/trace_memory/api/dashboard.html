@@ -43,18 +43,18 @@
     header {
       background: #ffffff;
       color: #1e293b;
-      padding: calc(10px + env(safe-area-inset-top)) 20px 10px;
-      display: flex;
+      padding: calc(12px + env(safe-area-inset-top)) 22px 12px;
+      display: grid;
+      grid-template-columns: minmax(max-content, 1fr) minmax(240px, 680px) minmax(max-content, 1fr) auto;
+      grid-template-areas: "brand composer actions account";
       align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 12px;
+      column-gap: 14px;
       border-bottom: 1px solid #e2e8f0;
       position: sticky;
       top: 0;
       z-index: 35;
     }
-    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand { grid-area: brand; display: flex; align-items: center; gap: 9px; min-width: 0; }
     .brand-logo {
       width: 34px; height: 34px;
       border-radius: 10px;
@@ -63,35 +63,79 @@
       box-shadow: 0 2px 8px rgba(59,130,246,0.22);
     }
     .brand-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .brand h1 { font-size: 16px; font-weight: 700; letter-spacing: 0.2px; color: #0f172a; }
-    .pill {
-      font-size: 11.5px;
-      padding: 3px 10px;
-      border-radius: 999px;
-      background: #f1f5f9;
-      color: #475569;
-      font-weight: 500;
-    }
-    .top-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .header-search-wrap {
-      flex: 1 1 200px;
-      min-width: 180px;
-      max-width: 480px;
+    .brand h1 { font-size: 16px; font-weight: 700; color: #0f172a; }
+    .header-composer { grid-area: composer; min-width: 0; }
+    .capture-form {
       display: flex;
       align-items: center;
-      gap: 8px;
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 10px;
-      padding: 4px 6px 4px 12px;
+      gap: 4px;
+      background: #f2f6ff;
+      border: 1px solid #c4d4fa;
+      border-radius: 12px;
+      padding: 4px;
     }
-    .header-search-wrap input {
+    .capture-form:focus-within, .main-input:focus {
+      border-color: #6385e8;
+      box-shadow: 0 0 0 3px #dce7ff;
+    }
+    .capture-form input {
       border: none;
       background: transparent;
       flex: 1;
-      padding: 5px 4px;
+      min-width: 0;
+      padding: 8px 10px;
       outline: none;
+      color: #172554;
+      font-size: 15px;
+    }
+    .capture-form input::placeholder { color: #536685; }
+    .capture-form button { flex-shrink: 0; border-radius: 8px; font-weight: 600; }
+    .capture-feedback {
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+    .capture-feedback span {
+      margin-top: 4px;
+      padding: 3px 8px;
+      border: 1px solid #c7d2fe;
+      border-radius: 8px;
+      background: #eef2ff;
+      color: #3730a3;
+      white-space: nowrap;
+      font-size: 11.5px;
+    }
+    .top-actions { grid-area: actions; justify-self: end; display: flex; align-items: center; gap: 5px; }
+    .top-actions > button, .header-account {
+      padding: 8px 10px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      color: #334155;
       font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .top-actions > button:hover, .header-account:hover {
+      background: #f1f5f9;
+    }
+    .header-account { grid-area: account; border-color: var(--border); }
+    input.main-input {
+      min-width: 0;
+      background: #fff;
+      border-color: #c3cfe3;
+      color: #172554;
+    }
+    input.main-input:focus { outline: none; }
+    @media (max-width: 850px) {
+      header {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas: "brand account" "composer composer" "actions actions";
+        gap: 8px;
+        padding: calc(8px + env(safe-area-inset-top)) 12px 10px;
+      }
+      .top-actions { justify-self: start; flex-wrap: wrap; }
+      .top-actions > button, .header-account { padding: 6px 8px; }
+      .capture-form input { font-size: 16px; }
     }
     input, select, button, textarea {
       font: inherit;
@@ -142,7 +186,7 @@
     }
     button.ghost-dark:hover { background: #eef2ff; border-color: #c7d2fe; color: #3730a3; }
 
-    /* 3-Region Workspace Layout */
+    /* Workspace Layout */
     .workspace-shell {
       display: flex;
       min-height: calc(100vh - 58px);
@@ -229,71 +273,14 @@
       to { opacity: 1; transform: none; }
     }
 
-    .right-timeline-rail {
-      width: 300px;
-      flex-shrink: 0;
-      background: #f5f7fb;
-      border-left: 1px solid #e2e8f0;
+    .memory-pagination:not([hidden]) {
       display: flex;
-      flex-direction: column;
-      position: sticky;
-      top: var(--header-h, 60px);
-      height: calc(100vh - var(--header-h, 60px));
-      align-self: flex-start;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 16px;
     }
-    .timeline-header {
-      background: linear-gradient(135deg, #4b91f7 0%, #2563eb 100%);
-      color: #fff;
-      padding: 18px 18px 0;
-    }
-    .timeline-header h2 {
-      font-size: 15px;
-      font-weight: 500;
-      letter-spacing: 2px;
-      margin-bottom: 12px;
-    }
-    .timeline-tabs { display: flex; gap: 16px; }
-    .timeline-tab {
-      border: none;
-      background: transparent;
-      color: rgba(255,255,255,0.75);
-      font-size: 12px;
-      font-weight: 600;
-      padding: 0 2px 10px;
-      border-bottom: 3px solid transparent;
-      border-radius: 0;
-    }
-    .timeline-tab:hover { background: transparent; color: #fff; }
-    .timeline-tab.active { color: #fff; border-bottom-color: #fff; }
-    .timeline-body {
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      flex: 1;
-      min-height: 0;
-      overflow-y: auto;
-    }
-    .tl-item { display: flex; flex-direction: column; gap: 7px; }
-    .tl-head { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #64748b; }
-    .tl-dot { width: 11px; height: 11px; border-radius: 999px; border: 2.5px solid #3b82f6; background: #fff; }
-    .tl-card {
-      margin-left: 14px;
-      background: #fff;
-      border-radius: 10px;
-      padding: 12px;
-      box-shadow: 0 4px 12px rgba(15,23,42,0.05);
-      display: flex; flex-direction: column; gap: 7px;
-    }
-    .tl-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 2px; }
-    .tl-btn-ok { background: #3b82f6; color: #fff; border: none; padding: 5px; border-radius: 6px; font-size: 12px; }
-    .tl-btn-ok:hover { background: #2563eb; }
-    .tl-btn-sub { background: #fff; color: #64748b; border: 1px solid #cbd5e1; padding: 5px; border-radius: 6px; font-size: 12px; }
-
-    .mobile-fab { display: none; }
-    @media (max-width: 1120px) {
-      .right-timeline-rail { display: none; }
-    }
+    .memory-pagination:not([aria-busy="true"]) button:disabled { cursor: default; }
     @media (max-width: 768px) {
       .left-rail {
         position: fixed;
@@ -314,23 +301,6 @@
       .tab-btn { font-size: 10.5px; padding: 4px; gap: 2px; flex: 1; min-width: 0; }
       .tab-btn .tab-ico { width: 26px; height: 26px; font-size: 14px; }
       .toast { bottom: calc(76px + env(safe-area-inset-bottom)); right: 12px; left: 12px; text-align: center; }
-      .header-search-wrap { order: 3; max-width: 100%; width: 100%; }
-      .mobile-fab {
-        display: flex;
-        position: fixed;
-        right: 18px;
-        bottom: calc(68px + env(safe-area-inset-bottom));
-        width: 54px; height: 54px;
-        border-radius: 999px;
-        background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
-        color: #fff;
-        font-size: 26px;
-        align-items: center;
-        justify-content: center;
-        border: none;
-        box-shadow: 0 8px 20px rgba(59,130,246,0.38);
-        z-index: 45;
-      }
     }
 
     /* Vibrant 2x2 Summary Hero Cards */
@@ -338,8 +308,10 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 12px;
       margin-bottom: 14px;
     }
+    .summary-header .duodo-btn { flex-shrink: 0; }
     .summary-title {
       font-size: 15px;
       font-weight: 500;
@@ -1190,31 +1162,28 @@
 <body>
   <header>
     <div class="brand">
-      <div class="brand-logo"><img src="/icon.png" alt="TraceTodo" /></div>
+      <div class="brand-logo"><img src="/icon.png" alt="" /></div>
       <h1>TraceTodo</h1>
-      <span class="pill" id="engineStatus">Loading...</span>
-      <span class="pill" id="ingestPendingPill" style="display:none;background:#eef2ff;color:#4f46e5;border-color:#c7d2fe;">🧠 AI 整理中...</span>
     </div>
 
-    <div class="header-search-wrap">
-      <span style="color:#94a3b8;">🔍</span>
-      <input id="quickNoteInput" placeholder="一句话极速录入待办或记忆（如：明天必须修复微信支付超时 bug）..." onkeydown="if(event.key==='Enter') recordQuickNote()" />
-      <button type="button" id="quickNoteBtn" class="primary" style="padding:5px 12px;border-radius:8px;font-size:12px;" onclick="recordQuickNote(this)">AI 录入</button>
+    <div class="header-composer">
+      <form class="capture-form" onsubmit="event.preventDefault(); recordQuickNote()">
+        <input id="quickNoteInput" aria-label="记录待办或记忆" placeholder="记下待办或想法…" />
+        <button type="submit" class="primary">AI 录入</button>
+      </form>
+      <div class="capture-feedback" role="status">
+        <span id="headerOffline" hidden>离线缓存模式</span>
+        <span id="ingestPendingPill" hidden>AI 整理中</span>
+      </div>
     </div>
 
     <div class="top-actions">
-      <button type="button" class="duodo-btn" onclick="openTaskSheet(null)">+ 新建任务</button>
-      <span id="spaceWrap" style="display:inline-flex;align-items:center;gap:4px;">
-        <label style="font-size:12px;color:#64748b;">Space:</label>
-        <input id="spaceInput" value="default" style="width:92px;padding:5px 8px;background:#f8fafc;" onchange="reloadAll()" />
-      </span>
-      <button type="button" id="notifToggleBtn" class="ghost-dark" onclick="toggleWebNotifications()">🔔 通知</button>
-      <button type="button" id="accountBtn" class="ghost-dark" onclick="openAuthModal()">🔐 登录 / 账号</button>
-      <button type="button" class="ghost-dark" onclick="seedDemo(this)">✨ 演示</button>
-      <button type="button" class="ghost-dark" onclick="exportMarkdown(this)">📂 导出</button>
-      <button type="button" class="ghost-dark" id="syncMdBtn" onclick="syncMarkdown(this)">🔄 同步</button>
-      <button type="button" class="ghost-dark" onclick="runDream(this)">🌙 Dream</button>
+      <button type="button" onclick="runDream(this)">归纳卡片</button>
+      <button type="button" id="notifToggleBtn" onclick="toggleWebNotifications()">通知</button>
+      <button type="button" title="导出 Markdown 卡片" onclick="exportMarkdown(this)">导出</button>
+      <button type="button" id="syncMdBtn" title="同步 Markdown" onclick="syncMarkdown(this)">同步</button>
     </div>
+    <button type="button" class="header-account" id="accountBtn" onclick="openAuthModal()">登录</button>
   </header>
 
   <div class="workspace-shell">
@@ -1238,8 +1207,8 @@
       <!-- TAB 1: SUMMARY DASHBOARD & EISENHOWER 4-QUADRANT MATRIX -->
       <section id="panel-tasks" class="panel active">
         <div class="summary-header">
-          <div class="summary-title">SUMMARY</div>
-          <div style="font-size:12px;color:#64748b;">个人记忆与四象限执行概览</div>
+          <h2 class="summary-title">任务概览</h2>
+          <button type="button" class="duodo-btn" onclick="openTaskSheet(null)">+ 新建任务</button>
         </div>
         <div class="kpi-grid" id="taskKpis"></div>
 
@@ -1310,19 +1279,24 @@
     <section id="panel-memories" class="panel">
       <div class="toolbar">
         <div class="btn-group" style="flex:1;">
-          <input id="memSearchInput" style="flex:1;max-width:440px;" placeholder="输入关键词或跨字面语义查询（如：线上结算隐患 / 居住城市 / 咖啡习惯）..." onkeydown="if(event.key==='Enter') loadMemories()" />
-          <select id="memTypeFilter" onchange="loadMemories()">
+          <input id="memSearchInput" class="main-input" style="flex:1;max-width:440px;" aria-label="搜索记忆" placeholder="按关键词或语义搜索记忆…" onkeydown="if(event.key==='Enter' && !event.isComposing) loadMemories(1)" />
+          <select id="memTypeFilter" onchange="loadMemories(1)">
             <option value="">全部四类记忆</option>
             <option value="task">任务 (task)</option>
             <option value="preference">偏好 (preference)</option>
             <option value="semantic">语义事实 (semantic)</option>
             <option value="episodic">情景经历 (episodic)</option>
           </select>
-          <button type="button" id="memSearchBtn" class="primary" onclick="loadMemories(this)">BM25 + 向量 RRF 检索</button>
+          <button type="button" class="primary" onclick="loadMemories(1)">搜索</button>
           <button type="button" class="duodo-btn" onclick="openNewMemoryModal()">+ 新建记忆</button>
         </div>
       </div>
       <div id="memoriesList" class="list-stack"></div>
+      <nav id="memoryPagination" class="memory-pagination" aria-label="记忆列表分页" hidden>
+        <button type="button" id="memPrevPage" onclick="loadMemories(memoryPage - 1)">上一页</button>
+        <span id="memPageLabel" aria-live="polite"></span>
+        <button type="button" id="memNextPage" onclick="loadMemories(memoryPage + 1)">下一页</button>
+      </nav>
     </section>
 
     <!-- TAB 4: GRAPH CONTEXT (OBSIDIAN FORCE-DIRECTED CANVAS + LIST INSPECTOR) -->
@@ -1330,7 +1304,7 @@
       <div class="graph-toolbar-card">
         <div class="graph-row">
           <div class="btn-group" style="flex:1;min-width:260px;">
-            <input id="graphSeedInput" style="flex:1;max-width:380px;" placeholder="输入种子 memory:// 链接、ID 或关键词聚焦子图（留空展示全局星图）..." onkeydown="if(event.key==='Enter') loadGraph()" />
+            <input id="graphSeedInput" class="main-input" style="flex:1;max-width:380px;" aria-label="聚焦图谱" placeholder="输入关键词、卡片 ID 或链接…" onkeydown="if(event.key==='Enter' && !event.isComposing) loadGraph()" />
             <select id="graphHopSelect" title="局部子图展开跳数" onchange="if(document.getElementById('graphSeedInput').value.trim()) loadGraph()">
               <option value="1">1 跳邻居</option>
               <option value="2" selected>2 跳子图</option>
@@ -1398,7 +1372,7 @@
         <div class="graph-empty-hint" id="graphEmptyHint">
           <div style="font-size:32px;">🕸️</div>
           <div>当前筛选条件下暂无记忆节点</div>
-          <div style="font-size:12px;opacity:0.8;">录入几条想法、添加 <code>[[双链]]</code> 或点击右上角「✨ 演示 / 🌙 Dream」即可点亮关系星图</div>
+          <div style="font-size:12px;opacity:0.8;">试试录入一条记忆，或调整图谱筛选条件。</div>
         </div>
 
         <div class="graph-hud-controls">
@@ -1439,7 +1413,7 @@
         <div class="card-box">
           <h3>💬 结合记忆与原话的证据问答 (`/ask`)</h3>
           <div style="display:flex;gap:8px;">
-            <input id="askInput" style="flex:1;" placeholder="试着问：我现在住在哪里？ / 我以前的居住历史变迁？ / 最近有什么结算风险？" onkeydown="if(event.key==='Enter') askQuestion()" />
+            <input id="askInput" class="main-input" style="flex:1;" aria-label="根据记忆提问" placeholder="例如：最近有什么结算风险？" onkeydown="if(event.key==='Enter' && !event.isComposing) askQuestion()" />
             <button type="button" id="askSubmitBtn" class="primary" onclick="askQuestion(this)">提问</button>
           </div>
           <div id="askResult"></div>
@@ -1527,20 +1501,7 @@
     </section>
     </div>
 
-    <aside class="right-timeline-rail">
-      <div class="timeline-header">
-        <h2>TASKS · 待办流</h2>
-        <div class="timeline-tabs">
-          <button type="button" class="timeline-tab active" id="tlTabTodo" onclick="setTimelineTab('todo')">待办 (<span id="tlCntTodo">0</span>)</button>
-          <button type="button" class="timeline-tab" id="tlTabSup" onclick="setTimelineTab('sup')">监督 (<span id="tlCntSup">0</span>)</button>
-          <button type="button" class="timeline-tab" id="tlTabDone" onclick="setTimelineTab('done')">已完 (<span id="tlCntDone">0</span>)</button>
-        </div>
-      </div>
-      <div class="timeline-body" id="timelineBody"></div>
-    </aside>
   </div>
-
-  <button type="button" class="mobile-fab" onclick="openTaskSheet(null)" title="新建任务">+</button>
 
   <!-- DuoDo Style Create / Edit Task Bottom Sheet Modal -->
   <div class="modal-backdrop" id="taskSheetModal" onclick="if(event.target===this) closeTaskSheet()">
@@ -1848,6 +1809,8 @@
     let authMode = 'login';
     let authLockOpen = false;
     let activeShareToken = '';
+    const dashboardParams = new URLSearchParams(location.search);
+    const requestedSpace = dashboardParams.get('space_id')?.trim();
 
     const REPEAT_LABELS = {
       never: '永不', daily: '每天', weekdays: '工作日', weekly: '每周', monthly: '每月'
@@ -1857,7 +1820,7 @@
       if (currentUser && currentUser.role !== 'admin') {
         return currentUser.space_id;
       }
-      return document.getElementById('spaceInput').value.trim() || 'default';
+      return requestedSpace || currentUser?.space_id || 'default';
     }
 
     function authHeaders(extra = {}) {
@@ -2061,71 +2024,6 @@
       `;
     }
 
-    let currentTimelineTab = 'todo';
-    let lastLoadedTasks = [];
-
-    function setTimelineTab(tab) {
-      currentTimelineTab = tab;
-      document.getElementById('tlTabTodo').classList.toggle('active', tab === 'todo');
-      document.getElementById('tlTabSup').classList.toggle('active', tab === 'sup');
-      document.getElementById('tlTabDone').classList.toggle('active', tab === 'done');
-      if (tab === 'done' && !document.getElementById('includeDoneCheck').checked) {
-        document.getElementById('includeDoneCheck').checked = true;
-        loadTasks();
-        return;
-      }
-      renderTimelineRail();
-    }
-
-    function renderTimelineRail() {
-      const todos = lastLoadedTasks.filter(t => t.payload?.task_status !== 'done');
-      const sups = todos.filter(t => t.payload?.supervision_enabled || t.payload?.task_mode === 'multiplayer');
-      const dones = lastLoadedTasks.filter(t => t.payload?.task_status === 'done');
-      const list = currentTimelineTab === 'sup' ? sups : (currentTimelineTab === 'done' ? dones : todos);
-      document.getElementById('tlCntSup').textContent = sups.length;
-
-      const body = document.getElementById('timelineBody');
-      if (!list.length) {
-        body.innerHTML = `<div style="text-align:center;color:#94a3b8;font-size:12.5px;padding:30px 10px;">暂无该分组事项</div>`;
-        return;
-      }
-      body.innerHTML = list.map(t => {
-        const p = t.payload || {};
-        const isDone = p.task_status === 'done';
-        const qCode = (p.quadrant || 'Q4').slice(0, 2);
-        const subs = Array.isArray(p.subtasks) ? p.subtasks : [];
-        const timeText = p.rollover_count ? `顺延${p.rollover_count}天` : (p.due_at ? p.due_at.slice(0, 10) : t.updated_at.slice(0, 10));
-        return `
-          <div class="tl-item">
-            <div class="tl-head">
-              <span class="tl-dot" style="border-color:${p.quadrant === 'Q1_do_first' ? '#ef4444' : '#3b82f6'}"></span>
-              <strong style="color:#334155;">${esc(qCode)}</strong>
-              <span style="margin-left:auto;color:${p.is_overdue ? '#dc2626' : '#94a3b8'};">${esc(timeText)}</span>
-            </div>
-            <div class="tl-card">
-              <div style="font-weight:600;font-size:13px;cursor:pointer;${isDone ? 'text-decoration:line-through;color:#94a3b8;' : ''}" onclick="openTaskSheet('${t.memory_id}')">${esc(t.title)}</div>
-              ${subs.length
-                ? subs.slice(0, 3).map(s => `<div style="font-size:11.5px;color:#64748b;">${s.done ? '✓' : '•'} ${esc(s.title)}</div>`).join('')
-                : `<div style="font-size:11.5px;color:#64748b;">${esc(p.priority_reason || t.summary)}</div>`
-              }
-              <div style="display:flex;justify-content:space-between;font-size:11.5px;color:#64748b;border-top:1px solid #f1f5f9;padding-top:6px;">
-                <span>重要度 ${p.importance || 3}★</span>
-                <strong style="color:#0f172a;">${esc(p.priority_score)} 分</strong>
-              </div>
-              <div class="tl-actions">
-                ${!isDone
-                  ? `<button class="tl-btn-ok" onclick="transitionTask('${t.memory_id}', 'complete_task', ${t.version})">✓</button>
-                     <button class="tl-btn-sub" onclick="transitionTask('${t.memory_id}', 'cancel_task', ${t.version})">✕</button>
-                     <button class="tl-btn-sub" onclick="openFocusLock('${t.memory_id}')">🎯</button>`
-                  : `<button class="tl-btn-sub" style="grid-column:span 3;" onclick="transitionTask('${t.memory_id}', 'reopen_task', ${t.version})">↩️ 重新开启</button>`
-                }
-              </div>
-            </div>
-          </div>
-        `;
-      }).join('');
-    }
-
     function renderSvgDonut(c) {
       const done = c.total_done ?? 0;
       const q1 = c.Q1_do_first ?? 0;
@@ -2178,7 +2076,6 @@
       const data = await apiGet(`/api/tasks/matrix?sort_by=${sortBy}&include_done=${incDone}`);
       const c = data.summary_counts || {};
       const sorted = data.sorted_tasks || [];
-      lastLoadedTasks = sorted;
 
       const totalAll = (c.total_todo ?? 0) + (c.total_done ?? 0);
       const pct = totalAll ? Math.round(((c.total_done ?? 0) / totalAll) * 100) : 0;
@@ -2235,9 +2132,6 @@
         document.getElementById('railTipText').textContent = diags[0].replace(/^[🎯🔥⚠️💡🧹🧠↻]\s*/, '').slice(0, 48);
       }
 
-      document.getElementById('tlCntTodo').textContent = c.total_todo ?? 0;
-      document.getElementById('tlCntDone').textContent = c.total_done ?? 0;
-      renderTimelineRail();
 
       const qOrder = ['Q1_do_first', 'Q2_schedule', 'Q3_delegate', 'Q4_eliminate'];
       document.getElementById('matrixContainer').innerHTML = qOrder.map(qKey => {
@@ -2774,18 +2668,18 @@
       const btn = document.getElementById('notifToggleBtn');
       if (!btn) return;
       if (!isWebNotifEnabled()) {
-        btn.textContent = '🔕 通知已关';
+        btn.textContent = '通知已关';
         btn.title = '点击开启任务消息通知';
         return;
       }
       if ('Notification' in window && window.isSecureContext && Notification.permission === 'granted') {
-        btn.textContent = '🔔 通知已开';
+        btn.textContent = '通知已开';
         btn.title = '系统浏览器通知 + 页内提示音已开启（点击测试或关闭）';
       } else if ('Notification' in window && window.isSecureContext && Notification.permission === 'denied') {
-        btn.textContent = '🔔 页内提醒';
+        btn.textContent = '页内提醒';
         btn.title = '浏览器系统通知已被拒绝，当前使用页内提醒与提示音（可在浏览器地址栏开启权限）';
       } else {
-        btn.textContent = '🔔 开启通知';
+        btn.textContent = '开启通知';
         btn.title = '点击授权系统浏览器通知并发送测试提醒';
       }
     }
@@ -2874,13 +2768,8 @@
 
     function updateIngestPendingPill(pendingCount) {
       const pill = document.getElementById('ingestPendingPill');
-      if (!pill) return;
-      if (pendingCount > 0) {
-        pill.style.display = 'inline-flex';
-        pill.textContent = `🧠 AI 后台整理中 (${pendingCount})`;
-      } else {
-        pill.style.display = 'none';
-      }
+      pill.hidden = pendingCount <= 0;
+      if (!pill.hidden) pill.textContent = `AI 整理中（${pendingCount}）`;
     }
 
     async function pollIngestStatusOnce() {
@@ -2921,7 +2810,7 @@
       }, immediate ? 600 : 1800);
     }
 
-    async function recordQuickNote(btn) {
+    async function recordQuickNote() {
       const input = document.getElementById('quickNoteInput');
       const content = input.value.trim();
       if (!content) {
@@ -2982,55 +2871,106 @@
       }
     }
 
-    async function loadMemories(btn) {
-      const targetBtn = btn || document.getElementById('memSearchBtn');
-      return withBtnBusy(targetBtn, '⏳ 检索中...', async () => {
-        const q = document.getElementById('memSearchInput').value.trim();
-        const mtype = document.getElementById('memTypeFilter').value;
-        const res = await apiGet(`/api/memories/search?q=${encodeURIComponent(q)}&memory_type=${mtype}&top_k=30`);
-        if (res.error) return showToast(`检索失败: ${res.error}`);
-        const hits = res.memories || [];
-        const container = document.getElementById('memoriesList');
-        if (!hits.length) {
-          container.innerHTML = `<div class="card-box" style="color:var(--muted);">未找到匹配的生效记忆</div>`;
-          return;
+    const memoryPageSize = 30;
+    let memoryPage = 1;
+    let memoryBrowseSpace = '';
+    let memoryTotalPages = 0;
+    let memoryRequest = 0;
+
+    function updateMemoryPagination(loading) {
+      document.getElementById('memoryPagination').setAttribute('aria-busy', String(loading));
+      document.getElementById('memPrevPage').disabled = loading || memoryPage === 1;
+      document.getElementById('memNextPage').disabled = loading || memoryPage >= memoryTotalPages;
+      document.getElementById('memPageLabel').textContent =
+        memoryTotalPages ? `${memoryPage} / ${memoryTotalPages}` : '';
+    }
+
+    async function loadMemories(page = memoryPage) {
+      const request = ++memoryRequest;
+      const currentSpace = space();
+      const q = document.getElementById('memSearchInput').value.trim();
+      const mtype = document.getElementById('memTypeFilter').value;
+      const container = document.getElementById('memoriesList');
+      const pagination = document.getElementById('memoryPagination');
+      const pageChanged = page !== memoryPage && currentSpace === memoryBrowseSpace;
+      if (q || currentSpace !== memoryBrowseSpace) page = 1;
+      const params = new URLSearchParams({ memory_type: mtype });
+      const fetchPage = (page) => {
+        if (q) {
+          params.set('q', q);
+          params.set('top_k', memoryPageSize);
+          return apiGet(`/api/memories/search?${params}`);
         }
-        container.innerHTML = hits.map(h => {
-          const m = h.memory;
-          return `
-            <div class="mem-card">
-              <div class="task-top">
-                <div>
-                  <span class="tag" style="font-weight:700;">${esc(m.memory_type)}</span>
-                  <strong style="margin-left:6px;">${esc(m.title)}</strong>
-                  <code style="font-size:12px;color:var(--muted);margin-left:8px;">${esc(m.uri)}</code>
-                </div>
-                <div class="btn-group">
-                  <span class="tag score">RRF: ${h.rrf_score}</span>
-                  ${h.bm25_rank ? `<span class="tag">BM25 #${h.bm25_rank}</span>` : ''}
-                  ${h.vector_rank ? `<span class="tag">Vector #${h.vector_rank} (cos=${h.vector_score})</span>` : ''}
-                </div>
-              </div>
-              <div style="font-size:13.5px;">${esc(m.summary)}</div>
-              ${(m.tags && m.tags.length) ? `<div class="meta-row">${m.tags.map(tg => `<span class="tag">#${esc(tg)}</span>`).join('')}</div>` : ''}
-              <div class="meta-row">
-                <span class="tag ${m.assertion_kind === 'inferred' ? 'inferred' : ''}">${m.assertion_kind === 'inferred' ? '🌙 Dream 推断' : '📝 原话陈述'}</span>
-                ${m.user_locked ? '<span class="tag lock">🔒 用户保护</span>' : ''}
-                <span>版本 v${m.version}</span>
-                <span>证据数: ${(m.evidences || []).length}</span>
-              </div>
-              <div class="card-actions">
-                <button type="button" onclick="openDetail('${m.memory_id}', 'form')">✏️ 编辑记忆</button>
-                <button type="button" onclick="openDetail('${m.memory_id}', 'markdown')">📝 Markdown 编辑</button>
-                <button type="button" onclick="openDetail('${m.memory_id}', 'provenance')">🔎 溯源与版本链</button>
-                <button type="button" onclick="focusNodeInGraph('${m.memory_id}')">🕸️ 图谱定位</button>
-                ${m.memory_type === 'task' ? `<button type="button" onclick="openTaskSheet('${m.memory_id}')">🎨 待办卡片设置</button>` : ''}
-                <button type="button" onclick="forgetMemory('${m.memory_id}', ${m.version})" style="color:#b91c1c;">🗑️ 遗忘</button>
-              </div>
+        params.set('limit', memoryPageSize);
+        params.set('offset', (page - 1) * memoryPageSize);
+        return apiGet(`/api/memories?${params}`);
+      };
+
+      updateMemoryPagination(true);
+      container.setAttribute('aria-busy', 'true');
+      try {
+        let res = await fetchPage(page);
+        if (request !== memoryRequest || currentSpace !== space()) return;
+        if (!res.error && !q && page > 1 && !res.memories.length) {
+          page = 1;
+          res = await fetchPage(page);
+          if (request !== memoryRequest || currentSpace !== space()) return;
+        }
+        if (res.error) return showToast(`加载记忆失败: ${res.error}`);
+
+        memoryPage = page;
+        memoryBrowseSpace = currentSpace;
+        memoryTotalPages = q ? 0 : Math.ceil(res.total / memoryPageSize);
+        pagination.hidden = memoryTotalPages === 0;
+        const hits = q ? res.memories : res.memories.map(memory => ({ memory }));
+        container.innerHTML = hits.length
+          ? hits.map(renderMemoryCard).join('')
+          : '<div class="card-box" style="color:var(--muted);">未找到匹配的生效记忆</div>';
+        if (pageChanged) window.scrollTo(0, 0);
+      } catch (err) {
+        if (request === memoryRequest) showToast(`加载记忆失败: ${err?.message || err}`);
+      } finally {
+        if (request === memoryRequest) {
+          container.removeAttribute('aria-busy');
+          updateMemoryPagination(false);
+        }
+      }
+    }
+
+    function renderMemoryCard(h) {
+      const m = h.memory;
+      return `
+        <div class="mem-card">
+          <div class="task-top">
+            <div>
+              <span class="tag" style="font-weight:700;">${esc(m.memory_type)}</span>
+              <strong style="margin-left:6px;">${esc(m.title)}</strong>
+              <code style="font-size:12px;color:var(--muted);margin-left:8px;">${esc(m.uri)}</code>
             </div>
-          `;
-        }).join('');
-      });
+            <div class="btn-group">
+              ${h.rrf_score != null ? `<span class="tag score">RRF: ${h.rrf_score}</span>` : ''}
+              ${h.bm25_rank ? `<span class="tag">BM25 #${h.bm25_rank}</span>` : ''}
+              ${h.vector_rank ? `<span class="tag">Vector #${h.vector_rank} (cos=${h.vector_score})</span>` : ''}
+            </div>
+          </div>
+          <div style="font-size:13.5px;">${esc(m.summary)}</div>
+          ${(m.tags && m.tags.length) ? `<div class="meta-row">${m.tags.map(tg => `<span class="tag">#${esc(tg)}</span>`).join('')}</div>` : ''}
+          <div class="meta-row">
+            <span class="tag ${m.assertion_kind === 'inferred' ? 'inferred' : ''}">${m.assertion_kind === 'inferred' ? '🌙 Dream 推断' : '📝 原话陈述'}</span>
+            ${m.user_locked ? '<span class="tag lock">🔒 用户保护</span>' : ''}
+            <span>版本 v${m.version}</span>
+            <span>证据数: ${(m.evidences || []).length}</span>
+          </div>
+          <div class="card-actions">
+            <button type="button" onclick="openDetail('${m.memory_id}', 'form')">✏️ 编辑记忆</button>
+            <button type="button" onclick="openDetail('${m.memory_id}', 'markdown')">📝 Markdown 编辑</button>
+            <button type="button" onclick="openDetail('${m.memory_id}', 'provenance')">🔎 溯源与版本链</button>
+            <button type="button" onclick="focusNodeInGraph('${m.memory_id}')">🕸️ 图谱定位</button>
+            ${m.memory_type === 'task' ? `<button type="button" onclick="openTaskSheet('${m.memory_id}')">🎨 待办卡片设置</button>` : ''}
+            <button type="button" onclick="forgetMemory('${m.memory_id}', ${m.version})" style="color:#b91c1c;">🗑️ 遗忘</button>
+          </div>
+        </div>
+      `;
     }
 
     /* ==================== OBSIDIAN FORCE-DIRECTED GRAPH ENGINE ==================== */
@@ -4284,32 +4224,13 @@
 
     function updateAccountUi() {
       const btn = document.getElementById('accountBtn');
-      const spaceWrap = document.getElementById('spaceWrap');
       const adminTab = document.getElementById('adminTabBtn');
       const syncBtn = document.getElementById('syncMdBtn');
-
-      if (currentUser) {
-        const usedNotes = currentQuota?.notes_count ?? 0;
-        const limNotes = currentUser.daily_note_limit ?? 60;
-        const roleTag = currentUser.role === 'admin' ? '👑' : '👤';
-        btn.textContent = `${roleTag} ${currentUser.display_name || currentUser.username} · ${usedNotes}/${limNotes}`;
-        if (currentUser.role === 'admin') {
-          spaceWrap.style.display = 'inline-flex';
-          adminTab.style.display = 'flex';
-          if (syncBtn) syncBtn.style.display = 'inline-block';
-        } else {
-          document.getElementById('spaceInput').value = currentUser.space_id;
-          spaceWrap.style.display = 'none';
-          adminTab.style.display = 'none';
-          if (syncBtn) syncBtn.style.display = 'none';
-        }
-      } else {
-        btn.textContent = authRequiredFlag ? '🔐 请登录' : '🔐 登录 / 账号';
-        spaceWrap.style.display = 'inline-flex';
-        adminTab.style.display = 'none';
-        if (syncBtn) syncBtn.style.display = 'inline-block';
-      }
-      syncHeaderHeight();
+      const isAdmin = currentUser?.role === 'admin';
+      btn.textContent = currentUser ? '账号' : '登录';
+      btn.title = currentUser?.display_name || currentUser?.username || '';
+      adminTab.style.display = isAdmin ? 'flex' : 'none';
+      syncBtn.hidden = Boolean(currentUser) && !isAdmin;
     }
 
     function openAuthModal(forceLock = false, errText = '') {
@@ -4401,9 +4322,6 @@
         localStorage.setItem('tm_auth_token', authToken);
         currentUser = data.user;
         currentQuota = data.quota || null;
-        if (currentUser?.space_id) {
-          document.getElementById('spaceInput').value = currentUser.space_id;
-        }
         authLockOpen = false;
         document.getElementById('authModal').classList.remove('open');
         document.getElementById('authPassword').value = '';
@@ -4458,11 +4376,6 @@
       if (data.authenticated && data.user) {
         currentUser = data.user;
         currentQuota = data.quota || null;
-        if (currentUser.role !== 'admin') {
-          document.getElementById('spaceInput').value = currentUser.space_id;
-        } else if (!new URLSearchParams(location.search).get('space_id') && document.getElementById('spaceInput').value === 'default') {
-          document.getElementById('spaceInput').value = currentUser.space_id;
-        }
       } else {
         if (authToken && data._httpStatus === 200) {
           authToken = '';
@@ -4654,16 +4567,6 @@
       });
     }
 
-    async function seedDemo(btn) {
-      await withBtnBusy(btn, '⏳ 载入中', async () => {
-        showToast('✨ 正在载入演示数据...');
-        const res = await apiPost('/api/seed-demo');
-        if (res.error) return showToast(`载入失败: ${res.error}`);
-        showToast(`已载入 ${res.seeded_notes ?? 0} 条多场景演示记录`);
-        reloadAll();
-      });
-    }
-
     async function exportMarkdown(btn) {
       await withBtnBusy(btn, '⏳ 导出中', async () => {
         const res = await apiGet('/api/markdown/bundle');
@@ -4690,11 +4593,11 @@
     }
 
     async function runDream(btn) {
-      await withBtnBusy(btn, '⏳ 归纳中', async () => {
-        showToast('🌙 正在执行 Dream 记忆归纳，请稍候...');
+      await withBtnBusy(btn, '归纳中…', async () => {
+        showToast('正在归纳卡片…');
         const res = await apiPost('/api/dream');
-        if (res.error) return showToast(`Dream 失败: ${res.error}`);
-        showToast(`Dream 归纳完成：生成/更新 ${res.insights_processed ?? 0} 条推断洞察 (消耗 ${res.budget?.used_tokens ?? 0} tokens)`);
+        if (res.error) return showToast(`归纳卡片失败：${res.error}`);
+        showToast(`归纳完成，生成或更新 ${res.insights_processed ?? 0} 张卡片`);
         reloadAll();
       });
     }
@@ -4712,19 +4615,17 @@
       if (hdr) new ResizeObserver(syncHeaderHeight).observe(hdr);
     }
 
+    const headerOffline = document.getElementById('headerOffline');
+    window.addEventListener('offline', () => { headerOffline.hidden = false; });
+
     async function reloadAll() {
       try {
         await syncAuthStatus();
-        if (authRequiredFlag && !currentUser && !activeShareToken) {
-          document.getElementById('engineStatus').textContent = '🔐 待登录';
-          return;
-        }
+        headerOffline.hidden = true;
+        if (authRequiredFlag && !currentUser && !activeShareToken) return;
         await flushOfflineQueue();
-        const health = await apiGet('/api/health');
-        document.getElementById('engineStatus').textContent =
-          `Vector: ${health.vector_backend} | LLM: ${health.llm_provider}`;
       } catch (e) {
-        document.getElementById('engineStatus').textContent = '📴 离线缓存模式';
+        headerOffline.hidden = false;
       }
       if (activeShareToken) {
         loadSupervisionBoard().catch(() => {});
@@ -4741,12 +4642,9 @@
 
     // Handle shared link query parameters (?tab=supervision&share_token=... or space_id=...)
     (function initFromQuery() {
-      const params = new URLSearchParams(location.search);
-      const qShare = params.get('share_token');
+      const qShare = dashboardParams.get('share_token');
       if (qShare) activeShareToken = qShare.trim();
-      const qSpace = params.get('space_id');
-      if (qSpace) document.getElementById('spaceInput').value = qSpace;
-      const qTab = params.get('tab');
+      const qTab = dashboardParams.get('tab');
       if (qTab) {
         const btn = document.querySelector(`.tab-btn[data-tab="${qTab}"]`);
         if (btn) {

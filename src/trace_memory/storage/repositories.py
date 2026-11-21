@@ -490,6 +490,31 @@ class MemoryRepository:
         sql = f"SELECT * FROM memories WHERE {' AND '.join(clauses)} ORDER BY updated_at DESC LIMIT ?"
         return [_row_to_memory(r) for r in self.db.query_all(sql, tuple(params))]
 
+    def page_active_memories(
+        self, space_id: str, memory_type: str, limit: int, offset: int
+    ) -> tuple[list[MemoryItem], int]:
+        type_clause = "AND memory_type = ?" if memory_type else ""
+        filters = (space_id, memory_type) if memory_type else (space_id,)
+        rows = self.db.query_all(
+            f"""
+            WITH matching AS (
+                SELECT memory_id, updated_at FROM memories
+                WHERE space_id = ? AND status = 'active' {type_clause}
+            ),
+            page AS (
+                SELECT memory_id, updated_at FROM matching
+                ORDER BY updated_at DESC, memory_id DESC LIMIT ? OFFSET ?
+            )
+            SELECT memories.*, totals.total
+            FROM (SELECT COUNT(*) AS total FROM matching) AS totals
+            LEFT JOIN page ON TRUE
+            LEFT JOIN memories ON memories.memory_id = page.memory_id
+            ORDER BY page.updated_at DESC, page.memory_id DESC
+            """,
+            (*filters, limit, offset),
+        )
+        return [_row_to_memory(row) for row in rows if row["memory_id"] is not None], rows[0]["total"]
+
     def scrub_forgotten_versions(self, space_id: str, memory_id: str) -> None:
         """Erase plaintext content from all historical versions of a forgotten memory while preserving audit rows."""
         with self.db.transaction() as conn:
