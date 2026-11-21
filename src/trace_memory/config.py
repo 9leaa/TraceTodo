@@ -57,8 +57,9 @@ class TraceMemoryConfig:
     embedding_model: str = "text-embedding-3-small"
     llm_timeout_seconds: float = 30.0
     # Minimum cosine score for hits that only match semantically (no BM25 keyword hit).
-    # Real embedding models (e.g. text-embedding-v3) give ~0.35-0.39 even for gibberish,
-    # so a pure-vector hit below this floor is treated as noise. 0 disables the gate.
+    # Real embedding models (e.g. text-embedding-v3) have a ~0.35-0.48 noise floor on gibberish
+    # or unrelated queries vs >=0.54 for true semantic recall, so pure-vector hits below this
+    # floor are treated as noise. 0 disables the gate.
     vector_only_min_score: float = 0.0
 
     # ReMe-style Dream consolidation budget guard
@@ -150,7 +151,7 @@ class TraceMemoryConfig:
             vector_only_min_score=float(
                 _get(
                     "TRACE_MEMORY_VECTOR_ONLY_MIN_SCORE",
-                    "0.42" if _get("TRACE_MEMORY_LLM_PROVIDER", "mock").lower() == "openai" else "0",
+                    "0.50" if _get("TRACE_MEMORY_LLM_PROVIDER", "mock").lower() == "openai" else "0",
                 )
             ),
             dream_max_llm_calls=int(_get("TRACE_MEMORY_DREAM_MAX_LLM_CALLS", "5")),

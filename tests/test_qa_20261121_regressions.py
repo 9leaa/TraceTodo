@@ -33,12 +33,12 @@ class TestVectorOnlyGate(unittest.TestCase):
         mock_cfg = TraceMemoryConfig.from_env(environ={"TRACE_MEMORY_LLM_PROVIDER": "mock"}, dotenv_path=Path("/nonexistent"))
         self.assertEqual(mock_cfg.vector_only_min_score, 0.0)
         real_cfg = TraceMemoryConfig.from_env(environ={"TRACE_MEMORY_LLM_PROVIDER": "openai"}, dotenv_path=Path("/nonexistent"))
-        self.assertAlmostEqual(real_cfg.vector_only_min_score, 0.42)
+        self.assertAlmostEqual(real_cfg.vector_only_min_score, 0.50)
         custom = TraceMemoryConfig.from_env(
-            environ={"TRACE_MEMORY_LLM_PROVIDER": "openai", "TRACE_MEMORY_VECTOR_ONLY_MIN_SCORE": "0.5"},
+            environ={"TRACE_MEMORY_LLM_PROVIDER": "openai", "TRACE_MEMORY_VECTOR_ONLY_MIN_SCORE": "0.55"},
             dotenv_path=Path("/nonexistent"),
         )
-        self.assertAlmostEqual(custom.vector_only_min_score, 0.5)
+        self.assertAlmostEqual(custom.vector_only_min_score, 0.55)
 
     def test_gibberish_query_returns_nothing_when_gate_is_above_noise_floor(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
