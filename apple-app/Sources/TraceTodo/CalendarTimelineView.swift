@@ -224,12 +224,14 @@ struct CalendarOverviewResponse: Codable {
 enum CalendarCanvasMode: String, CaseIterable, Identifiable {
     case week = "week"
     case month = "month"
+    case countdown = "countdown"
 
     var id: String { rawValue }
     var label: String {
         switch self {
         case .week: return "📊 周时间轴"
         case .month: return "🗓️ 月全景"
+        case .countdown: return "⏳ 倒数日"
         }
     }
 }
@@ -265,15 +267,18 @@ struct CalendarTimelineView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 headerToolbar
-                statsStrip
 
-                if mode == .week {
-                    weekTimelineCard
+                if mode == .countdown && store.isModuleEnabled(.countdown) {
+                    CountdownWallView()
                 } else {
-                    monthPanoramaCard
+                    statsStrip
+                    if mode == .week {
+                        weekTimelineCard
+                    } else {
+                        monthPanoramaCard
+                    }
+                    selectedDayAndUnscheduledSection
                 }
-
-                selectedDayAndUnscheduledSection
             }
             .padding(14)
         }
@@ -316,47 +321,55 @@ struct CalendarTimelineView: View {
                 }
                 Spacer()
                 Picker("模式", selection: $mode) {
-                    ForEach(CalendarCanvasMode.allCases) { m in
-                        Text(m.label).tag(m)
+                    Text(CalendarCanvasMode.week.label).tag(CalendarCanvasMode.week)
+                    Text(CalendarCanvasMode.month.label).tag(CalendarCanvasMode.month)
+                    if store.isModuleEnabled(.countdown) {
+                        Text(CalendarCanvasMode.countdown.label).tag(CalendarCanvasMode.countdown)
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(maxWidth: 210)
-                .onChange(of: mode) { _, _ in
-                    Task { await reloadCalendar() }
+                .frame(maxWidth: 290)
+                .onChange(of: mode) { _, newVal in
+                    if newVal == .countdown {
+                        Task { await store.refreshCountdowns() }
+                    } else {
+                        Task { await reloadCalendar() }
+                    }
                 }
             }
 
-            HStack(spacing: 8) {
-                Button {
-                    shiftPeriod(-1)
-                } label: {
-                    Image(systemName: "chevron.left")
-                }
-                .buttonStyle(.bordered)
+            if mode != .countdown {
+                HStack(spacing: 8) {
+                    Button {
+                        shiftPeriod(-1)
+                    } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                    .buttonStyle(.bordered)
 
-                Button("今天") {
-                    selectedDate = Self.todayYMD()
-                    Task { await reloadCalendar() }
-                }
-                .buttonStyle(.bordered)
+                    Button("今天") {
+                        selectedDate = Self.todayYMD()
+                        Task { await reloadCalendar() }
+                    }
+                    .buttonStyle(.bordered)
 
-                Button {
-                    shiftPeriod(1)
-                } label: {
-                    Image(systemName: "chevron.right")
-                }
-                .buttonStyle(.bordered)
+                    Button {
+                        shiftPeriod(1)
+                    } label: {
+                        Image(systemName: "chevron.right")
+                    }
+                    .buttonStyle(.bordered)
 
-                Spacer()
+                    Spacer()
 
-                Button {
-                    slotTarget = CalendarSlotTarget(date: selectedDate, hour: 9, isAllDay: false)
-                } label: {
-                    Label("时段排期", systemImage: "plus")
+                    Button {
+                        slotTarget = CalendarSlotTarget(date: selectedDate, hour: 9, isAllDay: false)
+                    } label: {
+                        Label("时段排期", systemImage: "plus")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(store.activeTheme.primaryColor)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(store.activeTheme.primaryColor)
             }
         }
     }

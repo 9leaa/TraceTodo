@@ -255,19 +255,8 @@ struct UnifiedTodoHostView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                if store.isModuleEnabled(.countdown), let capsule = nearestCountdownInfo {
-                    HStack(spacing: 6) {
-                        Text("⏳ \(capsule.badge)")
-                            .font(.caption.bold())
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(store.activeTheme.primaryColor.opacity(0.14))
-                            .foregroundStyle(store.activeTheme.primaryColor)
-                            .clipShape(Capsule())
-                        Text(capsule.title)
-                            .font(.caption.weight(.semibold))
-                            .lineLimit(1)
-                    }
+                if store.isModuleEnabled(.countdown) {
+                    TodoCountdownCapsuleStripView()
                 } else {
                     Text("📋 待办中心")
                         .font(.subheadline.bold())
