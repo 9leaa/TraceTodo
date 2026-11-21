@@ -463,4 +463,54 @@ struct TraceMemoryAPIClient {
     func deleteCountdown(countdownId: String) async throws {
         try await postRaw("/api/countdowns/delete", body: ["countdown_id": countdownId])
     }
+
+    // MARK: - Phase 4: Pinned Memos & One-Page-Per-Day Mood Journal
+
+    func fetchMemos(query: String = "", tag: String = "", pinnedOnly: Bool = false, limit: Int = 80) async throws -> MemoListResponse {
+        try await get(
+            "/api/memos/list",
+            queryItems: [
+                URLQueryItem(name: "q", value: query),
+                URLQueryItem(name: "tag", value: tag),
+                URLQueryItem(name: "pinned_only", value: pinnedOnly ? "true" : "false"),
+                URLQueryItem(name: "limit", value: String(limit))
+            ]
+        )
+    }
+
+    func saveMemo(body: [String: Any]) async throws -> MemoSaveResponse {
+        let data = try await postRaw("/api/memos/save", body: body)
+        return try JSONDecoder().decode(MemoSaveResponse.self, from: data)
+    }
+
+    func toggleMemoPin(noteId: String, pinned: Bool) async throws {
+        try await postRaw("/api/memos/pin", body: ["note_id": noteId, "pinned": pinned])
+    }
+
+    func fetchJournalOverview(date: String = "", limit: Int = 30) async throws -> JournalOverviewResponse {
+        try await get(
+            "/api/journal/overview",
+            queryItems: [
+                URLQueryItem(name: "date", value: date),
+                URLQueryItem(name: "limit", value: String(limit))
+            ]
+        )
+    }
+
+    func saveJournal(body: [String: Any]) async throws -> JournalSaveResponse {
+        let data = try await postRaw("/api/journal/save", body: body)
+        return try JSONDecoder().decode(JournalSaveResponse.self, from: data)
+    }
+
+    func generateJournalAISummary(date: String, draftContent: String, triggerDream: Bool = false) async throws -> JournalAISummaryResponse {
+        let data = try await postRaw(
+            "/api/journal/ai-summary",
+            body: [
+                "date": date,
+                "draft_content": draftContent,
+                "trigger_dream": triggerDream
+            ]
+        )
+        return try JSONDecoder().decode(JournalAISummaryResponse.self, from: data)
+    }
 }

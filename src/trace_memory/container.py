@@ -24,6 +24,7 @@ from trace_memory.services.ingest_queue import IngestJobRepository, IngestWorker
 from trace_memory.services.ingest_service import IngestService
 from trace_memory.services.markdown_sync import MarkdownSyncService
 from trace_memory.services.media_service import MediaAttachmentService
+from trace_memory.services.memo_journal_service import MemoAndJournalService
 from trace_memory.services.preferences_service import PreferencesService
 from trace_memory.services.retrieval_service import RetrievalService
 from trace_memory.services.sync_and_scheduler import (
@@ -85,6 +86,7 @@ class AppContainer:
     media_service: MediaAttachmentService
     calendar_service: CalendarService
     countdown_service: CountdownService
+    memo_journal_service: MemoAndJournalService
 
     @classmethod
     def build(
@@ -264,6 +266,19 @@ class AppContainer:
             vector_lifecycle=vector_lifecycle,
             change_service=change_service,
         )
+        memo_journal_service = MemoAndJournalService(
+            db=db,
+            config=cfg,
+            note_repo=note_repo,
+            ingest_service=ingest_service,
+            job_repo=job_repo,
+            ingest_worker=ingest_worker,
+            media_service=media_service,
+            task_matrix_service=task_matrix_service,
+            dream_service=dream_service,
+            quota_service=quota_service,
+            sync_tracker=sync_tracker,
+        )
 
         return cls(
             config=cfg,
@@ -299,6 +314,7 @@ class AppContainer:
             media_service=media_service,
             calendar_service=calendar_service,
             countdown_service=countdown_service,
+            memo_journal_service=memo_journal_service,
         )
 
     def close(self) -> None:

@@ -14,6 +14,8 @@ from trace_memory.storage.database import Database, build_fts_match_query, token
 
 
 def _row_to_note(row: sqlite3.Row) -> RawNote:
+    keys = row.keys()
+    tags_raw = json.loads(row["tags_json"] or "[]") if "tags_json" in keys else []
     return RawNote(
         note_id=row["note_id"],
         space_id=row["space_id"],
@@ -26,6 +28,13 @@ def _row_to_note(row: sqlite3.Row) -> RawNote:
         event_time=row["event_time"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        note_kind=str(row["note_kind"] or "note") if "note_kind" in keys else "note",
+        title=str(row["title"] or "") if "title" in keys else "",
+        pinned=bool(row["pinned"]) if "pinned" in keys else False,
+        tags=tuple(str(t) for t in tags_raw if str(t).strip()),
+        mood=str(row["mood"] or "") if "mood" in keys else "",
+        journal_date=str(row["journal_date"] or "") if "journal_date" in keys else "",
+        extract_memory=bool(row["extract_memory"]) if "extract_memory" in keys else True,
     )
 
 
@@ -74,15 +83,23 @@ class NoteRepository:
                 INSERT INTO raw_notes (
                     note_id, space_id, content, source_type, actor_id,
                     revision, is_forgotten, forgotten_spans_json,
-                    event_time, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    event_time, created_at, updated_at,
+                    note_kind, title, pinned, tags_json, mood, journal_date, extract_memory
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(note_id) DO UPDATE SET
                     content = excluded.content,
                     revision = excluded.revision,
                     is_forgotten = excluded.is_forgotten,
                     forgotten_spans_json = excluded.forgotten_spans_json,
                     event_time = excluded.event_time,
-                    updated_at = excluded.updated_at
+                    updated_at = excluded.updated_at,
+                    note_kind = excluded.note_kind,
+                    title = excluded.title,
+                    pinned = excluded.pinned,
+                    tags_json = excluded.tags_json,
+                    mood = excluded.mood,
+                    journal_date = excluded.journal_date,
+                    extract_memory = excluded.extract_memory
                 """,
                 (
                     note.note_id,
@@ -96,6 +113,13 @@ class NoteRepository:
                     note.event_time,
                     note.created_at,
                     note.updated_at,
+                    note.note_kind,
+                    note.title,
+                    int(note.pinned),
+                    json.dumps(list(note.tags), ensure_ascii=False),
+                    note.mood,
+                    note.journal_date,
+                    int(note.extract_memory),
                 ),
             )
             self._refresh_fts(conn, note)
@@ -104,10 +128,11 @@ class NoteRepository:
     def _refresh_fts(self, conn: sqlite3.Connection, note: RawNote) -> None:
         conn.execute("DELETE FROM notes_fts WHERE note_id = ?", (note.note_id,))
         visible = note.visible_content()
-        if not note.is_forgotten and visible.strip():
+        combined = " ".join(part for part in (note.title, " ".join(note.tags), visible) if part).strip()
+        if not note.is_forgotten and combined:
             conn.execute(
                 "INSERT INTO notes_fts (note_id, space_id, segmented_text) VALUES (?, ?, ?)",
-                (note.note_id, note.space_id, tokenize_for_fts(visible)),
+                (note.note_id, note.space_id, tokenize_for_fts(combined)),
             )
 
     def get(self, space_id: str, note_id: str, include_forgotten: bool = False) -> RawNote | None:
