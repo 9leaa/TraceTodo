@@ -147,6 +147,7 @@ class AppContainer:
             memory_repo=memory_repo,
             vector_store=vector_store,
             embedder=embedder,
+            vector_only_min_score=cfg.vector_only_min_score,
         )
         settings_store = SystemSettingsStore(db=db, config=cfg)
         input_guard = InputGuardService(settings=settings_store)

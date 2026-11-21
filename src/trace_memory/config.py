@@ -56,6 +56,11 @@ class TraceMemoryConfig:
     asr_model: str = "whisper-1"
     embedding_model: str = "text-embedding-3-small"
     llm_timeout_seconds: float = 30.0
+    # Minimum cosine score for hits that only match semantically (no BM25 keyword hit).
+    # Real embedding models (e.g. text-embedding-v3) have a ~0.35-0.48 noise floor on gibberish
+    # or unrelated queries vs >=0.54 for true semantic recall, so pure-vector hits below this
+    # floor are treated as noise. 0 disables the gate.
+    vector_only_min_score: float = 0.0
 
     # ReMe-style Dream consolidation budget guard
     dream_max_llm_calls: int = 5
@@ -143,6 +148,12 @@ class TraceMemoryConfig:
             vision_model=_get("TRACE_MEMORY_VISION_MODEL", "qwen-vl-plus"),
             asr_model=_get("TRACE_MEMORY_ASR_MODEL", "whisper-1"),
             embedding_model=_get("TRACE_MEMORY_EMBEDDING_MODEL", "text-embedding-3-small"),
+            vector_only_min_score=float(
+                _get(
+                    "TRACE_MEMORY_VECTOR_ONLY_MIN_SCORE",
+                    "0.50" if _get("TRACE_MEMORY_LLM_PROVIDER", "mock").lower() == "openai" else "0",
+                )
+            ),
             dream_max_llm_calls=int(_get("TRACE_MEMORY_DREAM_MAX_LLM_CALLS", "5")),
             dream_max_tokens=int(_get("TRACE_MEMORY_DREAM_MAX_TOKENS", "8000")),
             graph_max_hops=int(_get("TRACE_MEMORY_GRAPH_MAX_HOPS", "2")),

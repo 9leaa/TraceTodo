@@ -945,7 +945,10 @@
       display: none;
       z-index: 250;
       box-shadow: 0 10px 25px rgba(15,23,42,0.28);
+      max-width: min(520px, calc(100vw - 48px));
+      overflow-wrap: anywhere;
     }
+    .toast.toast-error { background: #b91c1c; }
 
     .auth-sheet {
       width: 100%;
@@ -1929,6 +1932,32 @@
       outline: 2px dashed var(--primary);
       background: var(--primary-soft) !important;
     }
+
+    /* ---------------- QA 2026-11-21 layout fixes ---------------- */
+    /* Ask / trace_runs: long unbreakable JSON & ids must wrap inside their cards instead of widening the page */
+    .two-col { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
+    @media (max-width: 900px) { .two-col { grid-template-columns: minmax(0, 1fr); } }
+    .two-col > .card-box { min-width: 0; }
+    #askResult, .answer-box, #traceList .mem-card { overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
+    #askResult .meta-row { flex-wrap: wrap; }
+    #traceList .mem-card .task-top { gap: 8px; }
+    #traceList .mem-card .task-top strong { min-width: 0; overflow-wrap: anywhere; }
+    #traceList .mem-card .task-top .tag { flex-shrink: 0; white-space: nowrap; }
+    #askInput { min-width: 0; }
+    #askSubmitBtn { flex-shrink: 0; }
+    /* Left rail TIP: never clip the tip card; hide it on short viewports instead */
+    .left-rail > .tabs, .rail-tip-box { flex-shrink: 0; }
+    @media (max-height: 760px) and (min-width: 769px) { .rail-tip-box { display: none; } }
+    /* Calendar: equal-width month columns (long titles truncate) and a narrower week minimum */
+    .cal-month-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+    .cal-day-cell { min-width: 0; overflow: hidden; }
+    .cal-week-minw { min-width: 680px; }
+    .cal-week-hdr-row,
+    .cal-week-allday-row,
+    .cal-week-body-grid { grid-template-columns: 52px repeat(7, minmax(84px, 1fr)); }
+    #panel-calendar { min-width: 0; max-width: 100%; }
+    /* Memo masonry: size columns by container width (the notes pane is narrower than the viewport) */
+    .memo-masonry { column-count: auto; column-width: 240px; }
   </style>
 </head>
 <body>
@@ -2475,7 +2504,7 @@
       </div>
       <div class="two-col">
         <div class="card-box">
-          <h3>💬 结合记忆与原话的证据问答 (`/ask`)</h3>
+          <h3>💬 结合记忆与原话的证据问答</h3>
           <div style="display:flex;gap:8px;">
             <input id="askInput" class="main-input" style="flex:1;" aria-label="根据记忆提问" placeholder="例如：最近有什么结算风险？" onkeydown="if(event.key==='Enter' && !event.isComposing) askQuestion()" />
             <button type="button" id="askSubmitBtn" class="primary" onclick="askQuestion(this)">提问</button>
@@ -2483,7 +2512,7 @@
           <div id="askResult"></div>
         </div>
         <div class="card-box">
-          <h3>🔍 全链路可观测审计日志 (`trace_runs` & 原始记录)</h3>
+          <h3>🔍 全链路可观测审计日志</h3>
           <div id="traceList" class="list-stack"></div>
         </div>
       </div>
@@ -2506,7 +2535,7 @@
           <h3>🛡️ 低成本防线 & 全局配额设置</h3>
           <div style="display:grid;gap:10px;font-size:13px;">
             <label style="display:flex;justify-content:space-between;align-items:center;">
-              <span>允许公开自助注册 (`allow_registration`)</span>
+              <span>允许公开自助注册</span>
               <input type="checkbox" id="admAllowReg" />
             </label>
             <label style="display:flex;justify-content:space-between;align-items:center;">
@@ -2554,11 +2583,11 @@
 
       <div class="two-col">
         <div class="card-box">
-          <h3>🚨 安全审计与防线拦截日志 (`security_audit_logs`)</h3>
+          <h3>🚨 安全审计与防线拦截日志</h3>
           <div id="adminAuditList" class="list-stack"></div>
         </div>
         <div class="card-box">
-          <h3>🤖 全站最近 AI 调用轨迹 (`trace_runs`)</h3>
+          <h3>🤖 全站最近 AI 调用轨迹</h3>
           <div id="adminTracesList" class="list-stack"></div>
         </div>
       </div>
@@ -3100,12 +3129,14 @@
       return h;
     }
 
-    function showToast(msg) {
+    function showToast(msg, kind = '') {
       const el = document.getElementById('toast');
       el.textContent = msg;
+      el.classList.toggle('toast-error', kind === 'error');
       el.style.display = 'block';
       clearTimeout(window._toastTimer);
-      window._toastTimer = setTimeout(() => { el.style.display = 'none'; }, 3600);
+      // Errors stay visible longer so users actually notice failed writes
+      window._toastTimer = setTimeout(() => { el.style.display = 'none'; }, kind === 'error' ? 6000 : 3600);
     }
 
     async function parseApiResponse(res) {
@@ -3114,7 +3145,9 @@
       try {
         data = text ? JSON.parse(text) : {};
       } catch (e) {
-        data = { error: text || `HTTP ${res.status}` };
+        // Non-JSON bodies (e.g. HTML 502 pages from a proxy/gateway) must not leak raw markup into toasts
+        const looksHtml = /^\s*</.test(text || '');
+        data = { error: (!looksHtml && text && text.length <= 200) ? text : `HTTP ${res.status}${res.statusText ? ' ' + res.statusText : ''}` };
       }
       if (!res.ok && !data.error) {
         data.error = data.detail || `HTTP ${res.status}`;
@@ -3167,7 +3200,7 @@
       try {
         return await fn();
       } catch (err) {
-        showToast(`请求失败: ${err?.message || err}`);
+        showToast(`请求失败: ${err?.message || err}`, 'error');
       } finally {
         if (btn) {
           btn.disabled = false;
@@ -3196,7 +3229,7 @@
       }
       if (!opts?.preserveScroll) window.scrollTo(0, 0);
 
-      const handleErr = (err) => showToast(`加载失败: ${err?.message || err}`);
+      const handleErr = (err) => showToast(`加载失败: ${err?.message || err}`, 'error');
       if (name === 'tasks') loadTasks().catch(handleErr);
       if (name === 'calendar') renderCalendarPanel();
       if (name === 'focus' && typeof loadFocusCenter === 'function') loadFocusCenter().catch(handleErr);
@@ -3403,13 +3436,12 @@
       document.getElementById('topFocusList').innerHTML = topTodos.length
         ? topTodos.map((t, idx) => {
             const subs = Array.isArray(t.payload?.subtasks) ? t.payload.subtasks : [];
-            const prog = subs.length
-              ? Math.round((subs.filter(s => s.done).length / subs.length) * 100)
-              : Math.min(100, Math.max(25, Math.round(Number(t.payload?.priority_score || 50))));
+            // Without subtasks show the priority score as 分 — rendering it as % read like completion progress
+            const scoreTxt = `${Math.round(Number(t.payload?.priority_score || 0))}分`;
             return `
               <div class="focus-row" onclick="openTaskSheet('${t.memory_id}')">
                 <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px;">${idx + 1}. ${esc(t.title)}</span>
-                <span class="tag score" style="flex-shrink:0;">${subs.length ? subs.filter(s => s.done).length + '/' + subs.length : prog + '%'}</span>
+                <span class="tag score" style="flex-shrink:0;">${subs.length ? subs.filter(s => s.done).length + '/' + subs.length : scoreTxt}</span>
               </div>
             `;
           }).join('')
@@ -3420,7 +3452,7 @@
       const diags = data.diagnostics || [];
       document.getElementById('diagList').innerHTML = diags.map(d => `<li>${esc(d)}</li>`).join('');
       if (diags.length && document.getElementById('railTipText')) {
-        document.getElementById('railTipText').textContent = diags[0].replace(/^[🎯🔥⚠️💡🧹🧠↻]\s*/, '').slice(0, 48);
+        document.getElementById('railTipText').textContent = Array.from(String(diags[0]).replace(/^(?:\p{Extended_Pictographic}|↻)\uFE0F?\s*/u, '')).slice(0, 48).join('');
       }
 
 
@@ -3458,20 +3490,37 @@
         el.dataset.memId || '',
         el.dataset.subId || '',
         !!el.checked,
-        Number(el.dataset.ver || 0) || null
+        Number(el.dataset.ver || 0) || null,
+        el
       );
     }
 
-    async function toggleCardSubtask(memId, subId, done, ver) {
-      const res = await apiPost('/api/tasks/subtasks/toggle', {
-        memory_id: memId,
-        subtask_id: subId,
-        done: done,
-        expected_version: ver,
-      });
+    async function toggleCardSubtask(memId, subId, done, ver, el = null) {
+      // Optimistic checkbox: roll it back whenever the server rejects / fails the write
+      const rollback = () => {
+        if (el) {
+          el.checked = !done;
+          el.closest('label')?.classList.toggle('is-done', !done);
+        }
+      };
+      if (el) el.disabled = true;
+      let res;
+      try {
+        res = await apiPost('/api/tasks/subtasks/toggle', {
+          memory_id: memId,
+          subtask_id: subId,
+          done: done,
+          expected_version: ver,
+        });
+      } catch (err) {
+        res = { error: err?.message || '网络异常' };
+      } finally {
+        if (el) el.disabled = false;
+      }
       if (res.error) {
-        showToast(`更新子步骤失败: ${res.error}`);
-        loadTasks();
+        rollback();
+        showToast(`更新子步骤失败: ${res.error}`, 'error');
+        loadTasks().catch(() => {});
         return;
       }
       if (res.all_subtasks_done) {
@@ -3486,7 +3535,7 @@
 
     async function transitionTask(memId, action, ver) {
       const res = await apiPost('/api/tasks/transition', { memory_id: memId, action, expected_version: ver });
-      if (res.error) return showToast(`操作失败: ${res.error}`);
+      if (res.error) return showToast(`操作失败: ${res.error}`, 'error');
       if (res.next_task) {
         showToast(`✅ 本期已完成，已自动生成下一周期 (${res.next_task.payload?.due_at?.slice(0,10) || ''})`);
       } else {
@@ -3499,8 +3548,9 @@
     async function changeQuadrant(memId, ver, quadrant) {
       if (!quadrant) return;
       const res = await apiPost('/api/tasks/quadrant', { memory_id: memId, expected_version: ver, quadrant });
-      if (res.error) return showToast(`版本冲突或错误: ${res.error}`);
-      showToast(`已切换至 ${quadrant} 并启用手动锁定保护 (v${res.memory?.version})`);
+      if (res.error) return showToast(`版本冲突或错误: ${res.error}`, 'error');
+      const QUAD_LABELS = { Q1_do_first: 'Q1 重要且紧急', Q2_schedule: 'Q2 重要不紧急', Q3_delegate: 'Q3 紧急不重要', Q4_eliminate: 'Q4 不重要不紧急' };
+      showToast(`已切换至 ${QUAD_LABELS[quadrant] || quadrant} 并启用手动锁定保护 (v${res.memory?.version})`);
       loadTasks();
     }
 
@@ -3597,7 +3647,7 @@
           summary: document.getElementById('tsSummary').value.trim(),
           memory_id: editingMemoryId || '',
         });
-        if (res.error) return showToast(`AI 拆解失败: ${res.error}`);
+        if (res.error) return showToast(`AI 拆解失败: ${res.error}`, 'error');
         const newSteps = (res.subtasks || []).map(s => ({ id: s.id, title: s.title, done: false }));
         sheetSubtasks = [...sheetSubtasks.filter(x => x.title.trim()), ...newSteps];
         renderSheetSubtasks();
@@ -3639,7 +3689,9 @@
         document.getElementById('tsAllDay').checked = allDay;
         document.getElementById('tsTime').value = p.due_at.length >= 16 ? p.due_at.slice(11, 16) : '18:00';
       } else {
-        quickDate('today');
+        // Editing a dateless task must keep it dateless; only brand-new cards default to today.
+        // (Pre-filling today silently set a deadline on save and inflated urgency/score.)
+        quickDate(t ? 'clear' : 'today');
         document.getElementById('tsAllDay').checked = true;
         document.getElementById('tsTime').value = '18:00';
       }
@@ -3716,7 +3768,7 @@
       };
 
       const res = await apiPost('/api/tasks/save', body);
-      if (res.error) return showToast(`保存失败: ${res.error}`);
+      if (res.error) return showToast(`保存失败: ${res.error}`, 'error');
       closeTaskSheet();
       showToast(editingMemoryId ? `✅ 任务已更新 (v${res.memory?.version})` : '🎉 新任务已创建并进入四象限');
       reloadAll();
@@ -3780,6 +3832,25 @@
       const customInp = document.getElementById('fcCustomTitleInput');
       if (!sel || !customInp) return;
       customInp.style.display = sel.value ? 'none' : 'block';
+      // Keep the preset pills + idle clock in sync with the task's own planned focus length,
+      // so the highlighted pill always matches the countdown that will actually run.
+      const taskObj = sel.value ? cachedTasksById[sel.value] : null;
+      const taskMins = Number(taskObj?.payload?.focus_minutes || 0);
+      if (!focusState) {
+        fcPlannedMinutes = taskMins > 0 ? taskMins : (Number(localStorage.getItem('tm_pomodoro_minutes') || 25) || 25);
+        paintPomodoroDurationPills();
+        syncIdleFocusClockUI();
+      }
+    }
+
+    function paintPomodoroDurationPills() {
+      document.querySelectorAll('#fcDurationPills button').forEach(b => {
+        const active = Number(b.getAttribute('data-pmin')) === fcPlannedMinutes;
+        b.classList.toggle('active', active);
+        b.style.borderColor = active ? 'var(--primary)' : '';
+        b.style.color = active ? 'var(--primary)' : '';
+        b.style.fontWeight = active ? '700' : '';
+      });
     }
 
     function setFocusCenterMode(mode) {
@@ -3800,13 +3871,7 @@
       }
       fcPlannedMinutes = Number(mins) || 25;
       localStorage.setItem('tm_pomodoro_minutes', String(fcPlannedMinutes));
-      document.querySelectorAll('#fcDurationPills button').forEach(b => {
-        const active = Number(b.getAttribute('data-pmin')) === fcPlannedMinutes;
-        b.classList.toggle('active', active);
-        b.style.borderColor = active ? 'var(--primary)' : '';
-        b.style.color = active ? 'var(--primary)' : '';
-        b.style.fontWeight = active ? '700' : '';
-      });
+      paintPomodoroDurationPills();
       syncIdleFocusClockUI();
     }
 
@@ -3833,7 +3898,9 @@
       const taskObj = selMemId ? cachedTasksById[selMemId] : null;
       const customTitle = (document.getElementById('fcCustomTitleInput')?.value || '').trim();
       const mode = explicitMemId ? 'pomodoro' : fcSelectedMode;
-      const planMins = taskObj?.payload?.focus_minutes ? Number(taskObj.payload.focus_minutes) : fcPlannedMinutes;
+      // Inside the focus center the pills are already synced to the task (and the user may override them);
+      // quick-start from a task card (explicitMemId) still uses the task's own planned length.
+      const planMins = (explicitMemId && taskObj?.payload?.focus_minutes) ? Number(taskObj.payload.focus_minutes) : fcPlannedMinutes;
       const titleText = taskObj ? taskObj.title : (customTitle || '自由专注');
 
       focusState = {
@@ -3909,7 +3976,7 @@
       box.style.display = 'grid';
       box.innerHTML = `<div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">📋 执行清单：</div>` + subs.map(s => `
         <label>
-          <input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleCardSubtask('${focusState.task.memory_id}', '${esc(s.id)}', this.checked, ${focusState.task.version})" />
+          <input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleCardSubtask('${focusState.task.memory_id}', '${esc(s.id)}', this.checked, ${focusState.task.version}, this)" />
           <span style="${s.done ? 'text-decoration:line-through;color:#94a3b8;' : ''}">${esc(s.title)}</span>
         </label>
       `).join('');
@@ -3972,7 +4039,7 @@
         started_at: st.startedAtIso,
       });
       if (res.error) {
-        showToast(`记录专注失败: ${res.error}`);
+        showToast(`记录专注失败: ${res.error}`, 'error');
       } else {
         showToast(st.mode === 'stopwatch' ? `🎉 正计时专注已入账 (${formatDurationHuman(effDur)})` : '🍅 已完成一轮番茄专注并计入统计');
       }
@@ -4073,7 +4140,7 @@
 
     async function deleteFocusRecord(sessionId) {
       const res = await apiPost('/api/focus/delete', { session_id: sessionId });
-      if (res.error) return showToast(`删除失败: ${res.error}`);
+      if (res.error) return showToast(`删除失败: ${res.error}`, 'error');
       showToast('已删除该条专注记录');
       loadFocusCenter();
     }
@@ -4156,7 +4223,7 @@
     async function revokeAllSupervisionLinks() {
       if (!confirm('确认撤销当前空间所有已发出的好友监督分享链接？撤销后旧链接将立即失效。')) return;
       const res = await apiPost('/api/supervision/share/revoke', {});
-      if (res.error) return showToast(`撤销失败: ${res.error}`);
+      if (res.error) return showToast(`撤销失败: ${res.error}`, 'error');
       showToast(`🚫 已撤销 ${res.revoked ?? 0} 条监督分享链接`);
     }
 
@@ -4316,6 +4383,7 @@
         if (st.error) return;
         const pending = Number(st.pending || 0);
         updateIngestPendingPill(pending);
+        reportFinishedQuickNoteJobs(st.recent_jobs || []);
         const completedAt = String(st.last_completed_at || '');
         if (completedAt && _lastIngestCompletedAt && completedAt !== _lastIngestCompletedAt) {
           reloadAll();
@@ -4339,6 +4407,24 @@
       }
     }
 
+    // note_ids submitted from the quick-input box whose background extraction outcome we still owe the user
+    const _watchedIngestNoteIds = new Set();
+    function reportFinishedQuickNoteJobs(jobs) {
+      if (!_watchedIngestNoteIds.size) return;
+      for (const j of jobs) {
+        if (!_watchedIngestNoteIds.has(j.note_id)) continue;
+        if (j.status === 'completed') {
+          _watchedIngestNoteIds.delete(j.note_id);
+          if (j.changes_count === 0) {
+            showToast('🤔 AI 未从这条记录中识别出待办或记忆，原话已保存在「随记」中；可改写得更具体（如加上要做什么、何时完成）后重试');
+          }
+        } else if (j.status === 'failed' || j.status === 'cancelled') {
+          _watchedIngestNoteIds.delete(j.note_id);
+          showToast(`⚠️ AI 整理失败：${j.error_message || j.status}（原话已保存在「随记」中）`, 'error');
+        }
+      }
+    }
+
     function scheduleIngestStatusPoll(immediate = false) {
       if (_ingestPollTimer) clearTimeout(_ingestPollTimer);
       _ingestPollTimer = setTimeout(() => {
@@ -4357,19 +4443,38 @@
         return;
       }
       // Non-blocking burst input: clear immediately without locking the send button
+      const pendingMediaBackup = _pendingMediaDrafts.quick.slice();
       input.value = '';
       _pendingMediaDrafts.quick = [];
       renderPendingMediaDrafts('quick');
       input.focus();
+      // Restore what the user typed if the request fails, so a gateway error never silently eats the note
+      const restoreQuickInput = () => {
+        const cur = input.value.trim();
+        input.value = cur ? `${content}\n${cur}` : content;
+        if (!_pendingMediaDrafts.quick.length && pendingMediaBackup.length) {
+          _pendingMediaDrafts.quick = pendingMediaBackup;
+          renderPendingMediaDrafts('quick');
+        }
+      };
       try {
         const res = await apiPost('/api/notes/record', { content, media_ids: mediaIds, async_mode: true });
-        if (res.error) return showToast(`⚠️ ${res.error}`);
+        if (res.error) {
+          const status = Number(res._httpStatus || 0);
+          if (status === 0 || status >= 500) {
+            restoreQuickInput();
+            return showToast(`⚠️ 录入失败（${res.error}），内容已放回输入框，请稍后重试`, 'error');
+          }
+          if (status !== 401) restoreQuickInput();
+          return showToast(`⚠️ ${res.error}`, 'error');
+        }
         if (res.extraction_status === 'filtered_noise' || res.filtered) {
           showToast(`🛡️ 低成本防线已拦截：${res.filter_reason || res.error_message || '无效输入'}（0 Token 消耗）`);
           syncAuthStatus().catch(() => {});
           return;
         }
         if (res.extraction_status === 'queued') {
+          if (res.note?.note_id) _watchedIngestNoteIds.add(res.note.note_id);
           _hadPendingIngest = true;
           updateIngestPendingPill(1);
           showToast(`⚡ 原话已秒存，AI 正在后台整理（问答现已立即可查）`);
@@ -4456,7 +4561,7 @@
           res = await fetchPage(page);
           if (request !== memoryRequest || currentSpace !== space()) return;
         }
-        if (res.error) return showToast(`加载记忆失败: ${res.error}`);
+        if (res.error) return showToast(`加载记忆失败: ${res.error}`, 'error');
 
         memoryPage = page;
         memoryBrowseSpace = currentSpace;
@@ -4468,7 +4573,7 @@
           : '<div class="card-box" style="color:var(--muted);">未找到匹配的生效记忆</div>';
         if (pageChanged) window.scrollTo(0, 0);
       } catch (err) {
-        if (request === memoryRequest) showToast(`加载记忆失败: ${err?.message || err}`);
+        if (request === memoryRequest) showToast(`加载记忆失败: ${err?.message || err}`, 'error');
       } finally {
         if (request === memoryRequest) {
           container.removeAttribute('aria-busy');
@@ -4751,7 +4856,7 @@
         const data = await apiGet(`/api/graph/canvas?${qs}`);
         if (request !== graphState.request) return false;
         if (data.error) {
-          showToast(`图谱加载失败：${data.error}`);
+          showToast(`图谱加载失败：${data.error}`, 'error');
           return false;
         }
         if (graphState.seed !== seed) closeGraphInspector();
@@ -4764,7 +4869,7 @@
         if (resized && graphState.autoFit && !graphState.fitOnSettle) fitGraphCamera();
         return true;
       } catch (error) {
-        if (request === graphState.request) showToast(`图谱加载失败：${error?.message || error}`);
+        if (request === graphState.request) showToast(`图谱加载失败：${error?.message || error}`, 'error');
         return false;
       } finally {
         if (request === graphState.request) {
@@ -5437,7 +5542,7 @@
       }
       await withBtnBusy(targetBtn, '⏳ 思考中...', async () => {
         const res = await apiPost('/api/ask', { question: q });
-        if (res.error) return showToast(`问答失败: ${res.error}`);
+        if (res.error) return showToast(`问答失败: ${res.error}`, 'error');
         const memCites = ((res.citations || {}).memories || []).map(m => `<button type="button" class="chip-btn" onclick="openDetail('${esc(m.memory_id)}')">🧠 ${esc(m.title)}</button>`).join(' ');
         const noteCites = ((res.citations || {}).notes || []).map(n => `<span class="tag">📝 ${esc(n.event_time?.slice(0,10) || '')} “${esc(n.content.slice(0, 40))}”</span>`).join(' ');
         const mediaCites = ((res.citations || {}).media || []);
@@ -5641,7 +5746,7 @@
           lock_for_user: document.getElementById('meLock').checked,
           reason: 'Web UI 手动编辑记忆',
         });
-        if (res.error) return showToast(`保存失败: ${res.error}`);
+        if (res.error) return showToast(`保存失败: ${res.error}`, 'error');
         showToast(`✅ 记忆已更新至 v${res.memory?.version}`);
         await openDetail(m.memory_id, 'form');
         reloadAll();
@@ -5659,7 +5764,7 @@
           expected_version: m.version,
           markdown: mdText,
         });
-        if (res.error) return showToast(`保存失败: ${res.error}`);
+        if (res.error) return showToast(`保存失败: ${res.error}`, 'error');
         showToast(`✅ Markdown 回流成功，已升级至 v${res.memory?.version}`);
         await openDetail(m.memory_id, 'markdown');
         reloadAll();
@@ -5674,7 +5779,7 @@
         expected_version: expectedVer,
         reason: 'Web UI 用户手动遗忘',
       });
-      if (res.error) return showToast(`遗忘失败: ${res.error}`);
+      if (res.error) return showToast(`遗忘失败: ${res.error}`, 'error');
       closeModal();
       showToast('🗑️ 已彻底遗忘该记忆及关联证据与索引');
       reloadAll();
@@ -5769,7 +5874,7 @@
           lock_for_user: true,
           reason: 'Web UI 用户手动创建记忆',
         });
-        if (res.error) return showToast(`创建失败: ${res.error}`);
+        if (res.error) return showToast(`创建失败: ${res.error}`, 'error');
         closeModal();
         showToast('🎉 新记忆已创建并建立向量索引');
         reloadAll();
@@ -5967,7 +6072,7 @@
           apiGet('/api/admin/overview'),
           apiGet('/api/admin/users'),
         ]);
-        if (ov.error) return showToast(`后台加载失败: ${ov.error}`);
+        if (ov.error) return showToast(`后台加载失败: ${ov.error}`, 'error');
 
         const u = ov.users || {};
         const c = ov.content || {};
@@ -6065,7 +6170,7 @@
           default_daily_llm_limit: Number(document.getElementById('admLlmLimit').value),
           default_daily_token_limit: Number(document.getElementById('admTokLimit').value),
         });
-        if (res.error) return showToast(`保存失败: ${res.error}`);
+        if (res.error) return showToast(`保存失败: ${res.error}`, 'error');
         showToast('✅ 防线参数与默认配额已实时生效');
         loadAdminConsole();
       });
@@ -6078,7 +6183,7 @@
       const role = document.getElementById('admNewRole').value;
       await withBtnBusy(btn, '⏳ 创建中', async () => {
         const res = await apiPost('/api/admin/users/create', { username, display_name, password, role });
-        if (res.error) return showToast(`创建失败: ${res.error}`);
+        if (res.error) return showToast(`创建失败: ${res.error}`, 'error');
         document.getElementById('admNewUser').value = '';
         document.getElementById('admNewDisplay').value = '';
         document.getElementById('admNewPass').value = '';
@@ -6089,14 +6194,14 @@
 
     async function adminToggleUserStatus(userId, nextStatus) {
       const res = await apiPost('/api/admin/users/update', { user_id: userId, status: nextStatus });
-      if (res.error) return showToast(`操作失败: ${res.error}`);
+      if (res.error) return showToast(`操作失败: ${res.error}`, 'error');
       showToast(nextStatus === 'disabled' ? '🚫 已停用该账号并踢出登录态' : '✅ 已重新启用该账号');
       loadAdminConsole();
     }
 
     async function adminToggleUserRole(userId, nextRole) {
       const res = await apiPost('/api/admin/users/update', { user_id: userId, role: nextRole });
-      if (res.error) return showToast(`操作失败: ${res.error}`);
+      if (res.error) return showToast(`操作失败: ${res.error}`, 'error');
       showToast(`已切换角色为 ${nextRole}`);
       loadAdminConsole();
     }
@@ -6111,7 +6216,7 @@
         daily_note_limit: Number(nRaw) || curNotes,
         daily_llm_limit: Number(lRaw) || curLlm,
       });
-      if (res.error) return showToast(`调额失败: ${res.error}`);
+      if (res.error) return showToast(`调额失败: ${res.error}`, 'error');
       showToast('✅ 用户每日配额已更新');
       loadAdminConsole();
     }
@@ -6124,14 +6229,14 @@
       const np = prompt(`为 ${uname} 输入新密码（至少 6 位）：`);
       if (!np) return;
       const res = await apiPost('/api/admin/users/update', { user_id: userId, new_password: np });
-      if (res.error) return showToast(`重置失败: ${res.error}`);
+      if (res.error) return showToast(`重置失败: ${res.error}`, 'error');
       showToast(`🔑 已重置 ${uname} 的密码`);
     }
 
     async function adminRunMaintenance(btn) {
       await withBtnBusy(btn, '⏳ 清理中', async () => {
         const res = await apiPost('/api/admin/maintenance');
-        if (res.error) return showToast(`维护失败: ${res.error}`);
+        if (res.error) return showToast(`维护失败: ${res.error}`, 'error');
         showToast('✅ SQLite WAL 检查点已同步清理');
         loadAdminConsole();
       });
@@ -6140,7 +6245,7 @@
     async function exportMarkdown(btn) {
       await withBtnBusy(btn, '⏳ 导出中', async () => {
         const res = await apiGet('/api/markdown/bundle');
-        if (res.error) return showToast(`导出失败: ${res.error}`);
+        if (res.error) return showToast(`导出失败: ${res.error}`, 'error');
         const files = res.files || [];
         const combined = files.map(f => `<!-- FILE: ${f.path} -->\n\n${f.markdown}`).join('\n\n---\n\n');
         const blob = new Blob([combined], { type: 'text/markdown;charset=utf-8' });
@@ -6156,7 +6261,7 @@
     async function syncMarkdown(btn) {
       await withBtnBusy(btn, '⏳ 同步中', async () => {
         const res = await apiPost('/api/markdown/sync');
-        if (res.error) return showToast(`同步失败: ${res.error}`);
+        if (res.error) return showToast(`同步失败: ${res.error}`, 'error');
         showToast(`Markdown 回流完成：应用 ${(res.applied || []).length} 项，冲突保护 ${(res.conflicts || []).length} 项`);
         reloadAll();
       });
@@ -6166,7 +6271,7 @@
       await withBtnBusy(btn, '归纳中…', async () => {
         showToast('正在归纳卡片…');
         const res = await apiPost('/api/dream');
-        if (res.error) return showToast(`归纳卡片失败：${res.error}`);
+        if (res.error) return showToast(`归纳卡片失败：${res.error}`, 'error');
         showToast(`归纳完成，生成或更新 ${res.insights_processed ?? 0} 张卡片`);
         reloadAll();
       });
@@ -6417,7 +6522,12 @@
         return;
       }
       const nearest = upcoming[0];
-      const diffDays = Math.ceil((nearest.dueMs - nowMs) / 86400000);
+      // Compare calendar days (local midnight to midnight); Math.ceil on a 23:59:59 deadline said "还有 1 天" for today
+      const _dueD = new Date(nearest.dueMs);
+      const _nowD = new Date(nowMs);
+      const diffDays = Math.round(
+        (new Date(_dueD.getFullYear(), _dueD.getMonth(), _dueD.getDate()) - new Date(_nowD.getFullYear(), _nowD.getMonth(), _nowD.getDate())) / 86400000
+      );
       const badgeTxt = diffDays < 0 ? `已逾期 ${Math.abs(diffDays)} 天` : (diffDays === 0 ? '就在今天' : `还有 ${diffDays} 天`);
       strip.style.display = 'flex';
       strip.innerHTML = `
@@ -6516,7 +6626,7 @@
       }
       await withBtnBusy(btn, '⏳ 保存中', async () => {
         const res = await apiPost('/api/countdowns/save', body);
-        if (res.error) return showToast(`保存失败: ${res.error}`);
+        if (res.error) return showToast(`保存失败: ${res.error}`, 'error');
         closeCountdownEditorModal();
         showToast('✅ 倒数纪念日已保存');
         await loadCountdownsData();
@@ -6531,7 +6641,7 @@
       if (!cid) return;
       await withBtnBusy(btn, '⏳ 删除中', async () => {
         const res = await apiPost('/api/countdowns/delete', { countdown_id: cid });
-        if (res.error) return showToast(`删除失败: ${res.error}`);
+        if (res.error) return showToast(`删除失败: ${res.error}`, 'error');
         closeCountdownEditorModal();
         showToast('🗑️ 已删除倒数纪念日');
         await loadCountdownsData();
@@ -6729,7 +6839,7 @@
           duration_minutes: _calSlotDuration,
           color_theme: _calSlotColor,
         });
-        if (res.error) return showToast(`排期失败: ${res.error}`);
+        if (res.error) return showToast(`排期失败: ${res.error}`, 'error');
         _calSelectedDate = dateVal;
         closeSlotScheduleModal();
         showToast(`✅ 已排入 ${dateVal}${isAllDay ? ' 全天' : ' ' + timeVal}`);
@@ -6750,7 +6860,7 @@
           is_all_day: isAllDay,
           duration_minutes: _calSlotDuration,
         });
-        if (res.error) return showToast(`排期失败: ${res.error}`);
+        if (res.error) return showToast(`排期失败: ${res.error}`, 'error');
         _calSelectedDate = dateVal;
         closeSlotScheduleModal();
         showToast(`✅ 已挂载至 ${dateVal}${isAllDay ? ' 全天' : ' ' + timeVal}`);
@@ -6762,22 +6872,41 @@
     async function unscheduleTaskFromCalendar(memoryId, ev) {
       if (ev) ev.stopPropagation();
       const res = await apiPost('/api/calendar/schedule', { memory_id: memoryId, unschedule: true });
-      if (res.error) return showToast(`移回待排期池失败: ${res.error}`);
+      if (res.error) return showToast(`移回待排期池失败: ${res.error}`, 'error');
       showToast('📥 已移回待排期任务池');
       await reloadAll();
       await renderCalendarPanel();
     }
 
+    let _calRenderSeq = 0;
     async function renderCalendarPanel() {
+      // Monotonic request token: rapid ◀ / ▶ / 今天 clicks fire overlapping fetches, and a slow
+      // earlier response must never overwrite the view the user navigated to afterwards.
+      const seq = ++_calRenderSeq;
+      const heading = document.getElementById('calPeriodHeading');
+      const selLabel = document.getElementById('calSelectedDateLabel');
       if (_calSubView === 'countdown') {
+        if (heading) heading.textContent = '⏳ 倒数纪念日卡片墙';
         await loadCountdownsData();
+        if (seq !== _calRenderSeq) return;
         paintCountdownWall();
         return;
       }
       const subView = _calSubView === 'month' ? 'month' : 'week';
-      const res = await apiGet(`/api/calendar/overview?view=${encodeURIComponent(subView)}&anchor_date=${encodeURIComponent(_calSelectedDate)}&include_done=true`);
+      // Reflect the target view / date immediately instead of keeping the previous sub-view's header
+      if (heading) heading.textContent = `${_calSelectedDate.slice(0, 7).replace('-', ' 年 ')} 月 · ${subView === 'week' ? '周时间轴' : '月全景'}（加载中…）`;
+      if (selLabel) selLabel.textContent = `选中：${_calSelectedDate}`;
+      const anchor = _calSelectedDate;
+      let res;
+      try {
+        res = await apiGet(`/api/calendar/overview?view=${encodeURIComponent(subView)}&anchor_date=${encodeURIComponent(anchor)}&include_done=true`);
+      } catch (err) {
+        res = { error: err?.message || '网络异常' };
+      }
+      if (seq !== _calRenderSeq) return;
       if (res.error) {
-        showToast(`日历加载失败: ${res.error}`);
+        showToast(`日历加载失败: ${res.error}`, 'error');
+        if (_calOverviewCache) paintCalendarOverview(_calOverviewCache);
         return;
       }
       _calOverviewCache = res;
@@ -6847,7 +6976,7 @@
         is_all_day: false,
         duration_minutes: 60,
       });
-      if (res.error) return showToast(`排期失败: ${res.error}`);
+      if (res.error) return showToast(`排期失败: ${res.error}`, 'error');
       showToast(`✅ 已排入 ${_calSelectedDate} 10:00（点击时间轴色块可微调时刻）`);
       await reloadAll();
       await renderCalendarPanel();
@@ -7134,8 +7263,8 @@
       if (tagBar) {
         const tagsCat = res.tags_catalog || [];
         let tHtml = `
-          <button type="button" class="tag-filter-pill ${!_memoSelectedTag && !_memoPinnedOnly ? 'active' : ''}" onclick="_memoSelectedTag='';_memoPinnedOnly=false;loadMemosView()">全部 (${res.total || 0})</button>
-          <button type="button" class="tag-filter-pill ${_memoPinnedOnly ? 'active' : ''}" onclick="toggleFilterPinnedMemos()">📌 置顶 (${res.pinned_count || 0})</button>
+          <button type="button" class="tag-filter-pill ${!_memoSelectedTag && !_memoPinnedOnly ? 'active' : ''}" onclick="_memoSelectedTag='';_memoPinnedOnly=false;loadMemosView()">全部 (${res.all_count ?? res.total ?? 0})</button>
+          <button type="button" class="tag-filter-pill ${_memoPinnedOnly ? 'active' : ''}" onclick="toggleFilterPinnedMemos()">📌 置顶 (${res.all_pinned_count ?? res.pinned_count ?? 0})</button>
         `;
         tHtml += tagsCat.map(tc => `
           <button type="button" class="tag-filter-pill ${_memoSelectedTag === tc.tag ? 'active' : ''}" onclick="filterMemosByTag('${esc(tc.tag)}')">#${esc(tc.tag)} (${tc.count})</button>
@@ -7201,7 +7330,7 @@
 
     async function toggleMemoPin(noteId, nextPinned) {
       const res = await apiPost('/api/memos/pin', { note_id: noteId, pinned: Boolean(nextPinned) });
-      if (res.error) return showToast(`置顶操作失败: ${res.error}`);
+      if (res.error) return showToast(`置顶操作失败: ${res.error}`, 'error');
       showToast(nextPinned ? '📌 已置顶备忘录' : '已取消置顶');
       await loadMemosView();
     }
@@ -7226,7 +7355,7 @@
           extract_memory: extractMemory,
           media_ids: mediaIds,
         });
-        if (res.error) return showToast(`保存失败: ${res.error}`);
+        if (res.error) return showToast(`保存失败: ${res.error}`, 'error');
         resetMemoCompose();
         showToast(extractMemory ? '✅ 备忘已保存，后台静默提炼长期偏好与事实' : '✅ 备忘录已保存');
         await loadMemosView();
@@ -7271,7 +7400,7 @@
       if (dateInp) dateInp.value = _journalDate;
       const res = await apiGet(`/api/journal/overview?date=${encodeURIComponent(_journalDate)}&limit=30`);
       if (res.error) {
-        showToast(`加载日记失败: ${res.error}`);
+        showToast(`加载日记失败: ${res.error}`, 'error');
         return;
       }
       _journalOverviewCache = res;
@@ -7334,7 +7463,7 @@
           draft_content: curText,
           trigger_dream: Boolean(triggerDream),
         });
-        if (res.error) return showToast(`生成今日小结失败: ${res.error}`);
+        if (res.error) return showToast(`生成今日小结失败: ${res.error}`, 'error');
         const md = res.summary_markdown || '';
         if (editor) {
           editor.value = curText ? `${curText}\n\n${md}` : md;
@@ -7360,7 +7489,7 @@
           extract_memory: extractMemory,
           media_ids: mediaIds,
         });
-        if (res.error) return showToast(`保存日记失败: ${res.error}`);
+        if (res.error) return showToast(`保存日记失败: ${res.error}`, 'error');
         _pendingMediaDrafts.journal = [];
         renderPendingMediaDrafts('journal');
         showToast(`📖 ${_journalDate} 日记已保存`);
@@ -7503,13 +7632,13 @@
             height: compressed.height,
           });
           if (res.error) {
-            showToast(`图片上传失败: ${res.error}`);
+            showToast(`图片上传失败: ${res.error}`, 'error');
           } else if (res.media) {
             _pendingMediaDrafts[bucket].push(res.media);
             renderPendingMediaDrafts(bucket);
           }
         } catch (err) {
-          showToast(`图片处理失败: ${err?.message || err}`);
+          showToast(`图片处理失败: ${err?.message || err}`, 'error');
         }
       }
     }
@@ -7550,7 +7679,7 @@
     async function forgetNoteFromStream(noteId) {
       if (!confirm('确认遗忘该条随记？关联的单源派生记忆与向量也将同步清理。')) return;
       const res = await apiPost('/api/notes/forget', { note_id: noteId });
-      if (res.error) return showToast(`遗忘失败: ${res.error}`);
+      if (res.error) return showToast(`遗忘失败: ${res.error}`, 'error');
       showToast('🧹 已遗忘该随记并级联清理派生记忆');
       await loadNotesPanel();
       loadTasks();
@@ -7688,7 +7817,7 @@
               auto_ingest: false,
             });
             if (res.error) {
-              showToast(`语音转写失败: ${res.error}`);
+              showToast(`语音转写失败: ${res.error}`, 'error');
             } else if (res.text) {
               inputEl.value = (baseText + res.text).trim();
               if (autoSubmit) {

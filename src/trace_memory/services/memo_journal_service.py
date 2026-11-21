@@ -211,6 +211,9 @@ class MemoAndJournalService:
             "memos": self._enrich_notes(sp, ordered),
             "total": len(pinned_part) + len(unpinned_part),
             "pinned_count": len(pinned_part),
+            # Unfiltered facet counts so filter pills (全部 / 置顶) don't shrink to the filtered subset
+            "all_count": len(all_memo_notes),
+            "all_pinned_count": sum(1 for n in all_memo_notes if n.pinned),
             "tags_catalog": [{"tag": k, "count": v} for k, v in tag_counter.most_common(30)],
         }
 
@@ -625,6 +628,10 @@ class MemoAndJournalService:
                     },
                 ],
             }
+            # DashScope Qwen3 hybrid-thinking models think by default; without this the summary took 45-55s
+            # (first attempt hit the socket timeout, then the retry finished) instead of a few seconds.
+            if "dashscope.aliyuncs.com" in self.config.openai_base_url:
+                req_body["enable_thinking"] = False
             try:
                 raw_resp = _post_json_with_retry(
                     url=url,

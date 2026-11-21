@@ -66,12 +66,16 @@ class HybridSearchIndex:
         vector_store: VectorStore,
         embedder: EmbeddingProviderProtocol,
         rrf_k: int = 60,
+        vector_only_min_score: float = 0.0,
     ) -> None:
         self.note_repo = note_repo
         self.memory_repo = memory_repo
         self.vector_store = vector_store
         self.embedder = embedder
         self.rrf_k = rrf_k
+        # Pure semantic hits (no BM25 keyword match) must clear this floor, otherwise
+        # gibberish queries surface every memory with a mediocre cosine score.
+        self.vector_only_min_score = max(0.0, float(vector_only_min_score))
 
     def search_memories(
         self,
@@ -138,6 +142,8 @@ class HybridSearchIndex:
         for mem_id, mem in items_by_id.items():
             b_rank, b_score = bm25_meta.get(mem_id, (None, 0.0))
             v_rank, v_score = vec_meta.get(mem_id, (None, 0.0))
+            if b_rank is None and v_score < self.vector_only_min_score:
+                continue
             rrf = 0.0
             if b_rank is not None:
                 rrf += 1.15 / (self.rrf_k + b_rank)
@@ -201,6 +207,8 @@ class HybridSearchIndex:
         for note_id, note in notes_by_id.items():
             b_rank, b_score = bm25_meta.get(note_id, (None, 0.0))
             v_rank, v_score = vec_meta.get(note_id, (None, 0.0))
+            if b_rank is None and v_score < self.vector_only_min_score:
+                continue
             rrf = 0.0
             if b_rank is not None:
                 rrf += 1.15 / (self.rrf_k + b_rank)
