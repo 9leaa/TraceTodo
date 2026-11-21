@@ -637,6 +637,12 @@ class TaskMatrixService:
             else bool(base_payload.get("focus_lock_enabled", False))
         )
         focus_min = max(1, min(240, int(data.get("focus_minutes", base_payload.get("focus_minutes", 25)) or 25)))
+        if "duration_minutes" in data and data["duration_minutes"] is not None and str(data["duration_minutes"]).strip() != "":
+            duration_min: int | None = max(15, min(480, int(data["duration_minutes"])))
+        elif base_payload.get("duration_minutes") is not None:
+            duration_min = max(15, min(480, int(base_payload["duration_minutes"])))
+        else:
+            duration_min = None
         raw_subtasks = (
             data["subtasks"]
             if "subtasks" in data
@@ -708,6 +714,8 @@ class TaskMatrixService:
             "focus_lock_enabled": focus_lock,
             "focus_minutes": focus_min,
         }
+        if duration_min is not None:
+            patch["duration_minutes"] = duration_min
 
         evidences: tuple[MemoryEvidence, ...] = ()
         if self.note_repo is not None:

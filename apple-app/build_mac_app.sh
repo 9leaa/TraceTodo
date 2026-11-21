@@ -49,7 +49,7 @@ if [ -n "$XCODE_APP" ]; then
         Sources/TraceTodo/*.swift \
         -o "$IOS_SIM_APP_DIR/TraceTodo"
 
-    echo "✅ [3/3] Type-checking real iPhoneOS device target (arm64-apple-ios17.0)..."
+    echo "✅ [3/4] Type-checking real iPhoneOS device target (arm64-apple-ios17.0)..."
     "$SWIFTC" \
         -typecheck \
         -swift-version 5 \
@@ -58,6 +58,17 @@ if [ -n "$XCODE_APP" ]; then
         -target arm64-apple-ios17.0 \
         -sdk "$IOS_DEV_SDK" \
         Sources/TraceTodo/*.swift
+
+    echo "🧩 [4/4] Type-checking iOS WidgetKit extension target (arm64-apple-ios17.0)..."
+    "$SWIFTC" \
+        -typecheck \
+        -swift-version 5 \
+        -parse-as-library \
+        -module-cache-path "$MOD_CACHE" \
+        -target arm64-apple-ios17.0 \
+        -sdk "$IOS_DEV_SDK" \
+        Widgets/TraceTodoWidgets.swift \
+        Sources/TraceTodo/SharedWidgetBridge.swift
 else
     echo "⚠️ Xcode.app not found; building fallback Cocoa+MenuBar native macOS app..."
     /usr/bin/clang \

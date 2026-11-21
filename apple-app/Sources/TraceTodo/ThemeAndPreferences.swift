@@ -321,69 +321,10 @@ struct UnifiedTodoHostView: View {
     }
 }
 
-/// Zero-duplication Calendar view projecting tasks directly by due date.
+/// Zero-duplication Calendar view projecting tasks, focus sessions, notes, and countdowns.
 struct CalendarPreviewHostView: View {
-    @EnvironmentObject var store: TodoStore
-    @State private var selectedDate: Date = Date()
-
-    private var selectedDateString: String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        f.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
-        return f.string(from: selectedDate)
-    }
-
-    private var tasksForSelectedDay: [TaskItemModel] {
-        (store.matrix?.sortedTasks ?? []).filter { t in
-            guard let due = t.payload.dueAt, due.count >= 10 else { return false }
-            return String(due.prefix(10)) == selectedDateString
-        }
-    }
-
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("📅 时间画布 · 日历排期")
-                            .font(.headline)
-                        Text("零重复录入：与四象限共享同一份任务真值")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("+ 新建排期") {
-                        store.isPresentingNewTaskSheet = true
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(store.activeTheme.primaryColor)
-                }
-
-                DatePicker("选择日期", selection: $selectedDate, displayedComponents: [.date])
-                    .datePickerStyle(.graphical)
-                    .tint(store.activeTheme.primaryColor)
-                    .padding(12)
-                    .background(.background)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("📋 \(selectedDateString) 待办排期 (\(tasksForSelectedDay.count) 项)")
-                        .font(.subheadline.bold())
-
-                    if tasksForSelectedDay.isEmpty {
-                        Text("当日暂无截止排期事项，点击右上角「+ 新建排期」添加。")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .padding(.vertical, 12)
-                    } else {
-                        ForEach(tasksForSelectedDay) { task in
-                            TaskCardView(task: task)
-                        }
-                    }
-                }
-            }
-            .padding(16)
-        }
+        CalendarTimelineView()
     }
 }
 
