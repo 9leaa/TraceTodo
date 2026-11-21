@@ -700,6 +700,26 @@ class ApiDispatcher:
                 )
                 return 200, {"deleted": deleted}
 
+            if method == "GET" and path == "/api/calendar/overview":
+                cal_view = qp.get("view", ["week"])[0].strip()
+                anchor_d = qp.get("anchor_date", [""])[0].strip()
+                inc_done = qp.get("include_done", ["true"])[0].strip().lower() not in ("false", "0", "no")
+                return 200, self.container.calendar_service.get_overview(
+                    space_id=space_id,
+                    view=cal_view,
+                    anchor_date=anchor_d,
+                    include_done=inc_done,
+                )
+
+            if method == "POST" and path == "/api/calendar/schedule":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                out_sched = self.container.calendar_service.schedule_slot(
+                    space_id=space_id,
+                    payload=payload,
+                    actor_id=user.username if user else "user",
+                )
+                return 200, out_sched
+
             if method == "GET" and path == "/api/supervision/board":
                 assignee = qp.get("assignee", [""])[0]
                 board = self.container.task_matrix_service.build_supervision_board(
@@ -1267,6 +1287,7 @@ class ApiDispatcher:
                 "auto_rollover": True,
                 "focus_lock_enabled": True,
                 "focus_minutes": 25,
+                "duration_minutes": 60,
                 "subtasks": [
                     {"id": "demo_sub_1", "title": "梳理四象限与长期记忆架构主线", "done": True},
                     {"id": "demo_sub_2", "title": "录制 Mac + iPhone 局域网同步演示", "done": False},

@@ -212,6 +212,7 @@ class TaskPayload:
     subtasks: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     focus_lock_enabled: bool = False
     focus_minutes: int = 25
+    duration_minutes: int | None = None
     focus_sessions_completed: int = 0
     focus_interruptions: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     nudges: tuple[dict[str, Any], ...] = field(default_factory=tuple)
@@ -246,6 +247,7 @@ class TaskPayload:
         if rem_min is not None and rem_min < 0:
             rem_min = 0
         focus_min = max(1, min(240, int(self.focus_minutes or 25)))
+        dur_min = max(15, min(480, int(self.duration_minutes))) if self.duration_minutes is not None else None
         object.__setattr__(self, "color_theme", color)
         object.__setattr__(self, "task_mode", mode)
         object.__setattr__(self, "supervision_enabled", bool(self.supervision_enabled or mode == "multiplayer"))
@@ -258,6 +260,7 @@ class TaskPayload:
         object.__setattr__(self, "subtasks", _normalize_subtasks(self.subtasks))
         object.__setattr__(self, "focus_lock_enabled", bool(self.focus_lock_enabled))
         object.__setattr__(self, "focus_minutes", focus_min)
+        object.__setattr__(self, "duration_minutes", dur_min)
         object.__setattr__(self, "focus_sessions_completed", max(0, int(self.focus_sessions_completed)))
         object.__setattr__(self, "focus_interruptions", _normalize_dict_tuple(self.focus_interruptions))
         object.__setattr__(self, "nudges", _normalize_dict_tuple(self.nudges))
@@ -289,6 +292,7 @@ class TaskPayload:
             "subtasks": [dict(s) for s in self.subtasks],
             "focus_lock_enabled": self.focus_lock_enabled,
             "focus_minutes": self.focus_minutes,
+            "duration_minutes": self.duration_minutes,
             "focus_sessions_completed": self.focus_sessions_completed,
             "focus_interruptions": [dict(x) for x in self.focus_interruptions],
             "nudges": [dict(n) for n in self.nudges],
@@ -310,6 +314,8 @@ class TaskPayload:
         score = float(data.get("priority_score") or auto_score)
         rem_raw = data.get("reminder_offset_minutes")
         rem_val = int(rem_raw) if rem_raw is not None and str(rem_raw).strip() != "" else None
+        dur_raw = data.get("duration_minutes")
+        dur_val = int(dur_raw) if dur_raw is not None and str(dur_raw).strip() != "" else None
         return cls(
             task_status=str(data.get("task_status", "todo")),
             close_reason=str(data.get("close_reason", "")),
@@ -335,6 +341,7 @@ class TaskPayload:
             subtasks=_normalize_subtasks(data.get("subtasks")),
             focus_lock_enabled=bool(data.get("focus_lock_enabled", False)),
             focus_minutes=int(data.get("focus_minutes", 25) or 25),
+            duration_minutes=dur_val,
             focus_sessions_completed=int(data.get("focus_sessions_completed", 0) or 0),
             focus_interruptions=_normalize_dict_tuple(data.get("focus_interruptions")),
             nudges=_normalize_dict_tuple(data.get("nudges")),

@@ -431,4 +431,21 @@ struct TraceMemoryAPIClient {
     func seedDemoData() async throws {
         try await postRaw("/api/seed-demo", body: [:])
     }
+
+    // MARK: - Phase 3: Calendar Timeline & Slot Scheduling
+
+    func fetchCalendarOverview(view: String = "week", anchorDate: String = "", includeDone: Bool = true) async throws -> CalendarOverviewResponse {
+        try await get(
+            "/api/calendar/overview",
+            queryItems: [
+                URLQueryItem(name: "view", value: view),
+                URLQueryItem(name: "anchor_date", value: anchorDate),
+                URLQueryItem(name: "include_done", value: includeDone ? "true" : "false")
+            ]
+        )
+    }
+
+    func scheduleCalendarSlot(body: [String: Any]) async throws {
+        try await postRaw("/api/calendar/schedule", body: body)
+    }
 }

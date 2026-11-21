@@ -10,6 +10,7 @@ from trace_memory.llm.openai_compat import OpenAICompatEmbedder, OpenAICompatLLM
 from trace_memory.llm.protocol import EmbeddingProvider, LLMProvider
 from trace_memory.services.ask_service import AskService
 from trace_memory.services.auth_service import AdminService, AuthService
+from trace_memory.services.calendar_service import CalendarService
 from trace_memory.services.change_service import ChangeService
 from trace_memory.services.dream_service import DreamService
 from trace_memory.services.focus_service import FocusService
@@ -81,6 +82,7 @@ class AppContainer:
     focus_service: FocusService
     voice_service: VoiceTranscriptionService
     media_service: MediaAttachmentService
+    calendar_service: CalendarService
 
     @classmethod
     def build(
@@ -222,6 +224,11 @@ class AppContainer:
             task_matrix_service=task_matrix_service,
             sync_tracker=sync_tracker,
         )
+        calendar_service = CalendarService(
+            db=db,
+            memory_repo=memory_repo,
+            task_matrix_service=task_matrix_service,
+        )
         voice_service = VoiceTranscriptionService(config=cfg)
         ask_service = AskService(
             note_repo=note_repo,
@@ -286,6 +293,7 @@ class AppContainer:
             focus_service=focus_service,
             voice_service=voice_service,
             media_service=media_service,
+            calendar_service=calendar_service,
         )
 
     def close(self) -> None:
