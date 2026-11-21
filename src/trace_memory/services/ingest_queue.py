@@ -248,7 +248,7 @@ class IngestJobRepository:
         )
         recent_rows = self.db.query_all(
             """
-            SELECT job_id, note_id, status, attempts, error_message, created_at, updated_at
+            SELECT job_id, note_id, status, attempts, error_message, result_json, created_at, updated_at
             FROM ingest_jobs
             WHERE space_id = ?
             ORDER BY rowid DESC
@@ -273,12 +273,23 @@ class IngestJobRepository:
                     "status": str(r["status"]),
                     "attempts": int(r["attempts"]),
                     "error_message": str(r["error_message"]),
+                    # Lets the client tell "AI found nothing actionable" apart from a real extraction
+                    "changes_count": self._changes_count(r["result_json"]),
                     "created_at": str(r["created_at"]),
                     "updated_at": str(r["updated_at"]),
                 }
                 for r in recent_rows
             ],
         }
+
+    @staticmethod
+    def _changes_count(result_json: Any) -> int | None:
+        try:
+            data = json.loads(result_json or "{}")
+        except Exception:
+            return None
+        val = data.get("changes_count") if isinstance(data, dict) else None
+        return int(val) if isinstance(val, (int, float)) else None
 
     @staticmethod
     def _row_to_dict(row: Any) -> dict[str, Any]:
