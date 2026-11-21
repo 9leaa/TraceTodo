@@ -3,9 +3,20 @@ import Foundation
 /// Shared configuration and offline snapshot bridge between the main TraceTodo app
 /// and the iOS Widget Extension via App Groups (with graceful fallback when unsigned/sideloaded).
 enum SharedWidgetBridge {
+    static let prodCloudServerURL = "http://43.228.79.133:18090"
+    static let testCloudServerURL = "http://43.228.79.133:18091"
+
+    #if TRACETODO_TEST_BUILD
+    static let isTestBuild = true
+    static let appGroupId = "group.com.tracememory.tracetodo.test"
+    static let cloudServerURL = testCloudServerURL
+    static let localServerURL = "http://127.0.0.1:18091"
+    #else
+    static let isTestBuild = false
     static let appGroupId = "group.com.tracememory.tracetodo"
-    static let cloudServerURL = "http://43.228.79.133:18090"
+    static let cloudServerURL = prodCloudServerURL
     static let localServerURL = "http://127.0.0.1:18090"
+    #endif
 
     private static let kServerURL = "tm_shared_server_url"
     private static let kSpaceId = "tm_shared_space_id"

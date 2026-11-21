@@ -351,11 +351,11 @@ struct AuthGateSheet: View {
                                 #endif
                         }
 
-                        if store.serverURL != TodoStore.defaultServerURL {
-                            HStack(spacing: 8) {
-                                serverPresetChip("☁️ 恢复默认云服务器", url: TodoStore.defaultServerURL)
-                                Spacer()
-                            }
+                        HStack(spacing: 8) {
+                            serverPresetChip("🧪 云端测试服", url: TodoStore.testCloudServerURL)
+                            serverPresetChip("☁️ 线上正式服", url: TodoStore.prodCloudServerURL)
+                            serverPresetChip("💻 本地环境", url: TodoStore.localServerURL)
+                            Spacer()
                         }
                     }
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -581,7 +581,7 @@ struct AuthGateSheet: View {
     private func serverPresetChip(_ label: String, url: String) -> some View {
         let isCurrent = store.serverURL == url
         return Button {
-            store.serverURL = url
+            store.switchServerURL(url)
             Task { await store.refresh() }
         } label: {
             Text(label)

@@ -72,6 +72,14 @@ final class TodoStore: ObservableObject {
         SharedWidgetBridge.cloudServerURL
     }
 
+    static var prodCloudServerURL: String {
+        SharedWidgetBridge.prodCloudServerURL
+    }
+
+    static var testCloudServerURL: String {
+        SharedWidgetBridge.testCloudServerURL
+    }
+
     static var localServerURL: String {
         SharedWidgetBridge.localServerURL
     }
@@ -148,7 +156,8 @@ final class TodoStore: ObservableObject {
 
     private var cacheDir: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = base.appendingPathComponent("TraceTodo", isDirectory: true)
+        let folder = SharedWidgetBridge.isTestBuild ? "TraceTodo-Test" : "TraceTodo"
+        let dir = base.appendingPathComponent(folder, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }

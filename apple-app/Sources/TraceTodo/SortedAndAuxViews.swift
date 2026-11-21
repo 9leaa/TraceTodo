@@ -713,15 +713,30 @@ struct SettingsSyncView: View {
                 HStack(spacing: 8) {
                     Button {
                         dismissAppKeyboard()
-                        store.switchServerURL(TodoStore.defaultServerURL)
+                        store.switchServerURL(TodoStore.testCloudServerURL)
                         Task { await store.refresh() }
                     } label: {
-                        Text("☁️ 线上云端")
+                        Text("🧪 云端测试服")
                             .font(.caption.bold())
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
-                            .background(store.serverURL == TodoStore.defaultServerURL ? Color.blue : Color.blue.opacity(0.12))
-                            .foregroundStyle(store.serverURL == TodoStore.defaultServerURL ? .white : .blue)
+                            .background(store.serverURL == TodoStore.testCloudServerURL ? Color.teal : Color.teal.opacity(0.14))
+                            .foregroundStyle(store.serverURL == TodoStore.testCloudServerURL ? .white : .teal)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.borderless)
+
+                    Button {
+                        dismissAppKeyboard()
+                        store.switchServerURL(TodoStore.prodCloudServerURL)
+                        Task { await store.refresh() }
+                    } label: {
+                        Text("☁️ 线上正式服")
+                            .font(.caption.bold())
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(store.serverURL == TodoStore.prodCloudServerURL ? Color.blue : Color.blue.opacity(0.12))
+                            .foregroundStyle(store.serverURL == TodoStore.prodCloudServerURL ? .white : .blue)
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.borderless)
