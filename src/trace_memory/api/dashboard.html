@@ -1944,11 +1944,9 @@
     </div>
 
     <div class="top-actions">
-      <button type="button" class="duodo-btn" onclick="openTaskSheet(null)">+ 新建任务</button>
       <button type="button" id="topSupBtn" data-tab="supervision" data-module-toggle="supervision" onclick="switchTab('supervision', this)"><span class="control-icon" aria-hidden="true">👥</span><span data-control-label>监工</span></button>
       <button type="button" id="openPrefsBtn" onclick="openPrefsModal()"><span class="control-icon" aria-hidden="true">🎨</span><span data-control-label>外观/模块</span></button>
       <button type="button" id="notifToggleBtn" onclick="toggleWebNotifications()"><span class="control-icon" aria-hidden="true">🔔</span><span data-control-label>通知</span></button>
-      <button type="button" onclick="seedDemo(this)"><span class="control-icon" aria-hidden="true">✨</span><span data-control-label>演示</span></button>
     </div>
     <button type="button" class="header-account" id="accountBtn" onclick="openAuthModal()"><span class="control-icon" aria-hidden="true">👤</span><span data-control-label>登录</span></button>
   </header>
@@ -1980,13 +1978,16 @@
       <section id="panel-tasks" class="panel active">
         <div class="summary-header" style="flex-wrap:wrap;gap:10px;">
           <div>
-            <div class="summary-title">TODO · 待办中心</div>
+            <h2 class="summary-title">TODO · 待办中心</h2>
             <div style="font-size:12px;color:var(--muted);">概览、四象限与多维列表三合一收敛视图</div>
           </div>
-          <div class="seg-pill-bar" id="todoViewSegBar">
-            <button type="button" class="seg-pill-btn active" id="viewBtnOverview" onclick="setTaskView('overview')">📊 概览</button>
-            <button type="button" class="seg-pill-btn" id="viewBtnMatrix" onclick="setTaskView('matrix')">田 四象限</button>
-            <button type="button" class="seg-pill-btn" id="viewBtnList" onclick="setTaskView('list')">☰ 列表</button>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <div class="seg-pill-bar" id="todoViewSegBar">
+              <button type="button" class="seg-pill-btn active" id="viewBtnOverview" onclick="setTaskView('overview')">📊 概览</button>
+              <button type="button" class="seg-pill-btn" id="viewBtnMatrix" onclick="setTaskView('matrix')">田 四象限</button>
+              <button type="button" class="seg-pill-btn" id="viewBtnList" onclick="setTaskView('list')">☰ 列表</button>
+            </div>
+            <button type="button" class="duodo-btn" onclick="openTaskSheet(null)">+ 新建任务</button>
           </div>
         </div>
 
@@ -3050,6 +3051,8 @@
 
   <script>
     let currentTaskView = 'overview';
+    let lastLoadedTasks = [];
+    let _countdownCache = { items: [], top_capsules: [], today_lunar: '' };
     let cachedTasksById = {};
     let editingMemoryId = null;
     let editingVersion = null;
@@ -3353,6 +3356,7 @@
       const data = await apiGet(`/api/tasks/matrix?sort_by=${sortBy}&include_done=${incDone}`);
       const c = data.summary_counts || {};
       const sorted = data.sorted_tasks || [];
+      lastLoadedTasks = sorted;
 
       const totalAll = (c.total_todo ?? 0) + (c.total_done ?? 0);
       const pct = totalAll ? Math.round(((c.total_done ?? 0) / totalAll) * 100) : 0;
@@ -6242,9 +6246,6 @@
           el.style.display = enabled ? '' : 'none';
         }
       });
-      if (mods.supervision === false && currentTimelineTab === 'sup') {
-        setTimelineTab('todo');
-      }
       const activePanel = document.querySelector('.panel.active');
       if (activePanel && !activeShareToken) {
         const pId = activePanel.id.replace('panel-', '');
@@ -6349,7 +6350,6 @@
       }
     }
 
-    let _countdownCache = { items: [], top_capsules: [], today_lunar: '' };
     let _cdSelectedColor = 'crimson';
     const _LUNAR_MONTHS_CN = ['正月','二月','三月','四月','五月','六月','七月','八月','九月','十月','冬月','腊月'];
     const _LUNAR_DAYS_CN = ['初一','初二','初三','初四','初五','初六','初七','初八','初九','初十','十一','十二','十三','十四','十五','十六','十七','十八','十九','二十','廿一','廿二','廿三','廿四','廿五','廿六','廿七','廿八','廿九','三十'];
