@@ -68,11 +68,11 @@
     .capture-form {
       display: flex;
       align-items: center;
-      gap: 4px;
-      background: #f2f6ff;
-      border: 1px solid #c4d4fa;
-      border-radius: 12px;
-      padding: 4px;
+      gap: 8px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 4px 6px 4px 12px;
     }
     .capture-form:focus-within, .main-input:focus {
       border-color: #6385e8;
@@ -83,13 +83,12 @@
       background: transparent;
       flex: 1;
       min-width: 0;
-      padding: 8px 10px;
+      padding: 5px 4px;
       outline: none;
-      color: #172554;
-      font-size: 15px;
+      font-size: 13px;
     }
-    .capture-form input::placeholder { color: #536685; }
-    .capture-form button { flex-shrink: 0; border-radius: 8px; font-weight: 600; }
+    .capture-icon { flex-shrink: 0; color: #94a3b8; }
+    .capture-form button { flex-shrink: 0; padding: 5px 12px; border-radius: 8px; font-size: 12px; }
     .capture-feedback {
       display: flex;
       justify-content: flex-end;
@@ -106,6 +105,12 @@
       font-size: 11.5px;
     }
     .top-actions { grid-area: actions; justify-self: end; display: flex; align-items: center; gap: 5px; }
+    .control-icon {
+      display: inline-block;
+      width: 1.15em;
+      margin-inline-end: 4px;
+      text-align: center;
+    }
     .top-actions > button, .header-account {
       padding: 8px 10px;
       border: 1px solid transparent;
@@ -928,7 +933,12 @@
     }
     .auth-cta-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 26px rgba(79, 70, 229, 0.34); }
 
-    /* Obsidian-Style Interactive Force-Directed Knowledge Graph */
+    /* Memory graph */
+    #panel-graph.active {
+      display: grid;
+      grid-template-rows: auto minmax(390px, 1fr);
+      min-height: calc(100dvh - var(--header-h) - 40px);
+    }
     .graph-toolbar-card {
       background: #ffffff;
       border: 1px solid #e2e8f0;
@@ -939,12 +949,34 @@
       gap: 10px;
       box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
     }
-    .graph-row {
+    .graph-toolbar-row, .graph-search, .graph-local-controls {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
       gap: 8px;
+      min-width: 0;
+    }
+    .graph-search { flex: 1; }
+    .graph-search .main-input { flex: 1; min-width: 0; }
+    .graph-search button, .graph-relations > summary { white-space: nowrap; }
+    .graph-local-controls { flex-wrap: wrap; font-size: 12px; }
+    .graph-local-controls[hidden] { display: none; }
+    #graphTypeSelect { display: none; }
+    .graph-relations { position: relative; font-size: 12px; z-index: 10; }
+    .graph-relations > summary { cursor: pointer; color: #334155; padding: 4px; }
+    .graph-relation-options {
+      position: absolute;
+      top: calc(100% + 4px);
+      right: 0;
+      width: min(310px, calc(100vw - 54px));
+      padding: 12px;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+    }
+    @media (max-width: 930px) {
+      #graphTypeChips { display: none; }
+      #graphTypeSelect { display: block; flex-shrink: 0; font-size: 12px; padding-inline: 6px; }
     }
     .graph-chip-bar {
       display: flex;
@@ -983,27 +1015,26 @@
     .graph-stage {
       position: relative;
       width: 100%;
-      height: calc(100vh - 255px);
-      min-height: 520px;
-      max-height: 760px;
+
       border-radius: 16px;
       overflow: hidden;
       border: 1px solid #1e293b;
-      background: radial-gradient(circle at 50% 40%, #131b2e 0%, #0b0f19 100%);
-      box-shadow: 0 14px 36px rgba(15, 23, 42, 0.16);
+      background: #111827;
     }
     .graph-stage.light-canvas {
       border-color: #cbd5e1;
-      background: radial-gradient(circle at 50% 40%, #ffffff 0%, #f1f5f9 100%);
-      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+      background: #f8fafc;
     }
     #graphCanvas {
+      position: absolute;
+      inset: 0;
       width: 100%;
       height: 100%;
       display: block;
       cursor: grab;
       touch-action: none;
     }
+    #graphCanvas:focus-visible { outline: 2px solid #60a5fa; outline-offset: -3px; }
     #graphCanvas.dragging { cursor: grabbing; }
     #graphCanvas.pointer { cursor: pointer; }
     .graph-hud-top {
@@ -1036,6 +1067,9 @@
       color: #334155;
       border-color: rgba(148, 163, 184, 0.35);
     }
+    .graph-legend { flex-wrap: wrap; column-gap: 8px; row-gap: 4px; border-radius: 10px; }
+    .graph-legend > span { white-space: nowrap; }
+    #graphZoomValue { min-width: 45px; justify-content: center; font-variant-numeric: tabular-nums; }
     .graph-legend-dot {
       display: inline-block;
       width: 8px;
@@ -1066,6 +1100,8 @@
       border: 1px solid rgba(148, 163, 184, 0.26);
       backdrop-filter: blur(8px);
     }
+    .graph-ctrl-btn.graph-text-btn { width: auto; padding-inline: 10px; font-size: 12px; }
+    .graph-ctrl-btn:disabled { cursor: default; }
     .graph-ctrl-btn:hover { background: rgba(30, 41, 59, 0.95); border-color: #60a5fa; }
     .graph-stage.light-canvas .graph-ctrl-btn {
       background: rgba(255, 255, 255, 0.92);
@@ -1101,8 +1137,7 @@
       box-shadow: -8px 0 28px rgba(0, 0, 0, 0.35);
       display: flex;
       flex-direction: column;
-      transform: translateX(calc(100% + 24px));
-      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      visibility: hidden;
       z-index: 8;
     }
     .graph-stage.light-canvas .graph-inspector {
@@ -1111,7 +1146,22 @@
       border-color: #cbd5e1;
       box-shadow: -8px 0 24px rgba(15, 23, 42, 0.12);
     }
-    .graph-inspector.open { transform: translateX(0); }
+    .graph-inspector.open { visibility: visible; }
+    @media (max-width: 768px) {
+      #panel-graph.active {
+        grid-template-rows: auto minmax(330px, 1fr);
+        min-height: calc(100dvh - var(--header-h) - 86px);
+      }
+      .graph-toolbar-card { padding: 10px; }
+      .graph-toolbar-row, .graph-search { gap: 4px; }
+      .graph-search .main-input, .graph-search button { padding-inline: 6px; }
+      .graph-relations > summary { padding-inline: 2px; }
+      .graph-relations .control-icon { display: none; }
+      .graph-hud-top { top: 8px; left: 8px; max-width: calc(100% - 16px); }
+      .graph-hud-pill { padding: 4px 8px; }
+      .graph-hud-controls { bottom: 8px; left: 8px; }
+      .graph-inspector { top: auto; bottom: 50px; max-height: 50%; }
+    }
     .graph-insp-head {
       padding: 12px 14px;
       border-bottom: 1px solid rgba(148, 163, 184, 0.2);
@@ -1168,7 +1218,8 @@
 
     <div class="header-composer">
       <form class="capture-form" onsubmit="event.preventDefault(); recordQuickNote()">
-        <input id="quickNoteInput" aria-label="记录待办或记忆" placeholder="记下待办或想法…" />
+        <span class="capture-icon" aria-hidden="true">🔍</span>
+        <input id="quickNoteInput" aria-label="记录待办或记忆" placeholder="一句话极速录入待办或记忆（如：明天必须修复微信支付超时 bug）..." />
         <button type="submit" class="primary">AI 录入</button>
       </form>
       <div class="capture-feedback" role="status">
@@ -1178,12 +1229,12 @@
     </div>
 
     <div class="top-actions">
-      <button type="button" onclick="runDream(this)">归纳卡片</button>
-      <button type="button" id="notifToggleBtn" onclick="toggleWebNotifications()">通知</button>
-      <button type="button" title="导出 Markdown 卡片" onclick="exportMarkdown(this)">导出</button>
-      <button type="button" id="syncMdBtn" title="同步 Markdown" onclick="syncMarkdown(this)">同步</button>
+      <button type="button" onclick="runDream(this)"><span class="control-icon" aria-hidden="true">🌙</span><span data-control-label>归纳卡片</span></button>
+      <button type="button" id="notifToggleBtn" onclick="toggleWebNotifications()"><span class="control-icon" aria-hidden="true">🔔</span><span data-control-label>通知</span></button>
+      <button type="button" title="导出 Markdown 卡片" onclick="exportMarkdown(this)"><span class="control-icon" aria-hidden="true">📂</span><span data-control-label>导出</span></button>
+      <button type="button" id="syncMdBtn" title="同步 Markdown" onclick="syncMarkdown(this)"><span class="control-icon" aria-hidden="true">🔄</span><span data-control-label>同步</span></button>
     </div>
-    <button type="button" class="header-account" id="accountBtn" onclick="openAuthModal()">登录</button>
+    <button type="button" class="header-account" id="accountBtn" onclick="openAuthModal()"><span class="control-icon" aria-hidden="true">👤</span><span data-control-label>登录</span></button>
   </header>
 
   <div class="workspace-shell">
@@ -1299,88 +1350,88 @@
       </nav>
     </section>
 
-    <!-- TAB 4: GRAPH CONTEXT (OBSIDIAN FORCE-DIRECTED CANVAS + LIST INSPECTOR) -->
+    <!-- TAB 4: MEMORY GRAPH -->
     <section id="panel-graph" class="panel">
       <div class="graph-toolbar-card">
-        <div class="graph-row">
-          <div class="btn-group" style="flex:1;min-width:260px;">
-            <input id="graphSeedInput" class="main-input" style="flex:1;max-width:380px;" aria-label="聚焦图谱" placeholder="输入关键词、卡片 ID 或链接…" onkeydown="if(event.key==='Enter' && !event.isComposing) loadGraph()" />
-            <select id="graphHopSelect" title="局部子图展开跳数" onchange="if(document.getElementById('graphSeedInput').value.trim()) loadGraph()">
-              <option value="1">1 跳邻居</option>
-              <option value="2" selected>2 跳子图</option>
-              <option value="3">3 跳深度</option>
-            </select>
-            <button type="button" id="graphLoadBtn" class="primary" onclick="loadGraph(this)">🕸️ 渲染图谱</button>
-            <button type="button" id="graphResetSeedBtn" style="display:none;" onclick="clearGraphSeed()">🌐 返回全局星图</button>
+        <div class="graph-toolbar-row">
+          <form class="graph-search" onsubmit="event.preventDefault(); searchGraph()">
+            <input id="graphSeedInput" class="main-input" type="search" aria-label="搜索图谱" placeholder="搜索关键词、卡片 ID 或链接" />
+            <button type="submit" id="graphLoadBtn" class="primary"><span class="control-icon" aria-hidden="true">🔍</span><span data-control-label>搜索</span></button>
+          </form>
+          <div class="graph-chip-bar" id="graphTypeChips" role="group" aria-label="卡片类型">
+            <button type="button" class="graph-chip active" data-gtype="" aria-pressed="true" onclick="selectGraphType('')">全部</button>
+            <button type="button" class="graph-chip" data-gtype="task" aria-pressed="false" onclick="selectGraphType('task')"><span class="control-icon" aria-hidden="true">📋</span>任务</button>
+            <button type="button" class="graph-chip" data-gtype="semantic" aria-pressed="false" onclick="selectGraphType('semantic')"><span class="control-icon" aria-hidden="true">🧠</span>事实</button>
+            <button type="button" class="graph-chip" data-gtype="preference" aria-pressed="false" onclick="selectGraphType('preference')"><span class="control-icon" aria-hidden="true">💛</span>偏好</button>
+            <button type="button" class="graph-chip" data-gtype="episodic" aria-pressed="false" onclick="selectGraphType('episodic')"><span class="control-icon" aria-hidden="true">📅</span>情景</button>
+            <button type="button" class="graph-chip" data-gtype="dream" aria-pressed="false" onclick="selectGraphType('dream')"><span class="control-icon" aria-hidden="true">🌙</span>归纳</button>
           </div>
-          <div class="btn-group">
-            <button type="button" id="graphViewCanvasBtn" class="active" onclick="setGraphViewMode('canvas')">🕸️ 力导向星图</button>
-            <button type="button" id="graphViewListBtn" onclick="setGraphViewMode('list')">📋 节点/边明细</button>
-          </div>
+          <select id="graphTypeSelect" aria-label="卡片类型" onchange="selectGraphType(this.value)">
+            <option value="">全部</option>
+            <option value="task">任务</option>
+            <option value="semantic">事实</option>
+            <option value="preference">偏好</option>
+            <option value="episodic">情景</option>
+            <option value="dream">归纳</option>
+          </select>
+          <details class="graph-relations">
+            <summary><span class="control-icon" aria-hidden="true">🔗</span>连线设置</summary>
+            <div class="graph-chip-bar graph-relation-options">
+              <label class="graph-layer-toggle" title="手动用双方括号引用另一张卡片">
+                <input type="checkbox" id="gLayerWikilink" checked onchange="onGraphLayerFilterChange()" /> 双链
+              </label>
+              <label class="graph-layer-toggle" title="归纳卡片与参与归纳的来源卡片之间的关系">
+                <input type="checkbox" id="gLayerDerived" checked onchange="onGraphLayerFilterChange()" /> 归纳来源
+              </label>
+              <label class="graph-layer-toggle" title="相似的卡片之间显示虚线">
+                <input type="checkbox" id="gLayerSemantic" checked onchange="loadGraph()" /> 主题相似
+              </label>
+              <label class="graph-layer-toggle" title="阈值越高，相似连线越少">
+                相似阈值
+                <input type="range" id="gSemThreshold" min="0.32" max="0.85" step="0.04" value="0.52" style="width:68px;padding:0;" oninput="document.getElementById('gSemVal').textContent=Number(this.value).toFixed(2)" onchange="loadGraph()" />
+                <output id="gSemVal">0.52</output>
+              </label>
+            </div>
+          </details>
         </div>
-
-        <div class="graph-row">
-          <div class="graph-chip-bar" id="graphTypeChips">
-            <button type="button" class="graph-chip active" data-gtype="" onclick="selectGraphType('', this)">全部节点</button>
-            <button type="button" class="graph-chip" data-gtype="task" onclick="selectGraphType('task', this)">📋 任务</button>
-            <button type="button" class="graph-chip" data-gtype="semantic" onclick="selectGraphType('semantic', this)">🧠 语义事实</button>
-            <button type="button" class="graph-chip" data-gtype="preference" onclick="selectGraphType('preference', this)">💛 偏好</button>
-            <button type="button" class="graph-chip" data-gtype="episodic" onclick="selectGraphType('episodic', this)">📅 情景</button>
-            <button type="button" class="graph-chip" data-gtype="dream" onclick="selectGraphType('dream', this)">🌙 Dream 洞察</button>
-          </div>
-
-          <div class="graph-chip-bar">
-            <select id="graphSubjectSelect" style="padding:4px 10px;font-size:12px;" onchange="loadGraph()">
-              <option value="">👤 全部主体</option>
-            </select>
-            <label class="graph-layer-toggle" title="显式 [[wikilink]] 双链实线边">
-              <input type="checkbox" id="gLayerWikilink" checked onchange="onGraphLayerFilterChange()" /> [[双链]]
-            </label>
-            <label class="graph-layer-toggle" title="Dream 睡眠归纳 derived_from 溯源边">
-              <input type="checkbox" id="gLayerDerived" checked onchange="onGraphLayerFilterChange()" /> Dream 溯源
-            </label>
-            <label class="graph-layer-toggle" title="向量高相似度隐式关联虚线边">
-              <input type="checkbox" id="gLayerSemantic" checked onchange="loadGraph()" /> 语义相似虚线
-            </label>
-            <label class="graph-layer-toggle" title="调整语义相似连线余弦阈值">
-              <span>阈值</span>
-              <input type="range" id="gSemThreshold" min="0.32" max="0.85" step="0.04" value="0.52" style="width:68px;padding:0;" oninput="document.getElementById('gSemVal').textContent=Number(this.value).toFixed(2)" onchange="loadGraph()" />
-              <code id="gSemVal" style="font-size:11px;">0.52</code>
-            </label>
-            <label class="graph-layer-toggle" title="显示尚未创建的 [[前向双链]] 悬空幽灵节点">
-              <input type="checkbox" id="gLayerGhost" checked onchange="loadGraph()" /> 悬空节点
-            </label>
-          </div>
+        <div id="graphLocalControls" class="graph-local-controls" hidden>
+          <label for="graphHopSelect">关联范围</label>
+          <select id="graphHopSelect" onchange="loadGraph()">
+            <option value="1">直接关联</option>
+            <option value="2" selected>展开 2 层</option>
+            <option value="3">展开 3 层</option>
+          </select>
+          <button type="button" onclick="clearGraphSeed()"><span class="control-icon" aria-hidden="true">🌐</span>返回全局</button>
         </div>
       </div>
 
       <div id="graphStageWrap" class="graph-stage">
-        <canvas id="graphCanvas"></canvas>
+        <canvas id="graphCanvas" tabindex="0" aria-label="记忆图谱。拖动画布平移，滚轮或双指缩放，也可用方向键、加减键和 0 操作。"></canvas>
 
         <div class="graph-hud-top">
           <div class="graph-hud-pill" id="graphStatsPill">加载图谱中...</div>
-          <div class="graph-hud-pill">
+          <div class="graph-hud-pill graph-legend">
             <span><i class="graph-legend-dot" style="background:#3b82f6;"></i>任务</span>
             <span><i class="graph-legend-dot" style="background:#8b5cf6;"></i>事实</span>
             <span><i class="graph-legend-dot" style="background:#f59e0b;"></i>偏好</span>
             <span><i class="graph-legend-dot" style="background:#14b8a6;"></i>情景</span>
-            <span><i class="graph-legend-dot" style="background:#ec4899;"></i>Dream✦</span>
+            <span><i class="graph-legend-dot" style="background:#ec4899;"></i>归纳</span>
             <span style="opacity:0.8;">━━ 双链 · ┈┈ 语义</span>
           </div>
         </div>
 
         <div class="graph-empty-hint" id="graphEmptyHint">
-          <div style="font-size:32px;">🕸️</div>
-          <div>当前筛选条件下暂无记忆节点</div>
+          <div id="graphEmptyLabel">当前筛选条件下暂无记忆节点</div>
           <div style="font-size:12px;opacity:0.8;">试试录入一条记忆，或调整图谱筛选条件。</div>
         </div>
 
-        <div class="graph-hud-controls">
-          <button type="button" class="graph-ctrl-btn" title="放大" onclick="zoomGraphBy(1.25)">＋</button>
-          <button type="button" class="graph-ctrl-btn" title="缩小" onclick="zoomGraphBy(0.8)">－</button>
-          <button type="button" class="graph-ctrl-btn" title="自适应居中全图" onclick="fitGraphCamera()">⟲</button>
-          <button type="button" class="graph-ctrl-btn" title="重新物理排布" onclick="reheatGraphPhysics()">⚡</button>
-          <button type="button" class="graph-ctrl-btn" id="graphThemeBtn" title="切换暗色星图 / 亮色画布" onclick="toggleGraphCanvasTheme()">☀️</button>
+        <div class="graph-hud-controls" role="group" aria-label="画布控制">
+          <button type="button" class="graph-ctrl-btn" id="graphZoomOutBtn" aria-label="缩小" title="缩小（-）" onclick="zoomGraphBy(0.8)">−</button>
+          <output class="graph-hud-pill" id="graphZoomValue" aria-label="当前缩放">100%</output>
+          <button type="button" class="graph-ctrl-btn" id="graphZoomInBtn" aria-label="放大" title="放大（+）" onclick="zoomGraphBy(1.25)">+</button>
+          <button type="button" class="graph-ctrl-btn graph-text-btn" title="适应全部节点（0）" onclick="fitGraphCamera()">适应</button>
+          <button type="button" class="graph-ctrl-btn graph-text-btn" title="重新排布节点" onclick="resetGraphLayout()">重排</button>
+          <button type="button" class="graph-ctrl-btn graph-text-btn" id="graphThemeBtn" onclick="toggleGraphCanvasTheme()">亮色</button>
         </div>
 
         <aside id="graphInspector" class="graph-inspector">
@@ -1395,16 +1446,6 @@
         </aside>
       </div>
 
-      <div id="graphListPanel" class="two-col" style="display:none;margin-top:12px;">
-        <div class="card-box">
-          <h3>🔗 关系边列表 (双链 / Dream 溯源 / 语义相似)</h3>
-          <div id="graphEdges" class="list-stack"></div>
-        </div>
-        <div class="card-box">
-          <h3>📍 图谱节点明细</h3>
-          <div id="graphNodes" class="list-stack"></div>
-        </div>
-      </div>
     </section>
 
     <!-- TAB 5: ASK & TRACE -->
@@ -1887,10 +1928,11 @@
     }
 
     async function withBtnBusy(btn, busyLabel, fn) {
-      const prevText = btn ? btn.textContent : '';
+      const label = btn?.querySelector('[data-control-label]') || btn;
+      const prevText = label?.textContent;
       if (btn) {
         btn.disabled = true;
-        if (busyLabel) btn.textContent = busyLabel;
+        if (busyLabel) label.textContent = busyLabel;
       }
       try {
         return await fn();
@@ -1899,7 +1941,7 @@
       } finally {
         if (btn) {
           btn.disabled = false;
-          if (busyLabel) btn.textContent = prevText;
+          if (busyLabel) label.textContent = prevText;
         }
       }
     }
@@ -1922,7 +1964,7 @@
       if (name === 'tasks') loadTasks().catch(handleErr);
       if (name === 'supervision') loadSupervisionBoard().catch(handleErr);
       if (name === 'memories') loadMemories().catch(handleErr);
-      if (name === 'graph') loadGraph().catch(handleErr);
+      if (name === 'graph' && !opts?.skipGraphLoad) loadGraph().catch(handleErr);
       if (name === 'ask') loadTraces().catch(handleErr);
       if (name === 'admin') loadAdminConsole().catch(handleErr);
     }
@@ -2667,19 +2709,22 @@
     function refreshNotifButtonUI() {
       const btn = document.getElementById('notifToggleBtn');
       if (!btn) return;
-      if (!isWebNotifEnabled()) {
-        btn.textContent = '通知已关';
+      const enabled = isWebNotifEnabled();
+      const label = btn.querySelector('[data-control-label]');
+      btn.querySelector('.control-icon').textContent = enabled ? '🔔' : '🔕';
+      if (!enabled) {
+        label.textContent = '通知已关';
         btn.title = '点击开启任务消息通知';
         return;
       }
       if ('Notification' in window && window.isSecureContext && Notification.permission === 'granted') {
-        btn.textContent = '通知已开';
+        label.textContent = '通知已开';
         btn.title = '系统浏览器通知 + 页内提示音已开启（点击测试或关闭）';
       } else if ('Notification' in window && window.isSecureContext && Notification.permission === 'denied') {
-        btn.textContent = '页内提醒';
+        label.textContent = '页内提醒';
         btn.title = '浏览器系统通知已被拒绝，当前使用页内提醒与提示音（可在浏览器地址栏开启权限）';
       } else {
-        btn.textContent = '开启通知';
+        label.textContent = '开启通知';
         btn.title = '点击授权系统浏览器通知并发送测试提醒';
       }
     }
@@ -2973,9 +3018,14 @@
       `;
     }
 
-    /* ==================== OBSIDIAN FORCE-DIRECTED GRAPH ENGINE ==================== */
+    /* Interactive graph */
     const graphState = {
-      viewMode: 'canvas',
+      query: '',
+      seed: '',
+      request: 0,
+      layoutKey: '',
+      autoFit: true,
+      fitOnSettle: false,
       lightCanvas: false,
       typeFilter: '',
       rawNodes: [],
@@ -2984,7 +3034,6 @@
       edges: [],
       nodeById: new Map(),
       adjById: new Map(),
-      stats: {},
       camX: 0,
       camY: 0,
       scale: 1,
@@ -2993,17 +3042,10 @@
       hoveredId: null,
       selectedId: null,
       draggingNode: null,
-      panning: false,
-      pointerDownX: 0,
-      pointerDownY: 0,
-      pointerMoved: false,
-      lastPointerX: 0,
-      lastPointerY: 0,
       eventsBound: false,
     };
 
     function graphNodeColor(n) {
-      if (n.is_ghost) return '#94a3b8';
       if (n.assertion_kind === 'inferred') return '#ec4899';
       if (n.memory_type === 'task') return n.task_status === 'done' ? '#10b981' : '#3b82f6';
       if (n.memory_type === 'semantic') return '#8b5cf6';
@@ -3013,253 +3055,228 @@
     }
 
     function graphNodeRadius(n) {
-      if (n.is_ghost) return 6.5;
       const deg = Number(n.degree || 0);
-      const base = n.hop === 0 && document.getElementById('graphSeedInput')?.value.trim() ? 9.5 : 7.0;
+      const base = n.hop === 0 && graphState.seed ? 9.5 : 7.0;
       return Math.min(22, base + Math.sqrt(deg) * 3.1);
-    }
-
-    function setGraphViewMode(mode) {
-      graphState.viewMode = mode;
-      document.getElementById('graphViewCanvasBtn').classList.toggle('active', mode === 'canvas');
-      document.getElementById('graphViewListBtn').classList.toggle('active', mode === 'list');
-      document.getElementById('graphStageWrap').style.display = mode === 'canvas' ? 'block' : 'none';
-      document.getElementById('graphListPanel').style.display = mode === 'list' ? 'grid' : 'none';
-      if (mode === 'canvas') {
-        resizeGraphCanvas();
-        requestGraphDraw();
-      }
     }
 
     function toggleGraphCanvasTheme() {
       graphState.lightCanvas = !graphState.lightCanvas;
       document.getElementById('graphStageWrap').classList.toggle('light-canvas', graphState.lightCanvas);
-      document.getElementById('graphThemeBtn').textContent = graphState.lightCanvas ? '🌙' : '☀️';
+      document.getElementById('graphThemeBtn').textContent = graphState.lightCanvas ? '暗色' : '亮色';
       requestGraphDraw();
     }
 
-    function selectGraphType(gtype, btn) {
-      graphState.typeFilter = gtype;
-      document.querySelectorAll('#graphTypeChips .graph-chip').forEach(el => {
-        el.classList.toggle('active', el === btn || el.dataset.gtype === gtype);
+    function selectGraphType(type) {
+      graphState.typeFilter = type;
+      document.getElementById('graphTypeSelect').value = type;
+      document.querySelectorAll('#graphTypeChips .graph-chip').forEach(button => {
+        const active = button.dataset.gtype === type;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', String(active));
       });
       loadGraph();
+    }
+
+    function searchGraph() {
+      return loadGraph(document.getElementById('graphSeedInput').value.trim());
     }
 
     function clearGraphSeed() {
-      const inp = document.getElementById('graphSeedInput');
-      if (inp) inp.value = '';
-      loadGraph();
+      document.getElementById('graphSeedInput').value = '';
+      loadGraph('');
     }
 
     async function focusNodeInGraph(memoryId) {
-      const tabBtn = document.querySelector('.tab-btn[data-tab="graph"]');
-      if (tabBtn) switchTab('graph', tabBtn);
-      setGraphViewMode('canvas');
+      if (!document.getElementById('panel-graph').classList.contains('active')) {
+        switchTab('graph', null, { skipGraphLoad: true });
+      }
       document.getElementById('graphSeedInput').value = memoryId;
-      await loadGraph();
+      if (!await loadGraph(memoryId)) return;
       const target = graphState.nodeById.get(memoryId);
-      if (target) selectGraphNode(target, true);
+      if (target) selectGraphNode(target);
     }
 
     function onGraphLayerFilterChange() {
-      rebuildGraphVisibleLayers(false);
-      renderGraphListFallback();
-      reheatGraphPhysics(0.35);
+      rebuildGraphVisibleLayers();
     }
 
-    function rebuildGraphVisibleLayers(resetPositions = false) {
-      const showWiki = document.getElementById('gLayerWikilink')?.checked !== false;
-      const showDerived = document.getElementById('gLayerDerived')?.checked !== false;
-      const showSem = document.getElementById('gLayerSemantic')?.checked !== false;
-      const showGhost = document.getElementById('gLayerGhost')?.checked !== false;
+    function rebuildGraphVisibleLayers() {
+      const showWiki = document.getElementById('gLayerWikilink').checked;
+      const showDerived = document.getElementById('gLayerDerived').checked;
+      const showSemantic = document.getElementById('gLayerSemantic').checked;
 
-      const prevPos = new Map();
-      for (const old of graphState.nodes) {
-        prevPos.set(old.id, { x: old.x, y: old.y, vx: old.vx || 0, vy: old.vy || 0 });
+      const nodes = graphState.rawNodes.map(raw => ({ ...raw, degree: 0 }));
+      const nodeById = new Map(nodes.map(node => [node.id, node]));
+      const adjById = new Map(nodes.map(node => [node.id, new Set()]));
+      const edges = [];
+      for (const edge of graphState.rawEdges) {
+        if ((edge.edge_kind === 'wikilink' && !showWiki) ||
+            (edge.edge_kind === 'derived_from' && !showDerived) ||
+            (edge.edge_kind === 'semantic' && !showSemantic)) continue;
+        const sourceNode = nodeById.get(edge.source);
+        const targetNode = nodeById.get(edge.target);
+        if (!sourceNode || !targetNode) continue;
+        sourceNode.degree++;
+        targetNode.degree++;
+        adjById.get(sourceNode.id).add(targetNode.id);
+        adjById.get(targetNode.id).add(sourceNode.id);
+        edges.push({ ...edge, sourceNode, targetNode });
       }
-
-      const filteredEdges = graphState.rawEdges.filter(e => {
-        if (e.edge_kind === 'wikilink' && !showWiki) return false;
-        if (e.edge_kind === 'derived_from' && !showDerived) return false;
-        if (e.edge_kind === 'semantic' && !showSem) return false;
-        if (e.edge_kind === 'ghost_ref' && (!showGhost || !showWiki)) return false;
-        return true;
-      });
-
-      const activeGhostTargets = new Set(
-        filteredEdges.filter(e => e.edge_kind === 'ghost_ref').map(e => e.target)
-      );
-
-      const filteredNodes = graphState.rawNodes.filter(n => {
-        if (n.is_ghost) return showGhost && activeGhostTargets.has(n.id);
-        return true;
-      });
-
-      const degMap = new Map();
-      for (const e of filteredEdges) {
-        degMap.set(e.source, (degMap.get(e.source) || 0) + 1);
-        degMap.set(e.target, (degMap.get(e.target) || 0) + 1);
-      }
-
-      const nodeById = new Map();
-      const simNodes = filteredNodes.map((raw, idx) => {
-        const deg = degMap.get(raw.id) || 0;
-        const copy = { ...raw, degree: deg };
-        copy.radius = graphNodeRadius(copy);
-        copy.color = graphNodeColor(copy);
-        const old = !resetPositions ? prevPos.get(raw.id) : null;
-        if (old && Number.isFinite(old.x) && Number.isFinite(old.y)) {
-          copy.x = old.x;
-          copy.y = old.y;
-          copy.vx = old.vx * 0.25;
-          copy.vy = old.vy * 0.25;
-        } else {
-          // Deterministic golden-angle phyllotaxis spiral
-          const angle = idx * 2.39996323;
-          const dist = 28 * Math.sqrt(idx + 1);
-          copy.x = Math.cos(angle) * dist;
-          copy.y = Math.sin(angle) * dist;
-          copy.vx = 0;
-          copy.vy = 0;
+      const layoutKey = JSON.stringify([
+        graphState.seed,
+        nodes.map(node => [node.id, node.title, node.hop, node.memory_type, node.task_status, node.assertion_kind]),
+        edges.map(edge => [edge.id, edge.weight, edge.label]),
+      ]);
+      document.getElementById('graphEmptyHint').style.display = nodes.length ? 'none' : 'flex';
+      document.getElementById('graphEmptyLabel').textContent =
+        graphState.seed ? '没有找到匹配的卡片' : '当前筛选下没有卡片';
+      if (graphState.layoutKey === layoutKey) {
+        for (const node of nodes) {
+          const rendered = graphState.nodeById.get(node.id);
+          rendered.summary = node.summary;
+          rendered.version = node.version;
         }
-        nodeById.set(copy.id, copy);
-        return copy;
-      });
-
-      const adjById = new Map();
-      const simEdges = [];
-      for (const e of filteredEdges) {
-        const s = nodeById.get(e.source);
-        const t = nodeById.get(e.target);
-        if (!s || !t) continue;
-        simEdges.push({ ...e, sourceNode: s, targetNode: t });
-        if (!adjById.has(s.id)) adjById.set(s.id, new Set());
-        if (!adjById.has(t.id)) adjById.set(t.id, new Set());
-        adjById.get(s.id).add(t.id);
-        adjById.get(t.id).add(s.id);
+        requestGraphDraw();
+        return;
       }
 
-      graphState.nodes = simNodes;
-      graphState.edges = simEdges;
+      graphState.layoutKey = layoutKey;
+      graphState.nodes = nodes;
+      graphState.edges = edges;
       graphState.nodeById = nodeById;
       graphState.adjById = adjById;
-
-      if (graphState.selectedId && !nodeById.has(graphState.selectedId)) {
-        closeGraphInspector();
+      graphState.draggingNode = null;
+      graphState.hoveredId = null;
+      if (graphState.selectedId) {
+        const selected = nodeById.get(graphState.selectedId);
+        if (selected) selectGraphNode(selected);
+        else closeGraphInspector();
       }
-      const emptyEl = document.getElementById('graphEmptyHint');
-      if (emptyEl) emptyEl.style.display = simNodes.length ? 'none' : 'flex';
-      updateGraphStatsHud();
+
+      const unlinked = nodes.filter(node => node.degree === 0).length;
+      const mode = graphState.seed ? '搜索结果' : '全局图谱';
+      document.getElementById('graphStatsPill').textContent =
+        `${mode} · ${nodes.length} 张卡片 · ${edges.length} 条连线${unlinked ? ` · ${unlinked} 张未连接` : ''}`;
+      resetGraphLayout();
     }
 
-    function updateGraphStatsHud() {
-      const pill = document.getElementById('graphStatsPill');
-      if (!pill) return;
-      const wikiCnt = graphState.edges.filter(e => e.edge_kind === 'wikilink' || e.edge_kind === 'ghost_ref').length;
-      const dreamCnt = graphState.edges.filter(e => e.edge_kind === 'derived_from').length;
-      const semCnt = graphState.edges.filter(e => e.edge_kind === 'semantic').length;
-      const coevCnt = graphState.edges.filter(e => e.edge_kind === 'co_evidence').length;
-      const seed = document.getElementById('graphSeedInput')?.value.trim();
-      const modeTag = seed ? `🎯 子图 (${document.getElementById('graphHopSelect')?.value || 2}跳)` : '🌐 全局图谱';
-      pill.textContent = `${modeTag} · 节点 ${graphState.nodes.length} · 双链 ${wikiCnt} · Dream ${dreamCnt}${coevCnt ? ` · 同源 ${coevCnt}` : ''} · 语义 ${semCnt}`;
-    }
-
-    function renderGraphListFallback() {
-      const edges = graphState.edges || [];
-      const nodes = graphState.nodes || [];
-      document.getElementById('graphEdges').innerHTML = edges.length
-        ? edges.map(e => {
-            const sTitle = e.sourceNode?.title || e.source;
-            const tTitle = e.targetNode?.title || e.target;
-            const badgeStyle = e.edge_kind === 'semantic'
-              ? '#e0e7ff;color:#3730a3'
-              : (e.resolved ? '#dcfce7;color:#166534' : '#fef3c7;color:#92400e');
-            const badgeText = e.edge_kind === 'semantic'
-              ? `语义虚线 (${esc(e.context || e.label)})`
-              : (e.resolved ? `✓ 已连线 (${esc(e.edge_kind)})` : '⏳ 悬空前向引用');
-            return `
-              <div class="mem-card">
-                <div>
-                  <strong>${esc(sTitle)}</strong>
-                  <strong style="color:var(--primary);margin:0 6px;">—[${esc(e.label || e.relation_type)}]→</strong>
-                  <strong>${esc(tTitle)}</strong>
-                </div>
-                <div class="meta-row">
-                  <span class="tag" style="background:${badgeStyle};">${badgeText}</span>
-                  ${e.context && e.edge_kind !== 'semantic' ? `<span>(${esc(e.context)})</span>` : ''}
-                </div>
-              </div>
-            `;
-          }).join('')
-        : `<div style="color:var(--muted);font-size:13px;">当前筛选下暂无关联边（可录入带 [[双链]] 的想法、开启语义相似虚线或运行 Dream 归纳）</div>`;
-
-      document.getElementById('graphNodes').innerHTML = nodes.length
-        ? nodes.map(n => `
-            <div class="mem-card" style="cursor:pointer;" onclick="setGraphViewMode('canvas'); const nd=graphState.nodeById.get('${esc(n.id)}'); if(nd) selectGraphNode(nd, true);">
-              <div>
-                <span class="tag" style="background:${n.color}22;color:${n.color};border:1px solid ${n.color}55;">${esc(n.memory_type)}</span>
-                <span class="tag">度数 ${n.degree}</span>
-                ${n.hop > 0 ? `<span class="tag">Hop ${n.hop}</span>` : ''}
-                <strong style="margin-left:4px;">${esc(n.title)}</strong>
-              </div>
-              <div style="font-size:12.5px;color:var(--muted);">${esc(n.uri)} · ${esc(n.summary)}</div>
-            </div>
-          `).join('')
-        : `<div style="color:var(--muted);font-size:13px;">当前空间暂无图谱节点</div>`;
-    }
-
-    async function loadGraph(btn) {
-      bindGraphCanvasEventsOnce();
-      const targetBtn = btn || document.getElementById('graphLoadBtn');
-      return withBtnBusy(targetBtn, '⏳ 渲染中...', async () => {
-        const seed = document.getElementById('graphSeedInput')?.value.trim() || '';
-        const hops = document.getElementById('graphHopSelect')?.value || '2';
-        const subj = document.getElementById('graphSubjectSelect')?.value || '';
-        const incSem = document.getElementById('gLayerSemantic')?.checked !== false;
-        const semThresh = document.getElementById('gSemThreshold')?.value || '0.52';
-        const incGhost = document.getElementById('gLayerGhost')?.checked !== false;
-
-        const resetSeedBtn = document.getElementById('graphResetSeedBtn');
-        if (resetSeedBtn) resetSeedBtn.style.display = seed ? 'inline-flex' : 'none';
-
-        const qs = new URLSearchParams({
-          seed,
-          memory_type: graphState.typeFilter,
-          subject: subj,
-          max_hops: hops,
-          include_semantic: incSem ? '1' : '0',
-          semantic_threshold: semThresh,
-          include_unresolved: incGhost ? '1' : '0',
-        });
-        const data = await apiGet(`/api/graph/canvas?${qs.toString()}`);
-        if (data.error) return showToast(`图谱加载失败: ${data.error}`);
-
-        // Sync available subject options without losing current selection
-        const subjSel = document.getElementById('graphSubjectSelect');
-        if (subjSel && data.stats?.subjects) {
-          const curVal = subjSel.value;
-          subjSel.innerHTML = `<option value="">👤 全部主体</option>` + data.stats.subjects.map(s => {
-            const label = s === 'self' ? '本人 (self)' : s;
-            return `<option value="${esc(s)}" ${s === curVal ? 'selected' : ''}>👤 ${esc(label)}</option>`;
-          }).join('');
+    function resetGraphLayout() {
+      const { nodes, adjById, nodeById } = graphState;
+      const remaining = new Set(nodes.filter(node => node.degree).map(node => node.id));
+      const components = [];
+      while (remaining.size) {
+        const id = remaining.values().next().value;
+        remaining.delete(id);
+        const component = [nodeById.get(id)];
+        for (const node of component) {
+          for (const neighbor of adjById.get(node.id)) {
+            if (remaining.delete(neighbor)) component.push(nodeById.get(neighbor));
+          }
         }
+        component.sort((a, b) => a.hop - b.hop || b.degree - a.degree);
+        components.push(component);
+      }
+      components.sort((a, b) => b.length - a.length);
 
-        const hadNodes = graphState.nodes.length > 0;
-        graphState.rawNodes = data.nodes || [];
-        graphState.rawEdges = data.edges || [];
-        graphState.stats = data.stats || {};
-
-        resizeGraphCanvas();
-        rebuildGraphVisibleLayers(false);
-        renderGraphListFallback();
-        if (!hadNodes) {
-          graphState.camX = 0;
-          graphState.camY = 0;
-          graphState.scale = 1;
-        }
-        reheatGraphPhysics(0.95);
+      // Pack connected groups into separate regions. Real cards without edges get their own grid.
+      const groups = components.map(members => {
+        const extent = 100 + Math.ceil(Math.sqrt(members.length) * 84);
+        return { members, width: extent, height: extent, columns: 0 };
       });
+      const isolated = nodes.filter(node => !node.degree);
+      if (isolated.length) {
+        const columns = Math.ceil(Math.sqrt(isolated.length));
+        groups.push({
+          members: isolated, columns,
+          width: 40 + columns * 90,
+          height: 40 + Math.ceil(isolated.length / columns) * 64,
+        });
+      }
+      const area = groups.reduce((sum, group) => sum + group.width * group.height, 0);
+      const rowLimit = Math.max(Math.sqrt(area) * 1.35, ...groups.map(group => group.width));
+      let left = 0;
+      let top = 0;
+      let rowHeight = 0;
+      for (const group of groups) {
+        if (left && left + group.width > rowLimit) {
+          top += rowHeight + 20;
+          left = 0;
+          rowHeight = 0;
+        }
+        const centerX = left + group.width / 2;
+        const centerY = top + group.height / 2;
+        group.members.forEach((node, index) => {
+          node.radius = graphNodeRadius(node);
+          node.color = graphNodeColor(node);
+          if (group.columns) {
+            node.x = left + 65 + (index % group.columns) * 90;
+            node.y = top + 52 + Math.floor(index / group.columns) * 64;
+            node.anchorX = node.x;
+            node.anchorY = node.y;
+          } else {
+            const angle = index * 2.39996323;
+            const distance = 38 * Math.sqrt(index);
+            node.x = centerX + Math.cos(angle) * distance;
+            node.y = centerY + Math.sin(angle) * distance;
+            node.anchorX = centerX;
+            node.anchorY = centerY;
+          }
+          node.vx = 0;
+          node.vy = 0;
+        });
+        left += group.width + 20;
+        rowHeight = Math.max(rowHeight, group.height);
+      }
+      fitGraphCamera();
+      graphState.fitOnSettle = true;
+      reheatGraphPhysics(0.8);
+    }
+
+    async function loadGraph(seed = graphState.query) {
+      bindGraphCanvasEventsOnce();
+      graphState.query = seed;
+      const request = ++graphState.request;
+      const button = document.getElementById('graphLoadBtn');
+      const label = button.querySelector('[data-control-label]');
+      const includeSemantic = document.getElementById('gLayerSemantic').checked;
+      const threshold = document.getElementById('gSemThreshold');
+      threshold.disabled = !includeSemantic;
+      const qs = new URLSearchParams({
+        seed,
+        memory_type: graphState.typeFilter,
+        max_hops: document.getElementById('graphHopSelect').value,
+        include_semantic: includeSemantic ? '1' : '0',
+        semantic_threshold: threshold.value,
+        include_unresolved: '0',
+      });
+      button.disabled = true;
+      label.textContent = '搜索中…';
+      try {
+        const data = await apiGet(`/api/graph/canvas?${qs}`);
+        if (request !== graphState.request) return false;
+        if (data.error) {
+          showToast(`图谱加载失败：${data.error}`);
+          return false;
+        }
+        if (graphState.seed !== seed) closeGraphInspector();
+        graphState.seed = seed;
+        graphState.rawNodes = (data.nodes || []).filter(node => !node.is_ghost);
+        graphState.rawEdges = data.edges || [];
+        document.getElementById('graphLocalControls').hidden = !seed;
+        const resized = resizeGraphCanvas();
+        rebuildGraphVisibleLayers();
+        if (resized && graphState.autoFit && !graphState.fitOnSettle) fitGraphCamera();
+        return true;
+      } catch (error) {
+        if (request === graphState.request) showToast(`图谱加载失败：${error?.message || error}`);
+        return false;
+      } finally {
+        if (request === graphState.request) {
+          label.textContent = '搜索';
+          button.disabled = false;
+        }
+      }
     }
 
     function resizeGraphCanvas() {
@@ -3274,7 +3291,9 @@
       if (canvas.width !== targetW || canvas.height !== targetH) {
         canvas.width = targetW;
         canvas.height = targetH;
+        return true;
       }
+      return false;
     }
 
     function screenToWorld(sx, sy) {
@@ -3311,12 +3330,12 @@
       }
       const alpha = graphState.alpha;
 
-      // 1. Pairwise Coulomb repulsion + gentle center gravity
+      // Repel nearby nodes and keep each group near its assigned region.
       for (let i = 0; i < nLen; i++) {
         const a = nodes[i];
         if (a !== graphState.draggingNode) {
-          a.vx -= a.x * 0.014 * alpha;
-          a.vy -= a.y * 0.014 * alpha;
+          a.vx += (a.anchorX - a.x) * 0.012 * alpha;
+          a.vy += (a.anchorY - a.y) * 0.012 * alpha;
         }
         for (let j = i + 1; j < nLen; j++) {
           const b = nodes[j];
@@ -3350,7 +3369,7 @@
         const dx = t.x - s.x;
         const dy = t.y - s.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const restLen = e.edge_kind === 'semantic' ? 148 : (e.edge_kind === 'ghost_ref' ? 98 : 112);
+        const restLen = e.edge_kind === 'semantic' ? 148 : 112;
         const k = (e.edge_kind === 'semantic' ? 0.028 : 0.055) * (e.weight || 0.8) * alpha;
         const force = (dist - restLen) * k;
         const fx = (dx / dist) * force;
@@ -3425,7 +3444,7 @@
 
         ctx.save();
         if (e.dashed) {
-          ctx.setLineDash(e.edge_kind === 'ghost_ref' ? [2.5, 4] : [5, 5]);
+          ctx.setLineDash([5, 5]);
         }
         let stroke = isLight ? 'rgba(100,116,139,0.45)' : 'rgba(148,163,184,0.42)';
         if (e.edge_kind === 'derived_from') stroke = isHighlighted ? '#f472b6' : 'rgba(236,72,153,0.55)';
@@ -3482,7 +3501,7 @@
       }
 
       // 2. Draw Nodes & Titles
-      const seedVal = document.getElementById('graphSeedInput')?.value.trim();
+      const seedVal = graphState.seed;
       for (const n of graphState.nodes) {
         const isFocus = n.id === focusId;
         const isNb = focusId ? focusNeighbors.has(n.id) : false;
@@ -3502,25 +3521,11 @@
 
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
-        if (n.is_ghost) {
-          ctx.fillStyle = isLight ? 'rgba(241,245,249,0.9)' : 'rgba(30,41,59,0.85)';
-          ctx.fill();
-          ctx.setLineDash([2.5, 2.5]);
-          ctx.lineWidth = 1.6;
-          ctx.strokeStyle = '#94a3b8';
-          ctx.stroke();
-        } else {
-          ctx.fillStyle = n.color;
-          if (isFocus || isNb) {
-            ctx.shadowColor = n.color;
-            ctx.shadowBlur = isFocus ? 16 : 9;
-          }
-          ctx.fill();
-          ctx.shadowBlur = 0;
-          ctx.lineWidth = isSelected ? 2.6 : 1.4;
-          ctx.strokeStyle = isSelected ? '#ffffff' : (isLight ? '#ffffff' : 'rgba(15,23,42,0.85)');
-          ctx.stroke();
-        }
+        ctx.fillStyle = n.color;
+        ctx.fill();
+        ctx.lineWidth = isSelected ? 2.6 : 1.4;
+        ctx.strokeStyle = isSelected || isLight ? '#ffffff' : '#111827';
+        ctx.stroke();
 
         // Dream star glyph inside inferred insight nodes
         if (n.assertion_kind === 'inferred') {
@@ -3531,25 +3536,51 @@
           ctx.fillText('✦', n.x, n.y + 0.5);
         }
 
-        // Label visibility: always show on hover/neighbor/hubs or when zoomed >= 0.72
-        const showLabel = isFocus || isNb || isSelected || n.degree >= 2 || graphState.scale >= 0.72 || graphState.nodes.length <= 36;
-        if (showLabel) {
-          const maxChars = isFocus ? 28 : 15;
-          const rawTitle = String(n.title || '');
-          const label = rawTitle.length > maxChars ? rawTitle.slice(0, maxChars) + '…' : rawTitle;
-          const fontSize = Math.max(10.5, Math.min(13.5, 11.5 / Math.pow(graphState.scale, 0.25)));
-          ctx.font = `${isFocus || isSelected ? '700' : '500'} ${fontSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'top';
-          ctx.fillStyle = isLight ? '#0f172a' : '#f1f5f9';
-          ctx.strokeStyle = isLight ? 'rgba(255,255,255,0.9)' : 'rgba(11,15,25,0.88)';
-          ctx.lineWidth = 3;
-          ctx.strokeText(label, n.x, n.y + n.radius + 4);
-          ctx.fillText(label, n.x, n.y + n.radius + 4);
-        }
         ctx.restore();
       }
+      drawGraphLabels(ctx, w, h, focusId, focusNeighbors, isLight);
+      ctx.restore();
+    }
 
+    function drawGraphLabels(ctx, width, height, focusId, neighbors, isLight) {
+      const { nodes, scale, seed, selectedId, camX, camY } = graphState;
+      const labelRank = node => {
+        if (node.id === focusId || node.id === selectedId) return 3;
+        if (seed && node.hop === 0) return 2;
+        return neighbors?.has(node.id) ? 1 : 0;
+      };
+      // Allocate less text when many cards share a narrow viewport.
+      const candidates = nodes.filter(node => !focusId || labelRank(node))
+        .sort((a, b) => labelRank(b) - labelRank(a) || b.degree - a.degree);
+      const labelLimit = Math.max(6, Math.floor(width * height / (scale < 0.8 ? 9500 : 6500)));
+      const placed = [];
+      const fontSize = Math.max(11, Math.min(14, 12 * scale));
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = isLight ? '#0f172a' : '#f1f5f9';
+      ctx.strokeStyle = isLight ? '#f8fafc' : '#111827';
+      ctx.lineWidth = 3 / scale;
+      for (const node of candidates) {
+        if (placed.length >= labelLimit) break;
+        const rank = labelRank(node);
+        const letters = [...String(node.title || '')];
+        const limit = rank >= 2 ? 26 : 14;
+        const label = letters.length > limit ? letters.slice(0, limit).join('') + '…' : letters.join('');
+        if (!label) continue;
+        ctx.font = `${rank >= 2 ? 600 : 500} ${fontSize / scale}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;
+        const textY = node.y + node.radius + 4 / scale;
+        const x = node.x * scale + width / 2 + camX;
+        const y = textY * scale + height / 2 + camY;
+        const halfWidth = ctx.measureText(label).width * scale / 2 + 3;
+        const box = { left: x - halfWidth, right: x + halfWidth, top: y, bottom: y + fontSize + 3 };
+        if (box.left < 0 || box.right > width || box.top < 0 || box.bottom > height) continue;
+        if (placed.some(other => box.left < other.right && box.right > other.left &&
+          box.top < other.bottom && box.bottom > other.top)) continue;
+        placed.push(box);
+        ctx.strokeText(label, node.x, textY);
+        ctx.fillText(label, node.x, textY);
+      }
       ctx.restore();
     }
 
@@ -3558,8 +3589,9 @@
       const tick = () => {
         graphState.rafId = 0;
         const panel = document.getElementById('panel-graph');
-        if (!panel || !panel.classList.contains('active') || graphState.viewMode !== 'canvas') return;
+        if (!panel.classList.contains('active')) return;
         const moving = stepGraphPhysics();
+        if (!moving && graphState.fitOnSettle) fitGraphCamera();
         drawGraphFrame();
         if (moving || graphState.draggingNode) {
           graphState.rafId = requestAnimationFrame(tick);
@@ -3573,43 +3605,63 @@
       requestGraphDraw();
     }
 
-    function zoomGraphBy(factor, centerSx = null, centerSy = null) {
-      const wrap = document.getElementById('graphStageWrap');
-      if (!wrap) return;
-      const rect = wrap.getBoundingClientRect();
-      const sx = centerSx !== null ? centerSx : rect.width * 0.5;
-      const sy = centerSy !== null ? centerSy : rect.height * 0.5;
-      const worldBefore = screenToWorld(sx, sy);
-      graphState.scale = Math.max(0.25, Math.min(3.6, graphState.scale * factor));
-      const cx = rect.width * 0.5;
-      const cy = rect.height * 0.5;
-      graphState.camX = sx - cx - worldBefore.x * graphState.scale;
-      graphState.camY = sy - cy - worldBefore.y * graphState.scale;
+    const GRAPH_MIN_ZOOM = 0.12;
+    const GRAPH_MAX_ZOOM = 3.6;
+
+    function setGraphScale(scale) {
+      graphState.scale = Math.max(GRAPH_MIN_ZOOM, Math.min(GRAPH_MAX_ZOOM, scale));
+      document.getElementById('graphZoomValue').value = Math.round(graphState.scale * 100) + '%';
+      document.getElementById('graphZoomInBtn').disabled = graphState.scale >= GRAPH_MAX_ZOOM;
+      document.getElementById('graphZoomOutBtn').disabled = graphState.scale <= GRAPH_MIN_ZOOM;
+    }
+
+    function moveGraphCamera(dx, dy) {
+      graphState.autoFit = false;
+      graphState.fitOnSettle = false;
+      graphState.camX += dx;
+      graphState.camY += dy;
       requestGraphDraw();
     }
 
+    function zoomGraphBy(factor, x, y) {
+      const rect = document.getElementById('graphStageWrap').getBoundingClientRect();
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      const anchorX = x ?? centerX;
+      const anchorY = y ?? centerY;
+      const world = screenToWorld(anchorX, anchorY);
+      setGraphScale(graphState.scale * factor);
+      moveGraphCamera(
+        anchorX - centerX - world.x * graphState.scale - graphState.camX,
+        anchorY - centerY - world.y * graphState.scale - graphState.camY,
+      );
+    }
+
     function fitGraphCamera() {
-      const nodes = graphState.nodes;
-      const wrap = document.getElementById('graphStageWrap');
-      if (!nodes.length || !wrap) {
-        graphState.camX = 0; graphState.camY = 0; graphState.scale = 1;
+      const { nodes } = graphState;
+      graphState.autoFit = true;
+      graphState.fitOnSettle = false;
+      if (!nodes.length) {
+        setGraphScale(1);
+        graphState.camX = 0;
+        graphState.camY = 0;
         requestGraphDraw();
         return;
       }
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      for (const n of nodes) {
-        minX = Math.min(minX, n.x - n.radius);
-        maxX = Math.max(maxX, n.x + n.radius);
-        minY = Math.min(minY, n.y - n.radius);
-        maxY = Math.max(maxY, n.y + n.radius);
-      }
+      const wrap = document.getElementById('graphStageWrap');
       const rect = wrap.getBoundingClientRect();
-      const spanW = Math.max(120, maxX - minX + 90);
-      const spanH = Math.max(120, maxY - minY + 90);
-      const scale = Math.max(0.32, Math.min(1.65, Math.min(rect.width / spanW, rect.height / spanH) * 0.88));
-      graphState.scale = scale;
-      graphState.camX = -((minX + maxX) * 0.5) * scale;
-      graphState.camY = -((minY + maxY) * 0.5) * scale;
+      if (!rect.width || !rect.height) return;
+      const minX = Math.min(...nodes.map(node => node.x - node.radius));
+      const maxX = Math.max(...nodes.map(node => node.x + node.radius));
+      const minY = Math.min(...nodes.map(node => node.y - node.radius));
+      const maxY = Math.max(...nodes.map(node => node.y + node.radius));
+      const topInset = wrap.querySelector('.graph-hud-top').offsetHeight + 24;
+      const bottomInset = wrap.querySelector('.graph-hud-controls').offsetHeight + 24;
+      const width = Math.max(80, rect.width - 32);
+      const height = Math.max(80, rect.height - topInset - bottomInset);
+      setGraphScale(Math.min(1.5, width / (maxX - minX + 48), height / (maxY - minY + 48)));
+      graphState.camX = -(minX + maxX) / 2 * graphState.scale;
+      graphState.camY = (topInset - bottomInset) / 2 - (minY + maxY) / 2 * graphState.scale;
       requestGraphDraw();
     }
 
@@ -3623,8 +3675,10 @@
       if (!node) return;
       graphState.selectedId = node.id;
       if (centerCamera) {
-        graphState.camX = -node.x * graphState.scale;
-        graphState.camY = -node.y * graphState.scale;
+        moveGraphCamera(
+          -node.x * graphState.scale - graphState.camX,
+          -node.y * graphState.scale - graphState.camY,
+        );
       }
       requestGraphDraw();
 
@@ -3642,27 +3696,13 @@
         ? nbEdges.map(e => {
             const other = e.source === node.id ? e.targetNode : e.sourceNode;
             const arrow = e.source === node.id ? '→' : '←';
-            return `<span class="graph-nb-pill" onclick="const nd=graphState.nodeById.get('${esc(other.id)}'); if(nd) selectGraphNode(nd, true);">${arrow} ${esc(other.title)} <small style="opacity:0.75;">(${esc(e.label)})</small></span>`;
+            return `<button type="button" class="graph-nb-pill" onclick="const nd=graphState.nodeById.get('${esc(other.id)}'); if(nd) selectGraphNode(nd, true);">${arrow} ${esc(other.title)} <small style="opacity:0.75;">(${esc(e.label)})</small></button>`;
           }).join('')
         : '<span style="opacity:0.68;">暂无直接连线邻居</span>';
 
-      if (node.is_ghost) {
-        badgesEl.innerHTML = `<span class="tag" style="background:#fef3c7;color:#92400e;">⏳ 未创建的悬空双链节点</span>`;
-        bodyEl.innerHTML = `
-          <div class="graph-insp-card">${esc(node.summary)}</div>
-          <div>
-            <div style="font-weight:600;margin-bottom:4px;">🔗 引用它的上游节点 (${nbEdges.length})</div>
-            <div>${nbHtml}</div>
-          </div>
-          <button type="button" class="duodo-btn" style="width:100%;margin-top:6px;" onclick="openNewMemoryModal(${JSON.stringify(node.title).replace(/"/g, '&quot;')})">✨ 立即创建「${esc(node.title)}」并自动连线</button>
-        `;
-        return;
-      }
-
       badgesEl.innerHTML = `
         <span class="tag" style="background:${node.color}28;color:${node.color};border:1px solid ${node.color}66;">${esc(node.memory_type)}</span>
-        <span class="tag">${node.assertion_kind === 'inferred' ? '🌙 Dream 推断' : '📝 原话陈述'}</span>
-        <span class="tag">👤 ${esc(node.subject === 'self' ? '本人' : node.subject)}</span>
+        <span class="tag">${node.assertion_kind === 'inferred' ? '归纳' : '原话陈述'}</span>
         <span class="tag">v${node.version}</span>
       `;
 
@@ -3670,13 +3710,13 @@
         <div style="font-size:11.5px;opacity:0.75;word-break:break-all;"><code>${esc(node.uri)}</code></div>
         <div class="graph-insp-card">${esc(node.summary)}</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;">
-          <button type="button" class="ghost-dark" onclick="document.getElementById('graphSeedInput').value='${esc(node.memory_id)}'; loadGraph();">🎯 聚焦子图</button>
+          <button type="button" class="ghost-dark" onclick="focusNodeInGraph('${esc(node.memory_id)}')">查看关联</button>
           <button type="button" class="ghost-dark" onclick="openDetail('${esc(node.memory_id)}', 'form')">✏️ 编辑</button>
           <button type="button" class="ghost-dark" onclick="openDetail('${esc(node.memory_id)}', 'markdown')">📝 Markdown</button>
-          <button type="button" class="ghost-dark" onclick="openDetail('${esc(node.memory_id)}', 'provenance')">🔎 完整溯源</button>
+          <button type="button" class="ghost-dark" onclick="openDetail('${esc(node.memory_id)}', 'provenance')">查看原话</button>
         </div>
         <div>
-          <div style="font-weight:600;margin-bottom:4px;">🕸️ 1 跳关联邻居 (${nbEdges.length})</div>
+          <div style="font-weight:600;margin-bottom:4px;">直接关联 (${nbEdges.length})</div>
           <div>${nbHtml}</div>
         </div>
         <div id="gInspDetailAsync" style="opacity:0.75;">⏳ 正在加载支撑原话与版本演化链...</div>
@@ -3713,111 +3753,136 @@
 
     function bindGraphCanvasEventsOnce() {
       if (graphState.eventsBound) return;
+      graphState.eventsBound = true;
       const canvas = document.getElementById('graphCanvas');
       const wrap = document.getElementById('graphStageWrap');
-      if (!canvas || !wrap) return;
-      graphState.eventsBound = true;
-
       if (typeof ResizeObserver !== 'undefined') {
         new ResizeObserver(() => {
-          resizeGraphCanvas();
+          if (!resizeGraphCanvas()) return;
+          if (graphState.autoFit && !graphState.fitOnSettle) fitGraphCamera();
           requestGraphDraw();
         }).observe(wrap);
       }
 
-      const localXY = (ev) => {
-        const r = wrap.getBoundingClientRect();
-        return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+      const pointers = new Map();
+      let moved = false;
+      let grabOffset = null;
+      const localPoint = event => {
+        const rect = wrap.getBoundingClientRect();
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
       };
+      const midpoint = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+      const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
-      canvas.addEventListener('pointerdown', (ev) => {
-        canvas.setPointerCapture(ev.pointerId);
-        const pt = localXY(ev);
-        graphState.pointerDownX = pt.x;
-        graphState.pointerDownY = pt.y;
-        graphState.lastPointerX = pt.x;
-        graphState.lastPointerY = pt.y;
-        graphState.pointerMoved = false;
-
-        const hit = findNodeAtScreen(pt.x, pt.y);
-        if (hit) {
-          graphState.draggingNode = hit;
-          canvas.classList.add('dragging');
-          reheatGraphPhysics(0.35);
-        } else {
-          graphState.panning = true;
-          canvas.classList.add('dragging');
-        }
-      });
-
-      canvas.addEventListener('pointermove', (ev) => {
-        const pt = localXY(ev);
-        const dx = pt.x - graphState.lastPointerX;
-        const dy = pt.y - graphState.lastPointerY;
-        graphState.lastPointerX = pt.x;
-        graphState.lastPointerY = pt.y;
-
-        if (Math.hypot(pt.x - graphState.pointerDownX, pt.y - graphState.pointerDownY) > 4) {
-          graphState.pointerMoved = true;
-        }
-
-        if (graphState.draggingNode) {
-          const wpt = screenToWorld(pt.x, pt.y);
-          graphState.draggingNode.x = wpt.x;
-          graphState.draggingNode.y = wpt.y;
-          reheatGraphPhysics(0.28);
+      canvas.addEventListener('pointerdown', event => {
+        if (event.button !== 0 || pointers.size >= 2) return;
+        const point = localPoint(event);
+        pointers.set(event.pointerId, { start: point, previous: point });
+        canvas.setPointerCapture(event.pointerId);
+        canvas.classList.add('dragging');
+        if (pointers.size === 2) {
+          moved = true;
+          grabOffset = null;
+          graphState.draggingNode = null;
           return;
         }
-        if (graphState.panning) {
-          graphState.camX += dx;
-          graphState.camY += dy;
-          requestGraphDraw();
-          return;
-        }
-
-        const hit = findNodeAtScreen(pt.x, pt.y);
-        const nextHover = hit ? hit.id : null;
-        canvas.classList.toggle('pointer', Boolean(hit));
-        if (nextHover !== graphState.hoveredId) {
-          graphState.hoveredId = nextHover;
-          requestGraphDraw();
-        }
+        moved = false;
+        const node = findNodeAtScreen(point.x, point.y);
+        const world = screenToWorld(point.x, point.y);
+        grabOffset = node ? { id: node.id, x: node.x - world.x, y: node.y - world.y } : null;
       });
 
-      const finishPointer = (ev) => {
-        const pt = localXY(ev);
-        const wasDraggingNode = graphState.draggingNode;
-        graphState.draggingNode = null;
-        graphState.panning = false;
-        canvas.classList.remove('dragging');
-
-        if (!graphState.pointerMoved) {
-          const hit = wasDraggingNode || findNodeAtScreen(pt.x, pt.y);
-          if (hit) {
-            selectGraphNode(hit, false);
-          } else {
-            closeGraphInspector();
+      canvas.addEventListener('pointermove', event => {
+        const point = localPoint(event);
+        const pointer = pointers.get(event.pointerId);
+        if (!pointer) {
+          if (event.pointerType === 'touch' || pointers.size) return;
+          const hit = findNodeAtScreen(point.x, point.y);
+          canvas.classList.toggle('pointer', Boolean(hit));
+          if (graphState.hoveredId !== (hit?.id ?? null)) {
+            graphState.hoveredId = hit?.id ?? null;
+            requestGraphDraw();
           }
-        } else if (wasDraggingNode) {
-          reheatGraphPhysics(0.22);
+          return;
         }
-      };
 
-      canvas.addEventListener('pointerup', finishPointer);
-      canvas.addEventListener('pointercancel', finishPointer);
-      canvas.addEventListener('pointerleave', () => {
-        if (!graphState.draggingNode && graphState.hoveredId) {
-          graphState.hoveredId = null;
-          requestGraphDraw();
+        const previous = pointer.previous;
+        if (pointers.size === 2) {
+          const second = [...pointers.values()].find(other => other !== pointer).previous;
+          const from = midpoint(previous, second);
+          const to = midpoint(point, second);
+          const oldDistance = distance(previous, second);
+          if (oldDistance > 0) zoomGraphBy(distance(point, second) / oldDistance, from.x, from.y);
+          moveGraphCamera(to.x - from.x, to.y - from.y);
+        } else {
+          if (!moved && distance(point, pointer.start) < 4) return;
+          moved = true;
+          const node = grabOffset && graphState.nodeById.get(grabOffset.id);
+          if (node) {
+            const world = screenToWorld(point.x, point.y);
+            graphState.autoFit = false;
+            graphState.fitOnSettle = false;
+            graphState.draggingNode = node;
+            node.x = world.x + grabOffset.x;
+            node.y = world.y + grabOffset.y;
+            reheatGraphPhysics(0.25);
+          } else {
+            moveGraphCamera(point.x - previous.x, point.y - previous.y);
+          }
         }
+        pointer.previous = point;
       });
 
-      canvas.addEventListener('wheel', (ev) => {
-        ev.preventDefault();
-        const pt = localXY(ev);
-        const factor = ev.deltaY < 0 ? 1.12 : 0.89;
-        zoomGraphBy(factor, pt.x, pt.y);
+      function finishPointer(event) {
+        if (!pointers.delete(event.pointerId) || pointers.size) return;
+        const dragged = graphState.draggingNode;
+        graphState.draggingNode = null;
+        grabOffset = null;
+        canvas.classList.remove('dragging');
+        if (dragged) {
+          dragged.anchorX = dragged.x;
+          dragged.anchorY = dragged.y;
+          reheatGraphPhysics(0.18);
+        }
+        if (!moved && event.type === 'pointerup') {
+          const point = localPoint(event);
+          const node = findNodeAtScreen(point.x, point.y);
+          if (node) selectGraphNode(node);
+          else closeGraphInspector();
+        }
+      }
+
+      for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+        canvas.addEventListener(type, finishPointer);
+      }
+      canvas.addEventListener('pointerleave', () => {
+        graphState.hoveredId = null;
+        canvas.classList.remove('pointer');
+        requestGraphDraw();
+      });
+
+      canvas.addEventListener('wheel', event => {
+        event.preventDefault();
+        const point = localPoint(event);
+        const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? canvas.clientHeight : 1);
+        zoomGraphBy(Math.exp(-0.002 * Math.max(-200, Math.min(200, delta))), point.x, point.y);
       }, { passive: false });
+
+      canvas.addEventListener('keydown', event => {
+        switch (event.key) {
+          case '+':
+          case '=': zoomGraphBy(1.25); break;
+          case '-': zoomGraphBy(0.8); break;
+          case '0': fitGraphCamera(); break;
+          case 'ArrowLeft': moveGraphCamera(40, 0); break;
+          case 'ArrowRight': moveGraphCamera(-40, 0); break;
+          case 'ArrowUp': moveGraphCamera(0, 40); break;
+          case 'ArrowDown': moveGraphCamera(0, -40); break;
+          case 'Escape': closeGraphInspector(); break;
+          default: return;
+        }
+        event.preventDefault();
+      });
     }
 
     function renderMarkdownHtml(text) {
@@ -4227,7 +4292,7 @@
       const adminTab = document.getElementById('adminTabBtn');
       const syncBtn = document.getElementById('syncMdBtn');
       const isAdmin = currentUser?.role === 'admin';
-      btn.textContent = currentUser ? '账号' : '登录';
+      btn.querySelector('[data-control-label]').textContent = currentUser ? '账号' : '登录';
       btn.title = currentUser?.display_name || currentUser?.username || '';
       adminTab.style.display = isAdmin ? 'flex' : 'none';
       syncBtn.hidden = Boolean(currentUser) && !isAdmin;
