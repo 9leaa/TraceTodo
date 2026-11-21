@@ -346,15 +346,17 @@ class CalendarService:
                 }
             )
 
-        # 3. Project active RawNote / Journal counts by date
+        # 3. Project active RawNote / Memo / Journal counts by date
         note_rows = self.db.query_all(
             """
-            SELECT substr(event_time, 1, 10) AS ymd, source_type, COUNT(*) AS cnt
+            SELECT CASE WHEN note_kind = 'journal' AND journal_date != '' THEN journal_date ELSE substr(event_time, 1, 10) END AS ymd,
+                   note_kind, source_type, COUNT(*) AS cnt
             FROM raw_notes
             WHERE space_id = ? AND is_forgotten = 0
               AND content NOT LIKE '[Task %'
-              AND substr(event_time, 1, 10) >= ? AND substr(event_time, 1, 10) <= ?
-            GROUP BY substr(event_time, 1, 10), source_type
+              AND (CASE WHEN note_kind = 'journal' AND journal_date != '' THEN journal_date ELSE substr(event_time, 1, 10) END) >= ?
+              AND (CASE WHEN note_kind = 'journal' AND journal_date != '' THEN journal_date ELSE substr(event_time, 1, 10) END) <= ?
+            GROUP BY ymd, note_kind, source_type
             """,
             (sp, start_ymd, end_ymd),
         )
@@ -364,11 +366,10 @@ class CalendarService:
             if day_bucket is None:
                 continue
             cnt = int(n_row["cnt"] or 0)
+            nk = str(n_row["note_kind"] or "note")
             src = str(n_row["source_type"] or "")
-            # Exclude synthetic internal "[Task Card]" notes from user-facing note badge if desired,
-            # or count user notes/journals cleanly:
             day_bucket["note_count"] += cnt
-            if src == "journal":
+            if nk == "journal" or src == "journal":
                 day_bucket["journal_count"] += cnt
 
         # 4. Project countdown / anniversary badges if countdown_provider is wired

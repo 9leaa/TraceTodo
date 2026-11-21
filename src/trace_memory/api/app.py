@@ -737,6 +737,64 @@ class ApiDispatcher:
                 )
                 return 200, {"deleted": del_ok}
 
+            if method == "GET" and path == "/api/memos/list":
+                lim = _safe_int(qp.get("limit", ["80"])[0], name="limit", default=80, min_val=1, max_val=200)
+                q_str = qp.get("q", [""])[0].strip()
+                tag_str = qp.get("tag", [""])[0].strip()
+                pin_only = qp.get("pinned_only", ["false"])[0].strip().lower() in ("true", "1", "yes")
+                return 200, self.container.memo_journal_service.list_memos(
+                    space_id=space_id,
+                    q=q_str,
+                    tag=tag_str,
+                    pinned_only=pin_only,
+                    limit=int(lim or 80),
+                )
+
+            if method == "POST" and path == "/api/memos/save":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                actor_name = str(payload.get("actor_id") or (user.username if user else "user"))
+                return 200, self.container.memo_journal_service.save_memo(
+                    space_id=space_id,
+                    payload=payload,
+                    actor_id=actor_name,
+                )
+
+            if method == "POST" and path == "/api/memos/pin":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                pinned_memo = self.container.memo_journal_service.toggle_pin(
+                    space_id=space_id,
+                    note_id=str(payload.get("note_id", "")),
+                    pinned=bool(payload.get("pinned", True)),
+                )
+                return 200, {"memo": pinned_memo}
+
+            if method == "GET" and path == "/api/journal/overview":
+                j_date = qp.get("date", [""])[0].strip()
+                j_lim = _safe_int(qp.get("limit", ["30"])[0], name="limit", default=30, min_val=1, max_val=120)
+                return 200, self.container.memo_journal_service.get_journal_overview(
+                    space_id=space_id,
+                    date_str=j_date,
+                    limit=int(j_lim or 30),
+                )
+
+            if method == "POST" and path == "/api/journal/save":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                actor_name = str(payload.get("actor_id") or (user.username if user else "user"))
+                return 200, self.container.memo_journal_service.save_journal(
+                    space_id=space_id,
+                    payload=payload,
+                    actor_id=actor_name,
+                )
+
+            if method == "POST" and path == "/api/journal/ai-summary":
+                self._enforce_rate_and_quota(user=user, space_id=space_id, client_ip=client_ip)
+                return 200, self.container.memo_journal_service.generate_ai_daily_summary(
+                    space_id=space_id,
+                    date_str=str(payload.get("date") or payload.get("journal_date") or ""),
+                    draft_content=str(payload.get("draft_content", "")),
+                    trigger_dream=bool(payload.get("trigger_dream", False)),
+                )
+
             if method == "GET" and path == "/api/supervision/board":
                 assignee = qp.get("assignee", [""])[0]
                 board = self.container.task_matrix_service.build_supervision_board(
@@ -1389,6 +1447,34 @@ class ApiDispatcher:
                 "pinned": False,
             },
         )
+
+        # Seed showcase Pinned Memo + Today's Mood Journal idempotently
+        existing_memos = self.container.memo_journal_service.list_memos(space_id=space_id, pinned_only=True)
+        if existing_memos["pinned_count"] == 0:
+            self.container.memo_journal_service.save_memo(
+                space_id=space_id,
+                payload={
+                    "title": "TraceTodo 防臃肿设计备忘",
+                    "content": "坚持「一套可追溯记忆内核 + 5 栏收敛导航 + 可插拔开关 + 磁盘轻附件」。\n- 支持 **Markdown** 与置顶瀑布流\n- #架构灵感 #防臃肿",
+                    "pinned": True,
+                    "tags": ["架构灵感", "防臃肿"],
+                    "extract_memory": False,
+                },
+            )
+        today_journal = self.container.memo_journal_service.get_journal_overview(
+            space_id=space_id, date_str=now_d.isoformat()
+        )
+        if today_journal["current_entry"] is None:
+            self.container.memo_journal_service.save_journal(
+                space_id=space_id,
+                payload={
+                    "journal_date": now_d.isoformat(),
+                    "mood": "focused",
+                    "title": f"{now_d.isoformat()} 每日复盘",
+                    "content": "今天把待办、日历时间轴与番茄钟串联在同一个记忆空间里，节奏感明显更稳了。 #每日复盘",
+                    "extract_memory": False,
+                },
+            )
         return {"seeded_notes": created, "space_id": space_id}
 
     def dispatch_mcp_http(

@@ -283,6 +283,67 @@ class IngestService:
                 self.media_service.refresh_note_fts_with_media(space_id, note)
 
         extract_input = f"{note.content}\n{visual_text}".strip() if visual_text else note.content
+        if note.title and note.title not in extract_input:
+            extract_input = f"{note.title}\n{extract_input}".strip()
+
+        # Pure Memo / Journal mode (extract_memory == False): index FTS5 + Vector + VLM OCR without task/fact extraction
+        if not note.extract_memory:
+            embed_calls = 0
+            vector_error = ""
+            fresh_pure = self.note_repo.get(space_id, note_id, include_forgotten=True)
+            if fresh_pure is not None and not fresh_pure.is_forgotten and fresh_pure.revision == start_revision:
+                try:
+                    vec_note = (
+                        RawNote(
+                            note_id=fresh_pure.note_id,
+                            space_id=fresh_pure.space_id,
+                            content=extract_input,
+                            source_type=fresh_pure.source_type,
+                            actor_id=fresh_pure.actor_id,
+                            revision=fresh_pure.revision,
+                            event_time=fresh_pure.event_time,
+                            created_at=fresh_pure.created_at,
+                            updated_at=fresh_pure.updated_at,
+                            note_kind=fresh_pure.note_kind,
+                            title=fresh_pure.title,
+                            pinned=fresh_pure.pinned,
+                            tags=fresh_pure.tags,
+                            mood=fresh_pure.mood,
+                            journal_date=fresh_pure.journal_date,
+                            extract_memory=fresh_pure.extract_memory,
+                        )
+                        if (visual_text or fresh_pure.title)
+                        else fresh_pure
+                    )
+                    self.vector_lifecycle.sync_note(vec_note)
+                    embed_calls += 1
+                except Exception as exc:
+                    vector_error = f"Note embedding degraded: {exc}"
+            if self.quota_service is not None:
+                self.quota_service.record_usage(
+                    f"space:{space_id}",
+                    notes=1 if count_note_in_quota else 0,
+                    llm_calls=vlm_calls,
+                    embed_calls=embed_calls,
+                    tokens_used=vlm_tokens,
+                )
+            duration = (time.perf_counter() - t0) * 1000.0
+            trace_id = self.trace_repo.record_trace(
+                space_id=space_id,
+                operation=f"ingest_{note.note_kind}_pure",
+                input_summary=(note.title or note.content)[:60],
+                details={"note_id": note.note_id, "note_kind": note.note_kind, "vector_error": vector_error},
+                llm_calls=vlm_calls,
+                tokens_used=vlm_tokens,
+                duration_ms=duration,
+            )
+            return IngestResult(
+                note=fresh_pure or note,
+                extraction_status="completed" if not vector_error else "degraded_error",
+                changes=(),
+                error_message=vector_error,
+                trace_id=trace_id,
+            )
 
         # 3. Extract structured candidates via LLMProvider (passing existing active memories for reconciliation)
         existing_active = self.memory_repo.list_memories(
@@ -364,8 +425,12 @@ class IngestService:
                 trace_id=trace_id,
             )
 
-        # Selective Note Vectorization: skip costly Embedding API if LLM confirmed 0 extractable memories (unless image visual text exists)!
-        note_vector_skipped = len(batch.candidates) == 0 and not visual_text
+        # Selective Note Vectorization: skip costly Embedding API if LLM confirmed 0 extractable memories (unless image visual text or memo/journal)!
+        note_vector_skipped = (
+            len(batch.candidates) == 0
+            and not visual_text
+            and fresh_note.note_kind == "note"
+        )
         if not note_vector_skipped:
             try:
                 note_for_vec = (
@@ -395,6 +460,9 @@ class IngestService:
         )
         results: list[ChangeResult] = []
         for cand in batch.candidates:
+            # Silent extraction for memos/journals distills ONLY long-term preferences/facts/experiences, never transient tasks
+            if fresh_note.note_kind in ("memo", "journal") and cand.memory_type == "task":
+                continue
             # Final per-candidate check against mid-commit forget
             still_alive = self.note_repo.get(space_id, note_id, include_forgotten=True)
             if still_alive is None or still_alive.is_forgotten or still_alive.revision != start_revision:

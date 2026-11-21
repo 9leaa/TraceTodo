@@ -9,6 +9,7 @@ import uuid
 
 
 VALID_SOURCE_TYPES = ("cli", "mcp", "api", "web", "markdown_edit", "system")
+VALID_NOTE_KINDS = ("note", "memo", "journal")
 
 # Fixed China Standard Time (Beijing Time, Asia/Shanghai, UTC+8) for Mainland China users
 BEIJING_TZ = timezone(timedelta(hours=8), name="CST")
@@ -86,6 +87,13 @@ class RawNote:
     event_time: str = ""
     created_at: str = ""
     updated_at: str = ""
+    note_kind: str = "note"
+    title: str = ""
+    pinned: bool = False
+    tags: tuple[str, ...] = field(default_factory=tuple)
+    mood: str = ""
+    journal_date: str = ""
+    extract_memory: bool = True
 
     def __post_init__(self) -> None:
         if not self.space_id or not self.space_id.strip():
@@ -101,6 +109,20 @@ class RawNote:
             object.__setattr__(self, "updated_at", self.created_at)
         if not self.event_time:
             object.__setattr__(self, "event_time", self.created_at)
+        nk = str(self.note_kind or "note").strip().lower()
+        if nk not in VALID_NOTE_KINDS:
+            nk = "note"
+        object.__setattr__(self, "note_kind", nk)
+        object.__setattr__(self, "title", str(self.title or "").strip()[:200])
+        object.__setattr__(self, "pinned", bool(self.pinned))
+        clean_tags = tuple(dict.fromkeys(str(t).strip().lstrip("#")[:32] for t in (self.tags or ()) if str(t).strip().lstrip("#")))
+        object.__setattr__(self, "tags", clean_tags)
+        object.__setattr__(self, "mood", str(self.mood or "").strip()[:24])
+        j_date = str(self.journal_date or "").strip()[:10]
+        if nk == "journal" and not j_date:
+            j_date = str(self.event_time or now)[:10]
+        object.__setattr__(self, "journal_date", j_date)
+        object.__setattr__(self, "extract_memory", bool(self.extract_memory))
 
     def visible_content(self) -> str:
         """Return content with any partially forgotten spans redacted (C07)."""
@@ -125,4 +147,11 @@ class RawNote:
             "event_time": self.event_time,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "note_kind": self.note_kind,
+            "title": self.title,
+            "pinned": self.pinned,
+            "tags": list(self.tags),
+            "mood": self.mood,
+            "journal_date": self.journal_date,
+            "extract_memory": self.extract_memory,
         }

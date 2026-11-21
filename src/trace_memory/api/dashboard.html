@@ -1676,6 +1676,76 @@
       gap: 6px;
     }
 
+    /* ---------------- Phase 4: Memo Masonry & Daily Mood Journal ---------------- */
+    .memo-masonry {
+      column-count: 2;
+      column-gap: 14px;
+    }
+    @media (min-width: 1320px) { .memo-masonry { column-count: 3; } }
+    @media (max-width: 780px) { .memo-masonry { column-count: 1; } }
+    .memo-masonry .memo-card {
+      break-inside: avoid;
+      margin-bottom: 14px;
+    }
+    .memo-list-stack {
+      display: grid;
+      gap: 12px;
+    }
+    .memo-card {
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      padding: 14px 16px;
+      display: grid;
+      gap: 9px;
+      transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
+    }
+    .memo-card:hover {
+      border-color: var(--primary);
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+    }
+    .memo-card.is-pinned {
+      border-color: var(--primary);
+      background: linear-gradient(180deg, var(--primary-soft) 0%, var(--surface) 58px);
+    }
+    .tag-filter-pill {
+      padding: 4px 11px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .tag-filter-pill.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+    .mood-pill-btn {
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12.5px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      cursor: pointer;
+      transition: all 0.14s ease;
+    }
+    .mood-pill-btn.active {
+      border-color: var(--primary);
+      background: var(--primary-soft);
+      color: var(--primary);
+      transform: translateY(-1px);
+    }
+    .md-rendered p { margin: 0 0 6px; line-height: 1.65; }
+    .md-rendered p:last-child { margin-bottom: 0; }
+    .md-rendered ul { margin: 4px 0 6px 18px; padding: 0; }
+    .md-rendered li { margin-bottom: 3px; line-height: 1.55; }
+    .md-rendered h3, .md-rendered h4 { margin: 6px 0 4px; font-size: 14px; color: var(--heading); }
+    .md-rendered code { background: var(--surface-alt); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+
     [data-theme="deep_forest"] .analytic-card,
     [data-theme="deep_forest"] .tl-card,
     [data-theme="deep_forest"] .card-box,
@@ -2085,26 +2155,100 @@
       <section id="panel-notes" class="panel">
         <div class="summary-header" style="flex-wrap:wrap;gap:10px;">
           <div>
-            <div class="summary-title">NOTES · 随记流</div>
-            <div style="font-size:12px;color:var(--muted);">复用 RawNote 真值内核：既是轻量随手记，又能自动沉淀长期记忆</div>
+            <div class="summary-title">NOTES · 备忘录与每日日记</div>
+            <div style="font-size:12px;color:var(--muted);">万物复用 RawNote 轻结构化内核：支持置顶图文备忘录、一日一页心情日记与 AI 今日小结</div>
           </div>
-        </div>
-        <div class="card-box" id="notesComposeBox" style="margin-bottom:16px;display:grid;gap:10px;" ondragover="onNotesDragOver(event)" ondragleave="onNotesDragLeave(event)" ondrop="onNotesDrop(event)">
-          <textarea id="notesEditorInput" rows="3" placeholder="随手记下一段备忘、灵感或今日片段（支持拖拽 / 粘贴图片，AI 自动提取图中 OCR 与记忆）..." onpaste="handleImagePaste(event, 'notes')"></textarea>
-          <div id="notesMediaDraftGrid" class="media-thumb-grid" style="display:none;"></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-            <div class="btn-group" style="flex:1;min-width:200px;">
-              <input id="notesSearchInput" style="flex:1;max-width:320px;" placeholder="检索历史随记或图中 OCR 文字..." onkeydown="if(event.key==='Enter') loadNotesPanel()" />
-              <button type="button" onclick="loadNotesPanel()">🔍 搜索随记</button>
-            </div>
-            <div class="btn-group">
-              <button type="button" id="notesImageBtn" class="voice-mic-btn" title="拖拽/粘贴/选择拍照附图（自动压缩至 150~300KB）" onclick="triggerImagePicker('notes')">📷 附图</button>
-              <button type="button" id="notesVoiceBtn" class="voice-mic-btn" title="点按语音听写 / 按住说话松手即保存" onpointerdown="onVoiceBtnDown(event, 'notesEditorInput', true)" onpointerup="onVoiceBtnUp(event)" onclick="onVoiceBtnClick(event, 'notesEditorInput', false)">🎤 语音输入</button>
-              <button type="button" class="duodo-btn" onclick="submitNoteFromNotesTab(this)">✍️ 保存随记</button>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <div class="seg-pill-bar" id="notesHubSegBar">
+              <button type="button" class="seg-pill-btn active" id="notesSubMemoBtn" onclick="switchNotesHubMode('memo')">📌 备忘录</button>
+              <button type="button" class="seg-pill-btn" id="notesSubJournalBtn" data-module-toggle="journal" onclick="switchNotesHubMode('journal')">📖 每日日记</button>
             </div>
           </div>
         </div>
-        <div id="notesStreamList" class="list-stack"></div>
+
+        <!-- SUBVIEW A: PINNED MASONRY / LIST MEMOS -->
+        <div id="memoStudioSection">
+          <div class="card-box" id="notesComposeBox" style="margin-bottom:14px;display:grid;gap:10px;" ondragover="onNotesDragOver(event)" ondragleave="onNotesDragLeave(event)" ondrop="onNotesDrop(event)">
+            <input type="hidden" id="memoEditingNoteId" value="" />
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <input id="memoTitleInput" placeholder="备忘标题（可选，如：阅读清单 / 报销凭证 / 架构灵感）..." style="flex:1;min-width:200px;font-weight:700;" />
+              <input id="memoTagsInput" placeholder="#标签（空格分隔，如：灵感 读书）" style="width:220px;" />
+              <label style="font-size:12px;display:inline-flex;align-items:center;gap:5px;cursor:pointer;">
+                <input type="checkbox" id="memoPinnedCheck" /> 📌 置顶
+              </label>
+              <label style="font-size:12px;display:inline-flex;align-items:center;gap:5px;cursor:pointer;" title="开启后后台静默提炼长期偏好/事实/经历，绝不拆出噪音待办">
+                <input type="checkbox" id="memoExtractCheck" /> 🧠 静默提炼长期记忆
+              </label>
+            </div>
+            <textarea id="notesEditorInput" rows="3" placeholder="支持 Markdown 排版（**加粗**、- 列表、#标签）与拖拽/粘贴图片（自动压缩并识别白板/票据 OCR）..." onpaste="handleImagePaste(event, 'notes')"></textarea>
+            <div id="notesMediaDraftGrid" class="media-thumb-grid" style="display:none;"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+              <div class="btn-group" style="flex:1;min-width:210px;">
+                <input id="notesSearchInput" style="flex:1;max-width:300px;" placeholder="检索备忘录标题、正文或图中 OCR..." onkeydown="if(event.key==='Enter') loadNotesPanel()" />
+                <button type="button" onclick="loadNotesPanel()">🔍 搜索</button>
+              </div>
+              <div class="btn-group">
+                <button type="button" id="memoCancelEditBtn" style="display:none;" onclick="resetMemoCompose()">取消编辑</button>
+                <button type="button" id="notesImageBtn" class="voice-mic-btn" title="拖拽/粘贴/选择拍照附图（自动压缩至 150~300KB）" onclick="triggerImagePicker('notes')">📷 附图</button>
+                <button type="button" id="notesVoiceBtn" class="voice-mic-btn" title="点按语音听写 / 按住说话松手即保存" onpointerdown="onVoiceBtnDown(event, 'notesEditorInput', true)" onpointerup="onVoiceBtnUp(event)" onclick="onVoiceBtnClick(event, 'notesEditorInput', false)">🎤 语音</button>
+                <button type="button" class="duodo-btn" id="memoSaveBtn" onclick="submitNoteFromNotesTab(this)">✍️ 保存备忘</button>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+            <div id="memoTagsFilterBar" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"></div>
+            <div class="seg-pill-bar">
+              <button type="button" class="seg-pill-btn active" id="memoLayoutMasonryBtn" onclick="setMemoLayout('masonry')">🧱 瀑布流</button>
+              <button type="button" class="seg-pill-btn" id="memoLayoutListBtn" onclick="setMemoLayout('list')">☰ 列表</button>
+            </div>
+          </div>
+
+          <div id="notesStreamList" class="memo-masonry"></div>
+        </div>
+
+        <!-- SUBVIEW B: ONE-PAGE-PER-DAY MOOD JOURNAL + AI DAILY SUMMARY -->
+        <div id="journalStudioSection" style="display:none;">
+          <div class="card-box" id="journalComposeBox" style="margin-bottom:16px;display:grid;gap:12px;" ondragover="event.preventDefault()" ondrop="onJournalDrop(event)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <button type="button" onclick="shiftJournalDate(-1)">◀ 前一天</button>
+                <input type="date" id="journalDateInput" onchange="onJournalDateChanged()" style="width:148px;font-weight:700;" />
+                <button type="button" onclick="shiftJournalDate(0)">今天</button>
+                <button type="button" onclick="shiftJournalDate(1)">后一天 ▶</button>
+                <span class="pill" id="journalLunarLabel">北京时间一日一页</span>
+              </div>
+              <div class="btn-group">
+                <button type="button" class="duodo-btn" onclick="generateJournalAiSummary(this, false)">✨ AI 今日小结</button>
+                <button type="button" onclick="generateJournalAiSummary(this, true)" title="汇总今日完成待办与专注时长，并联动 Dream 睡眠归纳">🌙 小结 + Dream 归纳</button>
+              </div>
+            </div>
+
+            <div id="journalFootprintBar" style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px;"></div>
+
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;" id="journalMoodRow"></div>
+
+            <textarea id="journalEditorInput" rows="7" placeholder="写下今天的经历、思考或复盘（支持 Markdown 与粘贴照片；点击右上角「✨ AI 今日小结」可一键汇总今日完成待办与番茄专注时长）..." onpaste="handleImagePaste(event, 'journal')"></textarea>
+            <div id="journalMediaDraftGrid" class="media-thumb-grid" style="display:none;"></div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+              <label style="font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="checkbox" id="journalExtractCheck" checked />
+                <span>🧠 静默沉淀长期经历/偏好（联动夜间 Dream 归纳，不生成噪音待办）</span>
+              </label>
+              <div class="btn-group">
+                <button type="button" class="voice-mic-btn" onclick="triggerImagePicker('journal')">📷 贴照片</button>
+                <button type="button" class="voice-mic-btn" onclick="onVoiceBtnClick(event, 'journalEditorInput', false)">🎤 语音日记</button>
+                <button type="button" class="primary" onclick="saveCurrentJournal(this)">💾 保存当日日记</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card-box">
+            <h3 style="margin:0 0 10px;">🕰️ 历史日记流（按北京时间一日一页）</h3>
+            <div id="journalHistoryList" class="list-stack"></div>
+          </div>
+        </div>
       </section>
 
     <!-- SUPERVISION BOARD (Accessible via Topbar & Share Link, Controlled by Feature Toggle) -->
@@ -6885,51 +7029,360 @@
       grid.innerHTML = html;
     }
 
+    // ---------------- Phase 4: Pinned Masonry Memos & One-Page-Per-Day Mood Journal ----------------
+    let _notesHubMode = 'memo'; // 'memo' | 'journal'
+    let _memoLayout = 'masonry'; // 'masonry' | 'list'
+    let _memoSelectedTag = '';
+    let _memoPinnedOnly = false;
+    let _cachedMemosById = {};
+    let _journalDate = fmtLocalYMD(new Date());
+    let _journalMood = 'calm';
+    let _journalOverviewCache = null;
+
+    const _DEFAULT_MOOD_CATALOG = [
+      { id: 'joy', icon: '😊', label: '愉悦' },
+      { id: 'focused', icon: '🔥', label: '充实' },
+      { id: 'calm', icon: '🌿', label: '平静' },
+      { id: 'thinking', icon: '🤔', label: '思考' },
+      { id: 'tired', icon: '😴', label: '疲惫' },
+      { id: 'celebrate', icon: '🎉', label: '惊喜' },
+    ];
+
+    function renderSimpleMarkdown(raw) {
+      const lines = String(raw || '').split('\n');
+      const out = [];
+      let inList = false;
+      const fmtInline = s => esc(s)
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/(^|\s)#([\w\u4e00-\u9fff-]{1,24})/g, '$1<span class="tag" style="padding:1px 6px;font-size:11px;">#$2</span>');
+
+      for (const rawLine of lines) {
+        const line = rawLine.trimEnd();
+        if (!line.trim()) {
+          if (inList) { out.push('</ul>'); inList = false; }
+          continue;
+        }
+        if (line.startsWith('### ')) {
+          if (inList) { out.push('</ul>'); inList = false; }
+          out.push(`<h4>${fmtInline(line.slice(4))}</h4>`);
+        } else if (line.startsWith('## ') || line.startsWith('# ')) {
+          if (inList) { out.push('</ul>'); inList = false; }
+          out.push(`<h3>${fmtInline(line.replace(/^#+\s*/, ''))}</h3>`);
+        } else if (/^[-*•]\s+/.test(line)) {
+          if (!inList) { out.push('<ul>'); inList = true; }
+          out.push(`<li>${fmtInline(line.replace(/^[-*•]\s+/, ''))}</li>`);
+        } else {
+          if (inList) { out.push('</ul>'); inList = false; }
+          out.push(`<p>${fmtInline(line)}</p>`);
+        }
+      }
+      if (inList) out.push('</ul>');
+      return `<div class="md-rendered">${out.join('')}</div>`;
+    }
+
+    function switchNotesHubMode(mode) {
+      if (mode === 'journal' && appPreferences.enabled_modules?.journal !== false) {
+        _notesHubMode = 'journal';
+      } else {
+        _notesHubMode = 'memo';
+      }
+      document.getElementById('notesSubMemoBtn')?.classList.toggle('active', _notesHubMode === 'memo');
+      document.getElementById('notesSubJournalBtn')?.classList.toggle('active', _notesHubMode === 'journal');
+      const memoSec = document.getElementById('memoStudioSection');
+      const jrnSec = document.getElementById('journalStudioSection');
+      if (memoSec) memoSec.style.display = _notesHubMode === 'memo' ? '' : 'none';
+      if (jrnSec) jrnSec.style.display = _notesHubMode === 'journal' ? '' : 'none';
+      loadNotesPanel();
+    }
+
+    function setMemoLayout(layout) {
+      _memoLayout = layout === 'list' ? 'list' : 'masonry';
+      document.getElementById('memoLayoutMasonryBtn')?.classList.toggle('active', _memoLayout === 'masonry');
+      document.getElementById('memoLayoutListBtn')?.classList.toggle('active', _memoLayout === 'list');
+      const box = document.getElementById('notesStreamList');
+      if (box) {
+        box.className = _memoLayout === 'masonry' ? 'memo-masonry' : 'memo-list-stack';
+      }
+    }
+
+    function filterMemosByTag(tag) {
+      _memoSelectedTag = _memoSelectedTag === tag ? '' : tag;
+      loadMemosView();
+    }
+
+    function toggleFilterPinnedMemos() {
+      _memoPinnedOnly = !_memoPinnedOnly;
+      loadMemosView();
+    }
+
     async function loadNotesPanel() {
+      if (_notesHubMode === 'journal' && appPreferences.enabled_modules?.journal !== false) {
+        await loadJournalView();
+      } else {
+        if (_notesHubMode === 'journal') switchNotesHubMode('memo');
+        await loadMemosView();
+      }
+    }
+
+    async function loadMemosView() {
       const q = (document.getElementById('notesSearchInput')?.value || '').trim();
-      const res = await apiGet(`/api/notes/list?limit=50${q ? '&q=' + encodeURIComponent(q) : ''}`);
+      const params = new URLSearchParams({ limit: '80' });
+      if (q) params.set('q', q);
+      if (_memoSelectedTag) params.set('tag', _memoSelectedTag);
+      if (_memoPinnedOnly) params.set('pinned_only', 'true');
+
+      const res = await apiGet(`/api/memos/list?${params.toString()}`);
       const box = document.getElementById('notesStreamList');
       if (!box) return;
+      box.className = _memoLayout === 'masonry' ? 'memo-masonry' : 'memo-list-stack';
       if (res.error) {
-        box.innerHTML = `<div class="card-box" style="color:#dc2626;">加载随记失败: ${esc(res.error)}</div>`;
+        box.innerHTML = `<div class="card-box" style="color:#dc2626;">加载备忘录失败: ${esc(res.error)}</div>`;
         return;
       }
-      const notes = res.notes || [];
-      box.innerHTML = notes.length ? notes.map(n => `
-        <div class="mem-card">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-            <span class="tag">📝 ${esc(n.source_type)} · v${n.revision}</span>
-            <span style="font-size:11.5px;color:var(--muted);">🕒 ${esc((n.event_time || n.created_at || '').slice(0, 19).replace('T', ' '))}</span>
+
+      // Render tag filter bar
+      const tagBar = document.getElementById('memoTagsFilterBar');
+      if (tagBar) {
+        const tagsCat = res.tags_catalog || [];
+        let tHtml = `
+          <button type="button" class="tag-filter-pill ${!_memoSelectedTag && !_memoPinnedOnly ? 'active' : ''}" onclick="_memoSelectedTag='';_memoPinnedOnly=false;loadMemosView()">全部 (${res.total || 0})</button>
+          <button type="button" class="tag-filter-pill ${_memoPinnedOnly ? 'active' : ''}" onclick="toggleFilterPinnedMemos()">📌 置顶 (${res.pinned_count || 0})</button>
+        `;
+        tHtml += tagsCat.map(tc => `
+          <button type="button" class="tag-filter-pill ${_memoSelectedTag === tc.tag ? 'active' : ''}" onclick="filterMemosByTag('${esc(tc.tag)}')">#${esc(tc.tag)} (${tc.count})</button>
+        `).join('');
+        tagBar.innerHTML = tHtml;
+      }
+
+      const memos = res.memos || [];
+      _cachedMemosById = {};
+      memos.forEach(m => { _cachedMemosById[m.note_id] = m; });
+
+      box.innerHTML = memos.length ? memos.map(n => {
+        const tagsPills = (n.tags || []).map(t => `<span class="tag" style="cursor:pointer;" onclick="filterMemosByTag('${esc(t)}')">#${esc(t)}</span>`).join('');
+        return `
+          <div class="memo-card ${n.pinned ? 'is-pinned' : ''}">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                ${n.pinned ? `<span class="tag" style="background:var(--primary);color:#fff;">📌 置顶</span>` : ''}
+                ${n.extract_memory ? `<span class="tag" title="已开启后台静默提炼长期偏好/事实">🧠 记忆联动</span>` : `<span class="tag">📌 纯备忘</span>`}
+                ${tagsPills}
+              </div>
+              <span style="font-size:11px;color:var(--muted);">🕒 ${esc((n.updated_at || n.created_at || '').slice(0, 16).replace('T', ' '))}</span>
+            </div>
+            ${n.title ? `<div style="font-size:15px;font-weight:800;color:var(--heading);">${esc(n.title)}</div>` : ''}
+            <div style="font-size:13.5px;color:var(--text);">${renderSimpleMarkdown(n.content)}</div>
+            ${Array.isArray(n.media) && n.media.length ? renderMediaGridHtml(n.media) : ''}
+            <div class="card-actions" style="justify-content:flex-end;gap:6px;">
+              <button type="button" style="font-size:11.5px;padding:4px 9px;" onclick="toggleMemoPin('${esc(n.note_id)}', ${!n.pinned})">${n.pinned ? '取消置顶' : '📌 置顶'}</button>
+              <button type="button" style="font-size:11.5px;padding:4px 9px;" onclick="startEditMemo('${esc(n.note_id)}')">✏️ 编辑</button>
+              <button type="button" style="color:#b91c1c;font-size:11.5px;padding:4px 9px;" onclick="forgetNoteFromStream('${esc(n.note_id)}')">🗑️ 遗忘</button>
+            </div>
           </div>
-          <div style="font-size:13.5px;white-space:pre-wrap;line-height:1.6;">${esc(n.content)}</div>
-          ${Array.isArray(n.media) && n.media.length ? renderMediaGridHtml(n.media) : ''}
-          <div class="card-actions" style="justify-content:flex-end;">
-            <button type="button" style="color:#b91c1c;font-size:12px;" onclick="forgetNoteFromStream('${esc(n.note_id)}')">🗑️ 遗忘原文并级联清理派生记忆与图片</button>
-          </div>
-        </div>
-      `).join('') : `<div class="card-box" style="color:var(--muted);">暂无随记记录，在上方输入框写下第一条灵感或粘贴一张图片吧。</div>`;
+        `;
+      }).join('') : `<div class="card-box" style="color:var(--muted);grid-column:1/-1;">暂无匹配的备忘录，在上方写下第一条 Markdown 备忘或拖拽粘贴一张图片吧。</div>`;
+    }
+
+    function startEditMemo(noteId) {
+      const m = _cachedMemosById[noteId];
+      if (!m) return;
+      document.getElementById('memoEditingNoteId').value = m.note_id;
+      document.getElementById('memoTitleInput').value = m.title || '';
+      document.getElementById('memoTagsInput').value = (m.tags || []).join(' ');
+      document.getElementById('memoPinnedCheck').checked = Boolean(m.pinned);
+      document.getElementById('memoExtractCheck').checked = Boolean(m.extract_memory);
+      document.getElementById('notesEditorInput').value = m.content || '';
+      document.getElementById('memoSaveBtn').textContent = '💾 保存修改';
+      document.getElementById('memoCancelEditBtn').style.display = '';
+      document.getElementById('notesComposeBox')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function resetMemoCompose() {
+      document.getElementById('memoEditingNoteId').value = '';
+      document.getElementById('memoTitleInput').value = '';
+      document.getElementById('memoTagsInput').value = '';
+      document.getElementById('memoPinnedCheck').checked = false;
+      document.getElementById('memoExtractCheck').checked = false;
+      document.getElementById('notesEditorInput').value = '';
+      document.getElementById('memoSaveBtn').textContent = '✍️ 保存备忘';
+      document.getElementById('memoCancelEditBtn').style.display = 'none';
+      _pendingMediaDrafts.notes = [];
+      renderPendingMediaDrafts('notes');
+    }
+
+    async function toggleMemoPin(noteId, nextPinned) {
+      const res = await apiPost('/api/memos/pin', { note_id: noteId, pinned: Boolean(nextPinned) });
+      if (res.error) return showToast(`置顶操作失败: ${res.error}`);
+      showToast(nextPinned ? '📌 已置顶备忘录' : '已取消置顶');
+      await loadMemosView();
     }
 
     async function submitNoteFromNotesTab(btn) {
+      const noteId = document.getElementById('memoEditingNoteId')?.value || '';
+      const title = (document.getElementById('memoTitleInput')?.value || '').trim();
+      const tagsRaw = (document.getElementById('memoTagsInput')?.value || '').trim();
+      const pinned = Boolean(document.getElementById('memoPinnedCheck')?.checked);
+      const extractMemory = Boolean(document.getElementById('memoExtractCheck')?.checked);
       const el = document.getElementById('notesEditorInput');
       const content = (el?.value || '').trim();
       const mediaIds = _pendingMediaDrafts.notes.map(m => m.media_id);
-      if (!content && !mediaIds.length) return showToast('请输入随记内容或附加图片');
+      if (!content && !title && !mediaIds.length && !noteId) return showToast('请输入备忘内容、标题或附加图片');
       await withBtnBusy(btn, '⏳ 保存中', async () => {
-        const res = await apiPost('/api/notes/record', { content, media_ids: mediaIds });
+        const res = await apiPost('/api/memos/save', {
+          note_id: noteId,
+          title,
+          content,
+          tags: tagsRaw,
+          pinned,
+          extract_memory: extractMemory,
+          media_ids: mediaIds,
+        });
         if (res.error) return showToast(`保存失败: ${res.error}`);
-        el.value = '';
-        _pendingMediaDrafts.notes = [];
-        renderPendingMediaDrafts('notes');
-        showToast(res.extraction_status === 'queued' ? '⚡ 图文随记已秒存，AI 正在后台解析视觉 OCR 与记忆' : '✅ 图文随记已保存');
-        await loadNotesPanel();
-        loadTasks();
+        resetMemoCompose();
+        showToast(extractMemory ? '✅ 备忘已保存，后台静默提炼长期偏好与事实' : '✅ 备忘录已保存');
+        await loadMemosView();
+      });
+    }
+
+    // ---------------- Daily Journal Studio ----------------
+    function shiftJournalDate(delta) {
+      if (delta === 0) {
+        _journalDate = fmtLocalYMD(new Date());
+      } else {
+        const p = _journalDate.split('-').map(Number);
+        const d = new Date(p[0], (p[1] || 1) - 1, (p[2] || 1) + delta);
+        _journalDate = fmtLocalYMD(d);
+      }
+      loadJournalView();
+    }
+
+    function onJournalDateChanged() {
+      const val = document.getElementById('journalDateInput')?.value;
+      if (val) {
+        _journalDate = val;
+        loadJournalView();
+      }
+    }
+
+    function selectJournalMood(moodId) {
+      _journalMood = moodId || 'calm';
+      document.querySelectorAll('#journalMoodRow .mood-pill-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-mood') === _journalMood);
+      });
+    }
+
+    function onJournalDrop(ev) {
+      ev.preventDefault();
+      const files = Array.from(ev.dataTransfer?.files || []).filter(f => f.type && f.type.startsWith('image/'));
+      if (files.length) uploadCompressedImages(files, 'journal');
+    }
+
+    async function loadJournalView() {
+      const dateInp = document.getElementById('journalDateInput');
+      if (dateInp) dateInp.value = _journalDate;
+      const res = await apiGet(`/api/journal/overview?date=${encodeURIComponent(_journalDate)}&limit=30`);
+      if (res.error) {
+        showToast(`加载日记失败: ${res.error}`);
+        return;
+      }
+      _journalOverviewCache = res;
+      document.getElementById('journalLunarLabel').textContent = `${res.lunar_label || ''} · ${res.weekday_label || ''}`;
+
+      const moods = res.mood_catalog || _DEFAULT_MOOD_CATALOG;
+      const cur = res.current_entry;
+      _journalMood = cur?.mood || 'calm';
+      document.getElementById('journalMoodRow').innerHTML =
+        `<span style="font-size:12px;color:var(--muted);">今日心情：</span>` +
+        moods.map(m => `
+          <button type="button" class="mood-pill-btn ${m.id === _journalMood ? 'active' : ''}" data-mood="${esc(m.id)}" onclick="selectJournalMood('${esc(m.id)}')">
+            ${esc(m.icon)} ${esc(m.label)}
+          </button>
+        `).join('');
+
+      document.getElementById('journalEditorInput').value = cur ? (cur.content || '') : '';
+      document.getElementById('journalExtractCheck').checked = cur ? Boolean(cur.extract_memory) : true;
+
+      const fp = res.day_footprint || {};
+      document.getElementById('journalFootprintBar').innerHTML = `
+        <span class="tag">✅ 当日完成待办 ${fp.completed_count || 0} 项</span>
+        <span class="tag">🍅 专注投入 ${fp.focus_minutes || 0} 分钟 (${fp.focus_pomodoros || 0} 番茄)</span>
+        <span class="tag">📌 当日随记 ${fp.memo_count || 0} 条</span>
+        ${cur ? `<span class="tag" style="background:#dcfce7;color:#166534;">📖 已存档 v${cur.revision}</span>` : `<span class="tag">✍️ 待书写</span>`}
+      `;
+
+      const timeline = res.timeline || [];
+      const histBox = document.getElementById('journalHistoryList');
+      if (histBox) {
+        histBox.innerHTML = timeline.length ? timeline.map(entry => {
+          const mm = entry.mood_meta || { icon: '📖', label: '日记' };
+          return `
+            <div class="memo-card" style="${entry.journal_date === _journalDate ? 'border-color:var(--primary);' : ''}">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+                <div style="display:flex;align-items:center;gap:8px;cursor:pointer;" onclick="_journalDate='${esc(entry.journal_date)}';loadJournalView()">
+                  <strong style="font-size:14.5px;color:var(--heading);">📅 ${esc(entry.journal_date)} (${esc(entry.weekday_label || '')})</strong>
+                  <span class="tag">${esc(mm.icon)} ${esc(mm.label)}</span>
+                  <span style="font-size:11.5px;color:var(--muted);">${esc(entry.lunar_label || '')}</span>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <button type="button" style="font-size:11.5px;padding:3px 9px;" onclick="_journalDate='${esc(entry.journal_date)}';loadJournalView()">编辑此页</button>
+                  <button type="button" style="color:#b91c1c;font-size:11.5px;padding:3px 9px;" onclick="forgetNoteFromStream('${esc(entry.note_id)}')">🗑️ 遗忘</button>
+                </div>
+              </div>
+              <div style="font-size:13.5px;">${renderSimpleMarkdown(entry.content)}</div>
+              ${Array.isArray(entry.media) && entry.media.length ? renderMediaGridHtml(entry.media) : ''}
+            </div>
+          `;
+        }).join('') : `<div style="color:var(--muted);font-size:13px;padding:12px 4px;">还没有日记记录，点击右上角「✨ AI 今日小结」开启第一篇一日一页日记吧。</div>`;
+      }
+    }
+
+    async function generateJournalAiSummary(btn, triggerDream = false) {
+      const editor = document.getElementById('journalEditorInput');
+      const curText = (editor?.value || '').trim();
+      await withBtnBusy(btn, '⏳ 汇总中...', async () => {
+        const res = await apiPost('/api/journal/ai-summary', {
+          date: _journalDate,
+          draft_content: curText,
+          trigger_dream: Boolean(triggerDream),
+        });
+        if (res.error) return showToast(`生成今日小结失败: ${res.error}`);
+        const md = res.summary_markdown || '';
+        if (editor) {
+          editor.value = curText ? `${curText}\n\n${md}` : md;
+        }
+        if (triggerDream && res.dream_report) {
+          showToast(`🌙 已生成今日小结并完成 Dream 归纳（沉淀 ${res.dream_report.insights_processed || 0} 条洞察）`);
+        } else {
+          showToast('✨ 已汇总今日完成待办与专注时长，点击「保存当日日记」即可归档');
+        }
+      });
+    }
+
+    async function saveCurrentJournal(btn) {
+      const content = (document.getElementById('journalEditorInput')?.value || '').trim();
+      const mediaIds = (_pendingMediaDrafts.journal || []).map(m => m.media_id);
+      const extractMemory = Boolean(document.getElementById('journalExtractCheck')?.checked);
+      if (!content && !mediaIds.length) return showToast('请输入今日日记内容或粘贴图片');
+      await withBtnBusy(btn, '⏳ 保存中', async () => {
+        const res = await apiPost('/api/journal/save', {
+          journal_date: _journalDate,
+          mood: _journalMood,
+          content,
+          extract_memory: extractMemory,
+          media_ids: mediaIds,
+        });
+        if (res.error) return showToast(`保存日记失败: ${res.error}`);
+        _pendingMediaDrafts.journal = [];
+        renderPendingMediaDrafts('journal');
+        showToast(`📖 ${_journalDate} 日记已保存`);
+        await loadJournalView();
       });
     }
 
     // ---------------- Client-Side Image Compression (150~300KB + Thumb) & Media Gallery ----------------
     let _activeImageTarget = 'notes';
-    const _pendingMediaDrafts = { quick: [], notes: [] };
+    const _pendingMediaDrafts = { quick: [], notes: [], journal: [] };
     const _mediaCacheById = {};
 
     function renderMediaGridHtml(mediaList) {
@@ -6971,7 +7424,7 @@
     }
 
     function triggerImagePicker(targetKey) {
-      _activeImageTarget = targetKey === 'quick' ? 'quick' : 'notes';
+      _activeImageTarget = (targetKey === 'quick' || targetKey === 'journal') ? targetKey : 'notes';
       const inp = document.getElementById('sharedImageFileInput');
       if (inp) {
         inp.value = '';
@@ -7050,7 +7503,7 @@
     }
 
     async function uploadCompressedImages(files, targetKey) {
-      const bucket = targetKey === 'quick' ? 'quick' : 'notes';
+      const bucket = (targetKey === 'quick' || targetKey === 'journal') ? targetKey : 'notes';
       showToast(`🖼️ 正在端侧压缩并上传 ${files.length} 张图片...`);
       for (const f of files.slice(0, 6)) {
         try {
@@ -7093,13 +7546,14 @@
           </div>
         `).join('');
       } else {
-        const grid = document.getElementById('notesMediaDraftGrid');
+        const gridId = bucket === 'journal' ? 'journalMediaDraftGrid' : 'notesMediaDraftGrid';
+        const grid = document.getElementById(gridId);
         if (!grid) return;
         grid.style.display = list.length ? 'flex' : 'none';
         grid.innerHTML = list.map(m => `
           <div class="media-thumb-card">
             <img src="${esc(m.thumb_url || m.url)}" alt="预览" />
-            <button type="button" class="media-thumb-del" onclick="removePendingDraftMedia('notes', '${esc(m.media_id)}')">✕</button>
+            <button type="button" class="media-thumb-del" onclick="removePendingDraftMedia('${esc(bucket)}', '${esc(m.media_id)}')">✕</button>
           </div>
         `).join('');
       }

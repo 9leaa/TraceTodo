@@ -95,7 +95,14 @@ CREATE TABLE IF NOT EXISTS raw_notes (
     forgotten_spans_json TEXT NOT NULL DEFAULT '[]',
     event_time TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    note_kind TEXT NOT NULL DEFAULT 'note',
+    title TEXT NOT NULL DEFAULT '',
+    pinned INTEGER NOT NULL DEFAULT 0,
+    tags_json TEXT NOT NULL DEFAULT '[]',
+    mood TEXT NOT NULL DEFAULT '',
+    journal_date TEXT NOT NULL DEFAULT '',
+    extract_memory INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE INDEX IF NOT EXISTS idx_raw_notes_space_time
@@ -440,7 +447,38 @@ class Database:
     def initialize_schema(self) -> None:
         conn = self._get_conn()
         conn.executescript(SCHEMA_SQL)
+        self._ensure_column_migrations(conn)
         conn.commit()
+
+    @staticmethod
+    def _ensure_column_migrations(conn: sqlite3.Connection) -> None:
+        existing_cols = {
+            str(r[1]) for r in conn.execute("PRAGMA table_info(raw_notes)").fetchall()
+        }
+        migrations = [
+            ("note_kind", "ALTER TABLE raw_notes ADD COLUMN note_kind TEXT NOT NULL DEFAULT 'note'"),
+            ("title", "ALTER TABLE raw_notes ADD COLUMN title TEXT NOT NULL DEFAULT ''"),
+            ("pinned", "ALTER TABLE raw_notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0"),
+            ("tags_json", "ALTER TABLE raw_notes ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'"),
+            ("mood", "ALTER TABLE raw_notes ADD COLUMN mood TEXT NOT NULL DEFAULT ''"),
+            ("journal_date", "ALTER TABLE raw_notes ADD COLUMN journal_date TEXT NOT NULL DEFAULT ''"),
+            ("extract_memory", "ALTER TABLE raw_notes ADD COLUMN extract_memory INTEGER NOT NULL DEFAULT 1"),
+        ]
+        for col_name, ddl in migrations:
+            if col_name not in existing_cols:
+                conn.execute(ddl)
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_raw_notes_kind_pin
+                ON raw_notes(space_id, is_forgotten, note_kind, pinned DESC, updated_at DESC)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_raw_notes_journal_date
+                ON raw_notes(space_id, is_forgotten, note_kind, journal_date DESC)
+            """
+        )
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
