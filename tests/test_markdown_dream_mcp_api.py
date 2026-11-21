@@ -31,6 +31,49 @@ class TestMarkdownDreamMcpAndApi(unittest.TestCase):
         self.app.close()
         self._tmp.cleanup()
 
+    def test_memory_browse_paginates_active_cards_within_space_and_type(self) -> None:
+        api = ApiDispatcher(self.app)
+        cards = (
+            ("dev", "semantic", "Alpha"),
+            ("dev", "semantic", "Beta"),
+            ("dev", "semantic", "Gamma"),
+            ("dev", "preference", "Delta"),
+            ("elsewhere", "semantic", "Epsilon"),
+        )
+        for space_id, memory_type, title in cards:
+            status, _ = api.dispatch(
+                "POST", "/api/memories/propose",
+                body={
+                    "space_id": space_id,
+                    "action": "create",
+                    "memory_type": memory_type,
+                    "title": title,
+                    "canonical_key": title.lower(),
+                    "payload": {"target": title} if memory_type == "preference" else {},
+                },
+            )
+            self.assertEqual(status, 200)
+
+        query = {"space_id": ["dev"], "memory_type": ["semantic"], "limit": ["2"]}
+        status, first = api.dispatch("GET", "/api/memories", query)
+        self.assertEqual(status, 200)
+        self.assertTrue(first["has_more"])
+        self.assertEqual(first["total"], 3)
+        self.assertEqual(len(first["memories"]), 2)
+        status, second = api.dispatch("GET", "/api/memories", {**query, "offset": ["2"]})
+        self.assertEqual(status, 200)
+        self.assertFalse(second["has_more"])
+        self.assertEqual(second["total"], 3)
+        self.assertEqual(len(second["memories"]), 1)
+        self.assertEqual(
+            {m["title"] for m in first["memories"] + second["memories"]},
+            {"Alpha", "Beta", "Gamma"},
+        )
+        _, past_end = api.dispatch("GET", "/api/memories", {**query, "offset": ["4"]})
+        self.assertEqual(past_end, {"memories": [], "has_more": False, "total": 3})
+        _, empty = api.dispatch("GET", "/api/memories", {**query, "memory_type": ["task"]})
+        self.assertEqual(empty, {"memories": [], "has_more": False, "total": 0})
+
     def test_markdown_export_rebuild_reflow_and_conflict_draft_preservation(self) -> None:
         r = self.app.ingest_service.record_note("dev", "我现在搬到上海了")
         mem = r.changes[0].memory

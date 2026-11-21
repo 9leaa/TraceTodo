@@ -1032,6 +1032,27 @@ class ApiDispatcher:
                 )
                 return 200, out
 
+            if method == "GET" and path == "/api/memories":
+                memory_type = qp.get("memory_type", [""])[0]
+                limit = _safe_int(
+                    qp.get("limit", [None])[0], name="limit", default=30, min_val=1, max_val=100
+                ) or 30
+                offset = _safe_int(
+                    qp.get("offset", [None])[0],
+                    name="offset",
+                    default=0,
+                    min_val=0,
+                    max_val=2**63 - 1,
+                ) or 0
+                items, total = self.container.memory_repo.page_active_memories(
+                    space_id, memory_type, limit, offset
+                )
+                return 200, {
+                    "memories": [item.to_dict() for item in items],
+                    "has_more": offset + len(items) < total,
+                    "total": total,
+                }
+
             if method == "GET" and path == "/api/memories/search":
                 q = qp.get("q", [""])[0][:500]
                 mtype = qp.get("memory_type", [""])[0]
