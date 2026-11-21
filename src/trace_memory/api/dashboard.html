@@ -1046,7 +1046,7 @@
     /* Memory graph */
     #panel-graph.active {
       display: grid;
-      grid-template-rows: auto minmax(390px, 1fr);
+      grid-template-rows: auto auto minmax(420px, 1fr);
       min-height: calc(100dvh - var(--header-h) - 40px);
     }
     .graph-toolbar-card {
@@ -1125,7 +1125,7 @@
     .graph-stage {
       position: relative;
       width: 100%;
-
+      min-height: 420px;
       border-radius: 16px;
       overflow: hidden;
       border: 1px solid #1e293b;
@@ -1259,9 +1259,10 @@
     .graph-inspector.open { visibility: visible; }
     @media (max-width: 768px) {
       #panel-graph.active {
-        grid-template-rows: auto minmax(330px, 1fr);
+        grid-template-rows: auto auto minmax(340px, 1fr);
         min-height: calc(100dvh - var(--header-h) - 86px);
       }
+      .graph-stage { min-height: 340px; }
       .graph-toolbar-card { padding: 10px; }
       .graph-toolbar-row, .graph-search { gap: 4px; }
       .graph-search .main-input, .graph-search button { padding-inline: 6px; }
@@ -1784,8 +1785,17 @@
     [data-theme="deep_forest"] .duodo-sheet,
     [data-theme="deep_forest"] .duodo-card,
     [data-theme="deep_forest"] .auth-sheet,
-    [data-theme="deep_forest"] .graph-toolbar-card {
+    [data-theme="deep_forest"] .graph-toolbar-card,
+    [data-theme="deep_forest"] .graph-relation-options {
       background: var(--surface);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    [data-theme="deep_forest"] .graph-relations > summary { color: var(--text); }
+    [data-theme="deep_forest"] .graph-chip:not(.active),
+    [data-theme="deep_forest"] .graph-layer-toggle,
+    [data-theme="deep_forest"] input.main-input {
+      background: var(--surface-alt);
       color: var(--text);
       border-color: var(--border);
     }
