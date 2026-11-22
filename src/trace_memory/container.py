@@ -7,8 +7,11 @@ from dataclasses import dataclass
 from trace_memory.config import TraceMemoryConfig
 from trace_memory.llm.mock_provider import DeterministicLLMProvider, SemanticHashEmbedder
 from trace_memory.llm.openai_compat import OpenAICompatEmbedder, OpenAICompatLLMProvider
-from trace_memory.llm.protocol import EmbeddingProvider, LLMProvider
+from trace_memory.llm.protocol import AskToolModel, EmbeddingProvider, LLMProvider
+from trace_memory.services.ask_notes_tool import make_list_notes_by_date_tool
+from trace_memory.services.ask_react import AskTool
 from trace_memory.services.ask_service import AskService
+from trace_memory.services.ask_task_tool import make_list_tasks_tool
 from trace_memory.services.auth_service import AdminService, AuthService
 from trace_memory.services.change_service import ChangeService
 from trace_memory.services.dream_service import DreamService
@@ -81,6 +84,7 @@ class AppContainer:
         llm_override: LLMProvider | None = None,
         embedder_override: EmbeddingProvider | None = None,
         vector_store_override: VectorStore | None = None,
+        ask_tools: tuple[AskTool, ...] | None = None,
     ) -> AppContainer:
         cfg = config or TraceMemoryConfig.from_env()
         db = Database(cfg.sqlite_path)
@@ -204,6 +208,12 @@ class AppContainer:
             task_matrix_service=task_matrix_service,
             sync_tracker=sync_tracker,
         )
+        if ask_tools is None:
+            ask_tools = (
+                (make_list_tasks_tool(task_matrix_service), make_list_notes_by_date_tool(note_repo))
+                if isinstance(llm, AskToolModel)
+                else ()
+            )
         ask_service = AskService(
             note_repo=note_repo,
             memory_repo=memory_repo,
@@ -214,6 +224,7 @@ class AppContainer:
             input_guard=input_guard,
             quota_service=quota_service,
             job_repo=job_repo,
+            tools=ask_tools,
         )
         dream_service = DreamService(
             memory_repo=memory_repo,

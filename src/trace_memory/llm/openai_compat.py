@@ -28,6 +28,7 @@ from trace_memory.domain.relations import extract_relations_from_markdown, slugi
 from trace_memory.llm.mock_provider import DeterministicLLMProvider, SemanticHashEmbedder
 from trace_memory.llm.protocol import (
     AskSynthesis,
+    AskTurn,
     DecomposeBatch,
     DreamBatch,
     DreamInsight,
@@ -142,15 +143,15 @@ class OpenAICompatLLMProvider:
         self.timeout_seconds = timeout_seconds
         self._rule_helper = DeterministicLLMProvider()
 
-    def _chat_json(self, system_prompt: str, user_prompt: str) -> tuple[dict[str, Any], int]:
-        req_payload: dict[str, Any] = {
+    def _chat_turn(
+        self, messages: list[dict[str, Any]], **options: Any
+    ) -> AskTurn:
+        req_payload = {
             "model": self.model,
             "temperature": 0.1,
             "response_format": {"type": "json_object"},
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+            "messages": messages,
+            **options,
         }
         # DashScope Qwen3 hybrid-thinking models require enable_thinking=False for JSON mode
         if "dashscope.aliyuncs.com" in self.base_url:
@@ -162,12 +163,32 @@ class OpenAICompatLLMProvider:
             req_payload,
             timeout_seconds=self.timeout_seconds,
         )
-        content = str(resp["choices"][0]["message"]["content"]).strip()
+        return AskTurn(
+            message=resp["choices"][0]["message"],
+            tokens_used=int(resp.get("usage", {}).get("total_tokens", 0)),
+        )
+
+    def _chat_json(self, system_prompt: str, user_prompt: str) -> tuple[dict[str, Any], int]:
+        turn = self._chat_turn([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ])
+        content = str(turn.message["content"]).strip()
         # Strip optional markdown code fences if returned by compatible providers
         if content.startswith("```"):
             content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.DOTALL).strip()
-        tokens = int(resp.get("usage", {}).get("total_tokens", 0))
-        return json.loads(content), tokens
+        return json.loads(content), turn.tokens_used
+
+    def ask_turn(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        *,
+        allow_tools: bool,
+    ) -> AskTurn:
+        return self._chat_turn(
+            messages, tools=tools, tool_choice="auto" if allow_tools else "none"
+        )
 
     def extract_candidates(
         self,
@@ -318,18 +339,14 @@ class OpenAICompatLLMProvider:
         )
         return DreamBatch(insights=(insight,), llm_calls=1, tokens_used=tokens)
 
-    def synthesize_answer(
+    def build_ask_messages(
         self,
         question: str,
         query_mode: str,
         memories: list[MemoryItem],
         notes: list[RawNote],
         history_versions: list[dict[str, Any]],
-    ) -> AskSynthesis:
-        if not memories and not notes:
-            return self._rule_helper.synthesize_answer(
-                question, query_mode, memories, notes, history_versions
-            )
+    ) -> list[dict[str, Any]]:
         ctx_mem = "\n".join(
             f"- [{m.memory_id}] ({m.assertion_kind}) {m.title}: {m.summary} | payload={m.payload}"
             for m in memories[:6]
@@ -352,7 +369,27 @@ class OpenAICompatLLMProvider:
             f"当前北京时间: {clock_anchor}\n查询模式: {query_mode}\n问题: {question}\n\n"
             f"候选记忆:\n{ctx_mem}\n\n原始记录:\n{ctx_note}\n\n历史版本:\n{history_versions[:5]}"
         )
-        parsed, tokens = self._chat_json(sys_prompt, user_msg)
+        return [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": user_msg},
+        ]
+
+    def synthesize_answer(
+        self,
+        question: str,
+        query_mode: str,
+        memories: list[MemoryItem],
+        notes: list[RawNote],
+        history_versions: list[dict[str, Any]],
+    ) -> AskSynthesis:
+        if not memories and not notes:
+            return self._rule_helper.synthesize_answer(
+                question, query_mode, memories, notes, history_versions
+            )
+        system, user = self.build_ask_messages(
+            question, query_mode, memories, notes, history_versions
+        )
+        parsed, tokens = self._chat_json(system["content"], user["content"])
         return AskSynthesis(
             answer=str(parsed.get("answer", "")),
             cited_memory_ids=tuple(str(x) for x in parsed.get("cited_memory_ids", [])),
