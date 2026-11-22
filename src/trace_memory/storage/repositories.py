@@ -884,6 +884,25 @@ class TraceRepository:
                 ),
             )
 
+    @staticmethod
+    def _redact_value(value: Any, spans: tuple[str, ...]) -> Any:
+        if isinstance(value, str):
+            redacted = value
+            for sp in spans:
+                if sp in redacted:
+                    redacted = redacted.replace(sp, "[REDACTED]")
+            return redacted
+        if isinstance(value, dict):
+            return {
+                TraceRepository._redact_value(k, spans): TraceRepository._redact_value(v, spans)
+                for k, v in value.items()
+            }
+        if isinstance(value, list):
+            return [TraceRepository._redact_value(x, spans) for x in value]
+        if isinstance(value, tuple):
+            return [TraceRepository._redact_value(x, spans) for x in value]
+        return value
+
     def record_trace(
         self,
         space_id: str,
@@ -896,6 +915,27 @@ class TraceRepository:
     ) -> str:
         trace_id = new_id("trc")
         with self.db.transaction() as conn:
+            span_rows = conn.execute(
+                "SELECT forgotten_spans_json FROM raw_notes WHERE space_id = ? AND forgotten_spans_json != '[]'",
+                (space_id,),
+            ).fetchall()
+            active_spans_list: list[str] = []
+            for row in span_rows:
+                try:
+                    parsed = json.loads(row["forgotten_spans_json"])
+                except (TypeError, ValueError):
+                    parsed = []
+                if isinstance(parsed, list):
+                    for sp in parsed:
+                        if isinstance(sp, str) and len(sp.strip()) >= 2:
+                            active_spans_list.append(sp.strip())
+            # Replace longer spans first so substring spans don't leave partial fragments
+            active_spans = tuple(sorted(set(active_spans_list), key=len, reverse=True))
+            safe_summary = input_summary[:240]
+            safe_details = details
+            if active_spans:
+                safe_summary = self._redact_value(safe_summary, active_spans)
+                safe_details = self._redact_value(details, active_spans)
             conn.execute(
                 """
                 INSERT INTO trace_runs (
@@ -907,8 +947,8 @@ class TraceRepository:
                     trace_id,
                     space_id,
                     operation,
-                    input_summary[:240],
-                    json.dumps(details, ensure_ascii=False),
+                    safe_summary,
+                    json.dumps(safe_details, ensure_ascii=False),
                     llm_calls,
                     tokens_used,
                     round(duration_ms, 2),

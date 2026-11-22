@@ -11,7 +11,7 @@ from trace_memory.domain.memories import MemoryItem
 from trace_memory.domain.notes import RawNote
 from trace_memory.domain.proposals import ValidationError
 from trace_memory.llm.mock_provider import DeterministicLLMProvider
-from trace_memory.llm.protocol import AskToolModel, LLMProvider
+from trace_memory.llm.protocol import AskSynthesis, AskToolModel, LLMProvider
 from trace_memory.services.ask_react import AskReAct, AskTool
 from trace_memory.services.guard_service import InputGuardService, RateLimitAndQuotaService
 from trace_memory.services.ingest_queue import IngestJobRepository
@@ -356,18 +356,23 @@ class AskService:
             llm_notes.append(n)
 
         note_lookup = {n.note_id: n for n in candidate_notes}
+        llm_note_by_id = {n.note_id: n for n in llm_notes}
         evidence_memories: dict[str, MemoryItem] = {m.memory_id: m for m in llm_memories}
         evidence_notes: dict[str, RawNote] = {
             n.note_id: note_lookup.get(n.note_id, n) for n in llm_notes
         }
 
-        def _invoke_synth(provider: Any) -> Any:
+        def _invoke_synth(
+            provider: Any,
+            memories_arg: list[MemoryItem] | None = None,
+            notes_arg: list[RawNote] | None = None,
+        ) -> Any:
             sig = inspect.signature(provider.synthesize_answer)
             kwargs: dict[str, Any] = {
                 "question": q_clean,
                 "query_mode": query_mode,
-                "memories": llm_memories,
-                "notes": llm_notes,
+                "memories": memories_arg if memories_arg is not None else llm_memories,
+                "notes": notes_arg if notes_arg is not None else llm_notes,
                 "history_versions": history_versions,
             }
             if "graph_relations" in sig.parameters:
@@ -402,13 +407,35 @@ class AskService:
             )
             try:
                 outcome = self.react.run(space_id, messages)
-                synthesis = outcome.synthesis
                 evidence_memories.update((m.memory_id, m) for m in outcome.memories)
                 evidence_notes.update((n.note_id, n) for n in outcome.notes)
-                react_trace = {
-                    "tool_calls": outcome.tool_trace,
-                    "stop_reason": outcome.stop_reason,
-                }
+                if outcome.stop_reason in ("invalid_answer", "unexpected_tool_call"):
+                    merged_memories = list(evidence_memories.values())
+                    merged_notes = [llm_note_by_id.get(n.note_id, n) for n in evidence_notes.values()]
+                    try:
+                        recovered = _invoke_synth(self.llm, merged_memories, merged_notes)
+                    except Exception:
+                        recovered = _invoke_synth(
+                            DeterministicLLMProvider(), merged_memories, merged_notes
+                        )
+                    synthesis = AskSynthesis(
+                        answer=recovered.answer,
+                        cited_memory_ids=recovered.cited_memory_ids,
+                        cited_note_ids=recovered.cited_note_ids,
+                        has_sufficient_evidence=recovered.has_sufficient_evidence,
+                        llm_calls=outcome.synthesis.llm_calls + recovered.llm_calls,
+                        tokens_used=outcome.synthesis.tokens_used + recovered.tokens_used,
+                    )
+                    react_trace = {
+                        "tool_calls": outcome.tool_trace,
+                        "stop_reason": f"{outcome.stop_reason}_recovered",
+                    }
+                else:
+                    synthesis = outcome.synthesis
+                    react_trace = {
+                        "tool_calls": outcome.tool_trace,
+                        "stop_reason": outcome.stop_reason,
+                    }
             except Exception:
                 synthesis = _invoke_synth(DeterministicLLMProvider())
                 react_trace = {

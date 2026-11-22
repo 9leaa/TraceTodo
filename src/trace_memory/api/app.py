@@ -151,6 +151,7 @@ def _safe_int(
     default: int | None = None,
     min_val: int | None = None,
     max_val: int | None = None,
+    strict: bool = False,
 ) -> int | None:
     if raw is None or (isinstance(raw, str) and not raw.strip()):
         return default
@@ -160,6 +161,12 @@ def _safe_int(
         val = int(raw)
     except (TypeError, ValueError) as exc:
         raise ValidationError(f"参数 {name} 必须为整数") from exc
+    if strict:
+        if min_val is not None and val < min_val:
+            raise ValidationError(f"参数 {name} 不能小于 {min_val}")
+        if max_val is not None and val > max_val:
+            raise ValidationError(f"参数 {name} 不能大于 {max_val}")
+        return val
     if min_val is not None and val < min_val:
         val = min_val
     if max_val is not None and val > max_val:
@@ -1045,15 +1052,23 @@ class ApiDispatcher:
                 self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
                 memory_type = qp.get("memory_type", [""])[0]
                 limit = _safe_int(
-                    qp.get("limit", [None])[0], name="limit", default=30, min_val=1, max_val=100
-                ) or 30
+                    qp.get("limit", [None])[0],
+                    name="limit",
+                    default=30,
+                    min_val=1,
+                    max_val=100,
+                    strict=True,
+                )
+                assert limit is not None
                 offset = _safe_int(
                     qp.get("offset", [None])[0],
                     name="offset",
                     default=0,
                     min_val=0,
                     max_val=100_000,
-                ) or 0
+                    strict=True,
+                )
+                assert offset is not None
                 items, total = self.container.memory_repo.page_active_memories(
                     space_id, memory_type, limit, offset
                 )
@@ -1068,10 +1083,16 @@ class ApiDispatcher:
                 q = qp.get("q", [""])[0][:500]
                 mtype = qp.get("memory_type", [""])[0]
                 top_k = _safe_int(
-                    qp.get("top_k", ["20"])[0], name="top_k", default=20, min_val=1, max_val=100
+                    qp.get("top_k", [None])[0],
+                    name="top_k",
+                    default=20,
+                    min_val=1,
+                    max_val=100,
+                    strict=True,
                 )
+                assert top_k is not None
                 return 200, self.container.retrieval_service.search(
-                    space_id=space_id, query=q, memory_type=mtype, top_k=int(top_k or 20)
+                    space_id=space_id, query=q, memory_type=mtype, top_k=top_k
                 )
 
             if method == "GET" and path == "/api/memories/detail":
@@ -1103,7 +1124,9 @@ class ApiDispatcher:
                 md_text = str(payload.get("markdown", ""))
                 if not mem_id or not md_text.strip():
                     raise ValidationError("memory_id and markdown are required")
-                exp_v = _safe_int(payload.get("expected_version"), name="expected_version", min_val=1)
+                exp_v = _safe_int(
+                    payload.get("expected_version"), name="expected_version", min_val=1, strict=True
+                )
                 can_export_disk = (not self.container.config.auth_required) or (
                     user is not None and user.role == "admin"
                 )
@@ -1165,7 +1188,9 @@ class ApiDispatcher:
                         for rt, tgt, ctx in extract_relations_from_markdown(raw_summary):
                             rel_specs.append(RelationSpec(relation_type=rt, target=tgt, context=ctx))
 
-                exp_v = _safe_int(payload.get("expected_version"), name="expected_version", min_val=1)
+                exp_v = _safe_int(
+                    payload.get("expected_version"), name="expected_version", min_val=1, strict=True
+                )
                 idem_key = str(payload.get("idempotency_key", "")).strip()
                 prop = ChangeProposal(
                     space_id=space_id,
@@ -1216,10 +1241,15 @@ class ApiDispatcher:
                     self._check_daily_quota(
                         user=user, space_id=space_id, require_note_slot=True, require_llm_slot=False
                     )
+                    note_body = (
+                        f"{title_txt}：{summary_txt}"
+                        if (title_txt and title_txt not in summary_txt)
+                        else summary_txt
+                    )
                     src_note = RawNote(
                         note_id=new_id("note"),
                         space_id=space_id,
-                        content=f"[Web Edit] {summary_txt}",
+                        content=f"[Web Edit] {note_body}",
                         source_type="web",
                         actor_id=user.username if user else "user",
                     )

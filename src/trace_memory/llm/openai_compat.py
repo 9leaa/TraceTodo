@@ -235,13 +235,17 @@ class OpenAICompatLLMProvider:
         for m in (existing_memories or [])[:30]:
             extra_state = ""
             if m.memory_type == "task":
-                extra_state = f", task_status={m.payload.get('task_status', 'todo')}"
+                extra_state = (
+                    f", task_status={m.payload.get('task_status', 'todo')}"
+                    f", assignee={m.payload.get('assignee', 'self')}"
+                )
             existing_ctx_lines.append(
                 f"- [{m.memory_type}] canonical_key={m.canonical_key!r} | title={m.title!r}{extra_state}"
             )
         existing_block = (
             "\n当前已存在的活跃记忆（若用户是在完成/取消/更新其中某项任务或事实，即使有轻微错别字如“告警/告急”或简称，"
-            "也必须直接复用该条目的 canonical_key，并将任务完成设为 mutation_hint='complete_task'、取消设为 'cancel_task'）：\n"
+            "也必须直接复用该条目的 canonical_key，并将任务完成设为 mutation_hint='complete_task'、取消设为 'cancel_task'；"
+            "注意：不同负责人（assignee 不同，例如 self 与其他人的名字）的同类事项属于不同任务，严禁复用同一 canonical_key 合并）：\n"
             + "\n".join(existing_ctx_lines)
             if existing_ctx_lines
             else ""

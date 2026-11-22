@@ -187,33 +187,73 @@ class AskReAct:
         return "ok", content, AskToolResult(memories=memories, notes=notes)
 
 
+def _coerce_sufficient_flag(raw: Any) -> bool | None:
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        low = raw.strip().lower()
+        if low in ("true", "1", "yes"):
+            return True
+        if low in ("false", "0", "no"):
+            return False
+    return None
+
+
+def _validate_ask_payload(data: Any) -> dict[str, Any] | None:
+    if not isinstance(data, dict):
+        return None
+    answer = data.get("answer")
+    if not isinstance(answer, str) or not answer.strip():
+        return None
+    suff = _coerce_sufficient_flag(data.get("has_sufficient_evidence"))
+    if suff is None:
+        return None
+    out: dict[str, Any] = {
+        "answer": answer,
+        "has_sufficient_evidence": suff,
+    }
+    for key in ("cited_memory_ids", "cited_note_ids"):
+        values = data.get(key)
+        if values is None:
+            out[key] = []
+        elif isinstance(values, list) and all(isinstance(v, str) for v in values):
+            out[key] = values
+        else:
+            return None
+    return out
+
+
 def _parse_ask_answer(content: Any) -> dict[str, Any] | None:
     if not isinstance(content, str):
         return None
-    content = content.strip()
-    try:
-        data = json.loads(content)
-    except ValueError:
-        fenced_json = re.search(
-            r"```(?:json)?[ \t]*\n(.*?)\n[ \t]*```\s*$",
-            content,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-        if fenced_json is None:
-            return None
-        try:
-            data = json.loads(fenced_json.group(1))
-        except ValueError:
-            return None
-    if (
-        not isinstance(data, dict)
-        or not isinstance(data.get("answer"), str)
-        or not data["answer"].strip()
-        or not isinstance(data.get("has_sufficient_evidence"), bool)
-    ):
+    text = content.strip()
+    if not text:
         return None
-    for key in ("cited_memory_ids", "cited_note_ids"):
-        values = data.get(key)
-        if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
-            return None
-    return data
+
+    candidates: list[Any] = []
+    try:
+        candidates.append(json.loads(text))
+    except ValueError:
+        pass
+
+    for m in re.finditer(r"```(?:json)?[ \t]*\n?(.*?)\n?[ \t]*```", text, flags=re.IGNORECASE | re.DOTALL):
+        try:
+            candidates.append(json.loads(m.group(1).strip()))
+        except ValueError:
+            pass
+
+    decoder = json.JSONDecoder()
+    for idx, ch in enumerate(text):
+        if ch != "{":
+            continue
+        try:
+            obj, _ = decoder.raw_decode(text, idx)
+        except ValueError:
+            continue
+        candidates.append(obj)
+
+    for obj in reversed(candidates):
+        validated = _validate_ask_payload(obj)
+        if validated is not None:
+            return validated
+    return None
