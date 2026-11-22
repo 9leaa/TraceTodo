@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from trace_memory.domain.memories import MemoryItem
 from trace_memory.domain.notes import RawNote
@@ -60,6 +60,33 @@ class AskSynthesis:
     has_sufficient_evidence: bool
     llm_calls: int = 1
     tokens_used: int = 0
+
+
+@dataclass(frozen=True)
+class AskTurn:
+    message: dict[str, Any]
+    tokens_used: int
+
+
+@runtime_checkable
+class AskToolModel(Protocol):
+    def build_ask_messages(
+        self,
+        question: str,
+        query_mode: str,
+        memories: list[MemoryItem],
+        notes: list[RawNote],
+        history_versions: list[dict[str, Any]],
+        graph_relations: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]: ...
+
+    def ask_turn(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        *,
+        allow_tools: bool,
+    ) -> AskTurn: ...
 
 
 @dataclass(frozen=True)

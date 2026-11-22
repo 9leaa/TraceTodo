@@ -182,6 +182,33 @@ class NoteRepository:
             )
         return [_row_to_note(r) for r in rows]
 
+    def page_notes_by_created_at(
+        self, space_id: str, start: str, end: str, limit: int, offset: int
+    ) -> tuple[list[RawNote], int]:
+        """List visible notes in the half-open time range [start, end)."""
+        rows = self.db.query_all(
+            """
+            WITH matching AS (
+                SELECT note_id, julianday(created_at) AS recorded_at
+                FROM raw_notes
+                WHERE space_id = ? AND is_forgotten = 0
+                    AND julianday(created_at) >= julianday(?)
+                    AND julianday(created_at) < julianday(?)
+            ),
+            page AS (
+                SELECT note_id, recorded_at FROM matching
+                ORDER BY recorded_at, note_id LIMIT ? OFFSET ?
+            )
+            SELECT raw_notes.*, totals.total
+            FROM (SELECT COUNT(*) AS total FROM matching) AS totals
+            LEFT JOIN page ON TRUE
+            LEFT JOIN raw_notes ON raw_notes.note_id = page.note_id
+            ORDER BY page.recorded_at, page.note_id
+            """,
+            (space_id, start, end, limit, offset),
+        )
+        return [_row_to_note(row) for row in rows if row["note_id"] is not None], rows[0]["total"]
+
     def search_bm25(self, space_id: str, query: str, limit: int = 10) -> list[tuple[RawNote, float]]:
         match_expr = build_fts_match_query(query)
         if not match_expr:
@@ -542,7 +569,7 @@ class MemoryRepository:
         space_id: str,
         memory_type: str = "",
         status: str = "active",
-        limit: int = 200,
+        limit: int | None = 200,
     ) -> list[MemoryItem]:
         clauses = ["space_id = ?"]
         params: list[Any] = [space_id]
@@ -554,7 +581,7 @@ class MemoryRepository:
             params.append(status)
         else:
             clauses.append("status != 'forgotten'")
-        params.append(limit)
+        params.append(-1 if limit is None else limit)
         sql = f"SELECT * FROM memories WHERE {' AND '.join(clauses)} ORDER BY updated_at DESC LIMIT ?"
         return [_row_to_memory(r) for r in self.db.query_all(sql, tuple(params))]
 

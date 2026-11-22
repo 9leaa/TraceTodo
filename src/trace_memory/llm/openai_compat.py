@@ -28,6 +28,7 @@ from trace_memory.domain.relations import extract_relations_from_markdown, slugi
 from trace_memory.llm.mock_provider import DeterministicLLMProvider, SemanticHashEmbedder
 from trace_memory.llm.protocol import (
     AskSynthesis,
+    AskTurn,
     DecomposeBatch,
     DreamBatch,
     DreamInsight,
@@ -155,15 +156,15 @@ class OpenAICompatLLMProvider:
         self.timeout_seconds = timeout_seconds
         self._rule_helper = DeterministicLLMProvider()
 
-    def _chat_json(self, system_prompt: str, user_prompt: str) -> tuple[dict[str, Any], int]:
-        req_payload: dict[str, Any] = {
+    def _chat_turn(
+        self, messages: list[dict[str, Any]], **options: Any
+    ) -> AskTurn:
+        req_payload = {
             "model": self.model,
             "temperature": 0.1,
             "response_format": {"type": "json_object"},
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+            "messages": messages,
+            **options,
         }
         # DashScope Qwen3 hybrid-thinking models require enable_thinking=False for JSON mode
         if "dashscope.aliyuncs.com" in self.base_url:
@@ -176,25 +177,49 @@ class OpenAICompatLLMProvider:
             timeout_seconds=self.timeout_seconds,
         )
         try:
-            content = str(resp["choices"][0]["message"]["content"]).strip()
+            msg = resp["choices"][0]["message"]
+            if not isinstance(msg, dict):
+                raise TypeError("message is not a dict")
         except (KeyError, IndexError, TypeError) as exc:
             raise TraceMemoryError(f"LLM API malformed choices payload: {exc}") from exc
-        # Strip optional markdown code fences if returned by compatible providers
-        if content.startswith("```"):
-            content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.DOTALL).strip()
         usage_obj = resp.get("usage")
         usage = usage_obj if isinstance(usage_obj, dict) else {}
         try:
             tokens = int(usage.get("total_tokens", 0) or 0)
         except (TypeError, ValueError):
             tokens = 0
+        return AskTurn(message=msg, tokens_used=tokens)
+
+    def _chat_json(self, system_prompt: str, user_prompt: str) -> tuple[dict[str, Any], int]:
+        turn = self._chat_turn([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ])
+        raw_content = turn.message.get("content")
+        if raw_content is None:
+            raise TraceMemoryError("LLM API returned empty message content")
+        content = str(raw_content).strip()
+        # Strip optional markdown code fences if returned by compatible providers
+        if content.startswith("```"):
+            content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.DOTALL).strip()
         try:
             parsed = json.loads(content)
         except json.JSONDecodeError as exc:
             raise TraceMemoryError(f"LLM API returned invalid JSON content: {exc}") from exc
         if not isinstance(parsed, dict):
             raise TraceMemoryError("LLM API returned non-object structured JSON")
-        return parsed, tokens
+        return parsed, turn.tokens_used
+
+    def ask_turn(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        *,
+        allow_tools: bool,
+    ) -> AskTurn:
+        return self._chat_turn(
+            messages, tools=tools, tool_choice="auto" if allow_tools else "none"
+        )
 
     def extract_candidates(
         self,
@@ -352,7 +377,7 @@ class OpenAICompatLLMProvider:
         )
         return DreamBatch(insights=(insight,), llm_calls=1, tokens_used=tokens)
 
-    def synthesize_answer(
+    def build_ask_messages(
         self,
         question: str,
         query_mode: str,
@@ -360,11 +385,7 @@ class OpenAICompatLLMProvider:
         notes: list[RawNote],
         history_versions: list[dict[str, Any]],
         graph_relations: list[dict[str, Any]] | None = None,
-    ) -> AskSynthesis:
-        if not memories and not notes and not graph_relations:
-            return self._rule_helper.synthesize_answer(
-                question, query_mode, memories, notes, history_versions, graph_relations=graph_relations
-            )
+    ) -> list[dict[str, Any]]:
         ctx_mem = "\n".join(
             f"- [{m.memory_id}] ({m.memory_type} | {m.assertion_kind} | event_time={m.event_time or 'N/A'} | tags={list(m.tags)}) "
             f"{m.title}: {m.summary} | payload={m.payload}"
@@ -400,7 +421,33 @@ class OpenAICompatLLMProvider:
             f"候选记忆:\n{ctx_mem}\n\n关联图谱关系:\n{ctx_rels}\n\n"
             f"原始记录:\n{ctx_note}\n\n历史版本:\n{history_versions[:16]}"
         )
-        parsed, tokens = self._chat_json(sys_prompt, user_msg)
+        return [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": user_msg},
+        ]
+
+    def synthesize_answer(
+        self,
+        question: str,
+        query_mode: str,
+        memories: list[MemoryItem],
+        notes: list[RawNote],
+        history_versions: list[dict[str, Any]],
+        graph_relations: list[dict[str, Any]] | None = None,
+    ) -> AskSynthesis:
+        if not memories and not notes and not graph_relations:
+            return self._rule_helper.synthesize_answer(
+                question, query_mode, memories, notes, history_versions, graph_relations=graph_relations
+            )
+        system, user = self.build_ask_messages(
+            question,
+            query_mode,
+            memories,
+            notes,
+            history_versions,
+            graph_relations=graph_relations,
+        )
+        parsed, tokens = self._chat_json(system["content"], user["content"])
         raw_mem_ids = parsed.get("cited_memory_ids")
         raw_note_ids = parsed.get("cited_note_ids")
         raw_suff = parsed.get("has_sufficient_evidence", True)
