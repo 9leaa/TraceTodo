@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from dataclasses import replace
+from datetime import date, datetime, timezone
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -121,7 +122,11 @@ class TaskMatrixService:
             projected = [
                 t for t in projected if t["payload"].get("task_status") == task_status
             ]
+        self._sort_projected_tasks(projected, sort_by)
+        return projected
 
+    @staticmethod
+    def _sort_projected_tasks(projected: list[dict[str, Any]], sort_by: str) -> None:
         def _due_sort_key(t: dict[str, Any]) -> float:
             h = t["payload"].get("hours_until_due")
             return float(h) if h is not None else 999999.0
@@ -158,7 +163,43 @@ class TaskMatrixService:
                 reverse=True,
             )
 
-        return projected
+    def query_task_page(
+        self,
+        space_id: str,
+        *,
+        task_status: str,
+        quadrants: set[str],
+        due_on: date | None,
+        limit: int,
+        offset: int,
+        now: datetime,
+    ) -> tuple[tuple[MemoryItem, ...], int]:
+        """Read a page with live quadrants without running task maintenance."""
+        items = self.memory_repo.list_memories(
+            space_id=space_id, memory_type="task", status="active", limit=None
+        )
+        by_id = {
+            m.memory_id: m for m in items
+            if task_status == "all" or m.payload["task_status"] == task_status
+        }
+        matches = []
+        for item in by_id.values():
+            if due_on is not None:
+                due = parse_iso_datetime(item.payload["due_at"])
+                if due is None or due.date() != due_on:
+                    continue
+            task = self._project_live_task_dict(item, now)
+            if not quadrants or task["payload"]["quadrant"] in quadrants:
+                matches.append(task)
+
+        # Stable tie-breaker for paging. The priority sort preserves this order for ties.
+        matches.sort(key=lambda task: task["memory_id"])
+        self._sort_projected_tasks(matches, "priority")
+        page = tuple(
+            replace(by_id[task["memory_id"]], payload=task["payload"])
+            for task in matches[offset : offset + limit]
+        )
+        return page, len(matches)
 
     def apply_auto_rollover(
         self, space_id: str, now: datetime | None = None
