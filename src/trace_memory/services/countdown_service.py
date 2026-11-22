@@ -268,14 +268,52 @@ class CountdownService:
         if repeat_rule not in VALID_COUNTDOWN_REPEATS:
             repeat_rule = "none"
 
+        def _parse_cd_int(raw: Any, default_val: int, name: str) -> int:
+            if raw is None or raw == "":
+                return default_val
+            if isinstance(raw, bool):
+                raise ValidationError(f"参数 {name} 必须为整数")
+            try:
+                return int(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValidationError(f"参数 {name} 格式错误：{raw!r}") from exc
+
         today = date.fromisoformat(beijing_today_date())
-        if cal_type == "lunar" and ("lunar_month" in data and "lunar_day" in data):
-            l_year = int(data.get("lunar_year") or today.year)
+        has_lunar_fields = (
+            "lunar_month" in data
+            and "lunar_day" in data
+            and data.get("lunar_month") is not None
+            and data.get("lunar_day") is not None
+        )
+        preserve_existing_lunar = (
+            cal_type == "lunar"
+            and existing is not None
+            and not has_lunar_fields
+            and "target_date" not in data
+            and int(existing["lunar_month"] or 0) > 0
+            and int(existing["lunar_day"] or 0) > 0
+        )
+        if cal_type == "lunar" and (has_lunar_fields or preserve_existing_lunar):
+            if has_lunar_fields:
+                l_year = _parse_cd_int(data.get("lunar_year"), today.year, "lunar_year")
+                l_month = _parse_cd_int(data.get("lunar_month"), 1, "lunar_month")
+                l_day = _parse_cd_int(data.get("lunar_day"), 1, "lunar_day")
+                l_leap = bool(data.get("is_leap_month", False))
+            else:
+                assert existing is not None
+                l_year = int(existing["lunar_year"] or today.year)
+                l_month = int(existing["lunar_month"] or 1)
+                l_day = int(existing["lunar_day"] or 1)
+                l_leap = bool(data.get("is_leap_month", existing["is_leap_month"]))
             l_year = max(LUNAR_START_YEAR, min(LUNAR_END_YEAR, l_year))
-            l_month = max(1, min(12, int(data.get("lunar_month") or 1)))
-            l_day = max(1, min(30, int(data.get("lunar_day") or 1)))
-            l_leap = bool(data.get("is_leap_month", False))
-            resolved_solar = lunar_to_solar(l_year, l_month, l_day, is_leap_month=l_leap)
+            if l_month < 1 or l_month > 12:
+                raise ValidationError(f"农历月份无效（需在 1..12 之间）：{l_month}")
+            if l_day < 1 or l_day > 30:
+                raise ValidationError(f"农历日期无效（需在 1..30 之间）：{l_day}")
+            try:
+                resolved_solar = lunar_to_solar(l_year, l_month, l_day, is_leap_month=l_leap)
+            except ValueError as exc:
+                raise ValidationError(str(exc)) from exc
             target_ymd = resolved_solar.isoformat()
         else:
             raw_target = str(

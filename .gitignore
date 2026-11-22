@@ -35,3 +35,7 @@ DerivedData/
 *.p12
 *.cer
 
+# Generated benchmark runs/artifacts
+tests/memory_benchmark_1000/*.jsonl
+tests/memory_benchmark_1000/summary_metrics.json
+

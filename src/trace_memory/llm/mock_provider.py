@@ -222,9 +222,12 @@ def _clean_task_core_title(clause: str) -> tuple[str, str, int]:
     round_num = 0
     m_round = re.search(r"第([一二三四五六七八九十\d]+)(?:轮|期|版|次)", text)
     if m_round:
-        mapping = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5}
+        mapping = {
+            "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+            "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+        }
         raw_r = m_round.group(1)
-        round_num = mapping.get(raw_r, int(raw_r) if raw_r.isdigit() else 1)
+        round_num = mapping.get(raw_r, int(raw_r) if raw_r.isdigit() else 0)
 
     assignee = "self"
     m_who = _ASSIGNEE_PREFIX_RE.match(text)
@@ -671,8 +674,9 @@ class DeterministicLLMProvider:
         memories: list[MemoryItem],
         notes: list[RawNote],
         history_versions: list[dict[str, Any]],
+        graph_relations: list[dict[str, Any]] | None = None,
     ) -> AskSynthesis:
-        if not memories and not notes:
+        if not memories and not notes and not graph_relations:
             return AskSynthesis(
                 answer="抱歉，在当前记忆库和原始记录中均未找到与您问题相关的可靠证据，无法作答（不编造未记录的信息）。",
                 cited_memory_ids=(),
@@ -686,17 +690,30 @@ class DeterministicLLMProvider:
         cited_mems: list[str] = []
         cited_notes: list[str] = []
 
-        if query_mode == "history" and history_versions:
-            lines.append("根据历史版本与原文追溯，状态变迁如下：")
-            for hv in history_versions[:5]:
-                lines.append(
-                    f"- [v{hv['version']} | {hv['created_at'][:10]}] {hv['summary']}（原因：{hv['change_reason']}）"
-                )
+        if query_mode == "history":
+            if history_versions:
+                lines.append("根据历史版本与原文追溯，状态变迁如下：")
+                for hv in history_versions[:8]:
+                    lines.append(
+                        f"- [v{hv['version']} | {hv['created_at'][:10]}] {hv['summary']}（原因：{hv['change_reason']}）"
+                    )
+            if len(history_versions) < 2:
+                prev_lines: list[str] = []
+                for m in memories[:5]:
+                    pvals = m.payload.get("previous_values")
+                    if isinstance(pvals, list) and pvals:
+                        prev_str = "、".join(str(v) for v in pvals if str(v).strip())
+                        if prev_str:
+                            prev_lines.append(f"- 【{m.title}】曾经记录：{prev_str}")
+                if prev_lines:
+                    if not lines:
+                        lines.append("根据历史属性回溯，曾经记录如下：")
+                    lines.extend(prev_lines)
 
         if memories:
             header = "相关记忆状态：" if not lines else "当前最新生效记忆："
             lines.append(header)
-            for m in memories[:5]:
+            for m in memories[:20]:
                 cited_mems.append(m.memory_id)
                 tag_kind = "推断" if m.assertion_kind == "inferred" else "陈述"
                 extra = ""
@@ -706,9 +723,18 @@ class DeterministicLLMProvider:
                     extra = f" [{t_status} | {q_label}]"
                 lines.append(f"- 【{m.title}】({tag_kind}){extra}：{m.summary} (`{m.uri}`)")
 
+        if graph_relations:
+            lines.append("关联图谱关系：")
+            for rel in graph_relations[:12]:
+                from_label = rel.get("from_title") or rel.get("from_memory_id", "")
+                to_label = rel.get("to_title") or rel.get("to_memory_id", "")
+                rtype = rel.get("relation_type", "relates_to")
+                ctx = f"（{rel['context']}）" if rel.get("context") else ""
+                lines.append(f"- {from_label} --[{rtype}]--> {to_label}{ctx}")
+
         if notes:
             lines.append("原始记录证据摘录：")
-            for n in notes[:3]:
+            for n in notes[:10]:
                 cited_notes.append(n.note_id)
                 lines.append(f"- ({n.event_time[:10]}) “{n.visible_content()}” [`{n.note_id}`]")
 

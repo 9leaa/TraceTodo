@@ -10,8 +10,10 @@ import threading
 from typing import Iterator
 
 
-_CJK_CHAR_RE = re.compile(r"[\u4e00-\u9fff]")
-_WORD_OR_CJK_RE = re.compile(r"[a-zA-Z0-9_]+|[\u4e00-\u9fff]+")
+_CJK_CHAR_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+_WORD_OR_CJK_RE = re.compile(
+    r"[a-zA-Z0-9_\u00c0-\u024f]+|[\u3040-\u30ff]+|[\uac00-\ud7af]+|[\u3400-\u4dbf\u4e00-\u9fff]+"
+)
 
 
 def tokenize_for_fts(text: str) -> str:
@@ -20,13 +22,14 @@ def tokenize_for_fts(text: str) -> str:
     Why this exists:
     SQLite's built-in `unicode61` tokenizer treats contiguous Chinese sentences as a
     single giant token, breaking partial phrase BM25 recall. Emitting ASCII words
-    alongside CJK bigrams + unigrams gives high-precision BM25 matching for both
-    identifiers (`ERR_4029`, `Q1`) and Chinese phrases without external C dependencies.
+    alongside CJK/Kana/Hangul bigrams + unigrams gives high-precision BM25 matching for both
+    identifiers (`ERR_4029`, `Q1`) and East Asian phrases without external C dependencies.
     """
     tokens: list[str] = []
     for match in _WORD_OR_CJK_RE.finditer(text.lower()):
         chunk = match.group(0)
-        if _CJK_CHAR_RE.match(chunk[0]):
+        first = chunk[0]
+        if _CJK_CHAR_RE.match(first) or ("\u3040" <= first <= "\u30ff") or ("\uac00" <= first <= "\ud7af"):
             if len(chunk) == 1:
                 tokens.append(chunk)
             else:
@@ -43,9 +46,14 @@ def tokenize_for_fts(text: str) -> str:
 _STOP_QUERY_TERMS = frozenset(
     {
         "的", "了", "是", "在", "我", "你", "他", "她", "它", "有", "个", "吗", "呢", "啊", "吧",
+        "和", "与", "及", "或", "叫", "都", "也",
         "我的", "我是", "我在", "我养", "养的", "什么", "怎么", "哪个", "哪里", "多少", "为什么",
         "名字", "叫什", "么名", "现在", "以前", "之前", "最近", "可以", "需要", "已经",
     }
+)
+
+_QUERY_STOP_SPLIT_RE = re.compile(
+    r"(我的|我是|我在|我养|养的|叫什么名字|是什么|什么|怎么|哪个|哪里|多少|为什么|现在|以前|之前|最近|可以|需要|已经|[的了是在我你他她它有个吗呢啊吧和与及或叫])"
 )
 
 # Generic relation/intent words: kept ONLY if the query has no other specific subject terms
@@ -59,13 +67,26 @@ _GENERIC_META_TERMS = frozenset(
 
 def build_fts_match_query(query: str) -> str:
     """Build a safe OR-combined FTS5 MATCH expression from raw user query text."""
-    segmented = tokenize_for_fts(query)
+    # Strip stop-particles before bigramming CJK chunks so "我的猫" preserves "猫"
+    cleaned = _QUERY_STOP_SPLIT_RE.sub(" ", query)
+    segmented = tokenize_for_fts(cleaned)
     raw_terms = [t for t in segmented.split() if t and t not in _STOP_QUERY_TERMS]
     if not raw_terms:
+        segmented = tokenize_for_fts(query)
+        raw_terms = [t for t in segmented.split() if t and t not in _STOP_QUERY_TERMS]
+    if not raw_terms:
         return ""
-    # Prefer bigrams / multi-char words when available to keep BM25 focused
+    # Prefer bigrams / multi-char words, while preserving standalone unigrams not covered inside longer tokens
     longer = [t for t in raw_terms if len(t) >= 2]
-    candidates = longer if longer else raw_terms
+    if longer:
+        extra_unigrams = [
+            t
+            for t in raw_terms
+            if len(t) == 1 and not any(t in lt for lt in longer)
+        ]
+        candidates = longer + extra_unigrams
+    else:
+        candidates = raw_terms
     # Topic Compatibility Gate (inspired by suixinji Layer-3 no-answer gate):
     # If specific topic terms exist (e.g. "科幻", "电影"), drop generic meta-verbs ("喜欢")
     # so "我最喜欢的科幻电影是什么" never false-matches "喜欢喝冰美式咖啡"!
@@ -429,6 +450,9 @@ class Database:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._local = threading.local()
+        self._conns_lock = threading.Lock()
+        self._all_conns: set[sqlite3.Connection] = set()
+        self._sp_counter = 0
         self.initialize_schema()
 
     def _get_conn(self) -> sqlite3.Connection:
@@ -436,12 +460,14 @@ class Database:
         if conn is None:
             conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
             conn.row_factory = sqlite3.Row
-            # SQLite requires WAL mode for concurrent read/write access across Web/MCP/CLI
+            # Set busy_timeout BEFORE WAL mode so lock contention during initialization waits cleanly
+            conn.execute("PRAGMA busy_timeout=15000")
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("PRAGMA foreign_keys=ON")
-            conn.execute("PRAGMA busy_timeout=15000")
             self._local.conn = conn
+            with self._conns_lock:
+                self._all_conns.add(conn)
         return conn
 
     def initialize_schema(self) -> None:
@@ -485,12 +511,13 @@ class Database:
         conn = self._get_conn()
         if conn.in_transaction:
             # Nested savepoint
-            sp_name = "sp_nested"
+            self._sp_counter += 1
+            sp_name = f"sp_nested_{self._sp_counter}"
             conn.execute(f"SAVEPOINT {sp_name}")
             try:
                 yield conn
                 conn.execute(f"RELEASE SAVEPOINT {sp_name}")
-            except Exception:
+            except BaseException:
                 conn.execute(f"ROLLBACK TO SAVEPOINT {sp_name}")
                 conn.execute(f"RELEASE SAVEPOINT {sp_name}")
                 raise
@@ -499,7 +526,7 @@ class Database:
             try:
                 yield conn
                 conn.commit()
-            except Exception:
+            except BaseException:
                 conn.rollback()
                 raise
 
@@ -510,7 +537,12 @@ class Database:
         return self._get_conn().execute(sql, params).fetchone()
 
     def close(self) -> None:
-        conn: sqlite3.Connection | None = getattr(self._local, "conn", None)
-        if conn is not None:
-            conn.close()
-            self._local.conn = None
+        with self._conns_lock:
+            conns = list(self._all_conns)
+            self._all_conns.clear()
+        for conn in conns:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+        self._local.conn = None

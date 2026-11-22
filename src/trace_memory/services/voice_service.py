@@ -19,7 +19,7 @@ import urllib.request
 import uuid
 
 from trace_memory.config import TraceMemoryConfig
-from trace_memory.domain.proposals import ValidationError
+from trace_memory.domain.proposals import TraceMemoryError, ValidationError
 
 
 _ALLOWED_AUDIO_MIMES: dict[str, str] = {
@@ -150,10 +150,18 @@ class VoiceTranscriptionService:
                 },
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=self.config.llm_timeout_seconds) as resp:
-                parsed = json.loads(resp.read().decode("utf-8"))
-            txt = str(parsed["choices"][0]["message"]["content"] or "").strip()
-            tok = int(parsed.get("usage", {}).get("total_tokens", 0) or 0)
+            try:
+                with urllib.request.urlopen(req, timeout=self.config.llm_timeout_seconds) as resp:
+                    parsed = json.loads(resp.read().decode("utf-8"))
+                txt = str(parsed["choices"][0]["message"]["content"] or "").strip()
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="replace")[:300]
+                raise TraceMemoryError(f"语音转写服务响应错误 ({exc.code}): {detail}") from exc
+            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
+                raise TraceMemoryError(f"语音转写服务调用失败: {exc}") from exc
+            usage_obj = parsed.get("usage")
+            usage = usage_obj if isinstance(usage_obj, dict) else {}
+            tok = int(usage.get("total_tokens", 0) or 0)
             return txt, tok
 
         # Standard OpenAI-compatible multipart/form-data `/audio/transcriptions`
@@ -192,5 +200,7 @@ class VoiceTranscriptionService:
                 parsed = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:300]
-            raise RuntimeError(f"语音转写服务响应错误 ({exc.code}): {detail}") from exc
-        return str(parsed.get("text") or "").strip(), 0
+            raise TraceMemoryError(f"语音转写服务响应错误 ({exc.code}): {detail}") from exc
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
+            raise TraceMemoryError(f"语音转写服务调用失败: {exc}") from exc
+        return str((parsed if isinstance(parsed, dict) else {}).get("text") or "").strip(), 0

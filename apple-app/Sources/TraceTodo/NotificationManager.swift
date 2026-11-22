@@ -254,11 +254,6 @@ final class NotificationManager: NSObject, ObservableObject {
 
                 guard enabled else { return }
 
-                let isoFrac = ISO8601DateFormatter()
-                isoFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                let isoBasic = ISO8601DateFormatter()
-                isoBasic.formatOptions = [.withInternetDateTime]
-
                 let now = Date()
                 var candidates: [(fireDate: Date, task: TaskItemModel, offsetMin: Int)] = []
 
@@ -272,7 +267,7 @@ final class NotificationManager: NSObject, ObservableObject {
                     } else {
                         continue
                     }
-                    guard let dueDate = isoFrac.date(from: dueStr) ?? isoBasic.date(from: dueStr) else {
+                    guard let dueDate = TraceTodoDateParser.parseBeijingDate(dueStr) else {
                         continue
                     }
                     let fireDate = dueDate.addingTimeInterval(TimeInterval(-effectiveOffset * 60))

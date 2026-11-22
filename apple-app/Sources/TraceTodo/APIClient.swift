@@ -418,7 +418,10 @@ struct TraceMemoryAPIClient {
                 URLQueryItem(name: "subject", value: subject),
                 URLQueryItem(name: "max_hops", value: String(maxHops)),
                 URLQueryItem(name: "include_semantic", value: includeSemantic ? "1" : "0"),
-                URLQueryItem(name: "semantic_threshold", value: String(format: "%.2f", semanticThreshold)),
+                URLQueryItem(
+                    name: "semantic_threshold",
+                    value: String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), semanticThreshold)
+                ),
                 URLQueryItem(name: "include_unresolved", value: includeUnresolved ? "1" : "0")
             ]
         )

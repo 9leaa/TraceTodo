@@ -487,11 +487,7 @@ struct TaskEditorSheet: View {
         manualQuadrant = t.userLocked ? p.quadrant : ""
 
         if let dueStr = p.dueAt, !dueStr.isEmpty {
-            let isoFrac = ISO8601DateFormatter()
-            isoFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let isoBasic = ISO8601DateFormatter()
-            isoBasic.formatOptions = [.withInternetDateTime]
-            if let parsed = isoFrac.date(from: dueStr) ?? isoBasic.date(from: dueStr) {
+            if let parsed = TraceTodoDateParser.parseBeijingDate(dueStr) {
                 hasDueDate = true
                 dueDate = parsed
             }

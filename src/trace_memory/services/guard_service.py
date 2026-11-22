@@ -97,29 +97,37 @@ class SystemSettingsStore:
             self._cache = merged
             return dict(merged)
 
+    @staticmethod
+    def _coerce_int_setting(key: str, val: Any, lo: int, hi: int) -> int:
+        if isinstance(val, bool):
+            raise ValidationError(f"设置项 {key} 必须为整数")
+        try:
+            parsed = int(val)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(f"设置项 {key} 必须为整数") from exc
+        return max(lo, min(hi, parsed))
+
     def update(self, patch: dict[str, Any]) -> dict[str, Any]:
         current = self.get_all()
         clean: dict[str, Any] = {}
+        int_bounds = {
+            "max_note_chars": (100, 20000),
+            "min_meaningful_chars": (1, 20),
+            "rate_limit_per_minute": (3, 1000),
+            "duplicate_window_seconds": (0, 3600),
+            "default_daily_note_limit": (5, 100000),
+            "default_daily_llm_limit": (5, 100000),
+            "default_daily_token_limit": (1000, 50_000_000),
+        }
         for k in self.EDITABLE_KEYS:
             if k not in patch:
                 continue
             val = patch[k]
             if k in ("allow_registration", "noise_filter_enabled"):
                 clean[k] = bool(val)
-            elif k == "max_note_chars":
-                clean[k] = max(100, min(20000, int(val)))
-            elif k == "min_meaningful_chars":
-                clean[k] = max(1, min(20, int(val)))
-            elif k == "rate_limit_per_minute":
-                clean[k] = max(3, min(1000, int(val)))
-            elif k == "duplicate_window_seconds":
-                clean[k] = max(0, min(3600, int(val)))
-            elif k == "default_daily_note_limit":
-                clean[k] = max(5, min(100000, int(val)))
-            elif k == "default_daily_llm_limit":
-                clean[k] = max(5, min(100000, int(val)))
-            elif k == "default_daily_token_limit":
-                clean[k] = max(1000, min(50_000_000, int(val)))
+            elif k in int_bounds:
+                lo, hi = int_bounds[k]
+                clean[k] = self._coerce_int_setting(k, val, lo, hi)
 
         if clean:
             now = utc_now_iso()
@@ -262,6 +270,15 @@ class RateLimitAndQuotaService:
         now = time.monotonic()
         cutoff = now - window_seconds
         with self._lock:
+            if len(self._rate_buckets) > 4096:
+                stale_keys = [
+                    k for k, dq in self._rate_buckets.items()
+                    if not dq or dq[-1] <= cutoff
+                ]
+                for k in stale_keys:
+                    del self._rate_buckets[k]
+                while len(self._rate_buckets) > 4096:
+                    self._rate_buckets.pop(next(iter(self._rate_buckets)))
             q = self._rate_buckets.setdefault(bucket_key, deque())
             while q and q[0] <= cutoff:
                 q.popleft()
@@ -282,6 +299,15 @@ class RateLimitAndQuotaService:
         now = time.monotonic()
         cutoff = now - window
         with self._lock:
+            if len(self._recent_notes) > 2048:
+                stale_spaces = [
+                    sp for sp, dq in self._recent_notes.items()
+                    if not dq or dq[-1][1] <= cutoff
+                ]
+                for sp in stale_spaces:
+                    del self._recent_notes[sp]
+                while len(self._recent_notes) > 2048:
+                    self._recent_notes.pop(next(iter(self._recent_notes)))
             q = self._recent_notes.setdefault(space_id, deque())
             while q and q[0][1] <= cutoff:
                 q.popleft()

@@ -103,6 +103,7 @@ class LLMProvider(Protocol):
         memories: list[MemoryItem],
         notes: list[RawNote],
         history_versions: list[dict[str, Any]],
+        graph_relations: list[dict[str, Any]] | None = None,
     ) -> AskSynthesis: ...
 
     def decompose_task(

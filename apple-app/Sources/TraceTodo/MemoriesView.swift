@@ -427,7 +427,7 @@ struct MemoryEditorAndDetailSheet: View {
                     Picker("极性", selection: $prefPolarity) {
                         Text("正面偏好 (positive)").tag("positive")
                         Text("负面回避 (negative)").tag("negative")
-                        Text("中性 (neutral)").tag("neutral")
+                        Text("视条件而定 (conditional)").tag("conditional")
                     }
                     TextField("适用条件（分号分隔）", text: $prefConditions)
                     TextField("例外限制（分号分隔）", text: $prefExceptions)
@@ -452,7 +452,12 @@ struct MemoryEditorAndDetailSheet: View {
                         Spacer()
                     }
                 }
-                .disabled(saving)
+                .disabled(
+                    saving || (
+                        title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        && summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                )
 
                 Button(role: .destructive) {
                     confirmForget = true
@@ -463,7 +468,12 @@ struct MemoryEditorAndDetailSheet: View {
                         Spacer()
                     }
                 }
-                .disabled(saving)
+                .disabled(
+                    saving || (
+                        title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        && summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                )
             }
         }
         .formStyle(.grouped)
@@ -589,6 +599,7 @@ struct MemoryEditorAndDetailSheet: View {
                 self.prefExceptions = m.stringListField("exceptions").joined(separator: "；")
                 self.epiSummary = m.stringField("event_summary", default: m.summary)
                 self.epiOccurredAt = m.stringField("occurred_at", default: m.eventTime ?? "")
+                self.lockForUser = m.userLocked
             }
             self.markdownText = d.markdown ?? ""
         } catch {
@@ -597,6 +608,12 @@ struct MemoryEditorAndDetailSheet: View {
     }
 
     private func saveFormChanges(_ mem: MemoryItemModel) async {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTitle.isEmpty || !cleanSummary.isEmpty else {
+            statusMsg = "标题和摘要不能同时为空"
+            return
+        }
         saving = true
         defer { saving = false }
         var payload = mem.rawPayloadDict

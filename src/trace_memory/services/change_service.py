@@ -121,6 +121,10 @@ class ChangeService:
             proposal.memory_type, title
         )
         initial_status = "pending_review" if proposal.require_review else "active"
+        eff_event_time = proposal.event_time or utc_now_iso()
+        create_payload = dict(proposal.payload)
+        if proposal.memory_type == "semantic" and not str(create_payload.get("event_time", "")).strip():
+            create_payload["event_time"] = eff_event_time
         item = MemoryItem(
             memory_id=mem_id,
             space_id=proposal.space_id,
@@ -128,7 +132,7 @@ class ChangeService:
             memory_type=proposal.memory_type,
             title=title,
             summary=proposal.summary.strip() or title,
-            payload=proposal.payload,
+            payload=create_payload,
             canonical_key=proposal.canonical_key,
             tags=proposal.tags,
             assertion_kind=proposal.assertion_kind,
@@ -136,7 +140,7 @@ class ChangeService:
             version=1,
             user_locked=proposal.lock_for_user,
             evidences=proposal.evidences,
-            event_time=proposal.event_time or utc_now_iso(),
+            event_time=eff_event_time,
         )
         saved = self.memory_repo.create(
             item=item,
@@ -144,7 +148,7 @@ class ChangeService:
             actor_id=proposal.actor_id,
             origin=proposal.origin,
         )
-        if proposal.relations:
+        if proposal.relations or proposal.replace_relations:
             self.relation_repo.replace_outgoing(
                 proposal.space_id,
                 saved.memory_id,
@@ -224,7 +228,7 @@ class ChangeService:
             forgotten = MemoryItem(
                 memory_id=existing.memory_id,
                 space_id=existing.space_id,
-                permalink=existing.permalink,
+                permalink=f"forgotten/{existing.memory_id}",
                 memory_type=existing.memory_type,
                 title="[FORGOTTEN]",
                 summary="[FORGOTTEN]",
@@ -255,12 +259,44 @@ class ChangeService:
 
             # Cascade-clean supporting RawNotes (exclusive notes fully scrubbed; shared notes redact non-overlapping spans)
             purged_note_ids: list[str] = []
+            redacted_spans_all: list[str] = []
             for nid in old_note_ids:
                 note = self.note_repo.get(proposal.space_id, nid, include_forgotten=True)
                 if note is None:
                     continue
                 remaining_deps = self.memory_repo.find_dependent_memories(proposal.space_id, nid)
-                if not remaining_deps:
+                stated_deps = [d for d in remaining_deps if d.assertion_kind != "inferred"]
+                if not stated_deps:
+                    # Strip forgotten note references from surviving inferred Dream memories before purging note
+                    for inf_dep in remaining_deps:
+                        trimmed_evs = tuple(e for e in inf_dep.evidences if e.note_id != nid)
+                        if len(trimmed_evs) != len(inf_dep.evidences):
+                            trimmed_inf = MemoryItem(
+                                memory_id=inf_dep.memory_id,
+                                space_id=inf_dep.space_id,
+                                permalink=inf_dep.permalink,
+                                memory_type=inf_dep.memory_type,
+                                title=inf_dep.title,
+                                summary=inf_dep.summary,
+                                payload=inf_dep.payload,
+                                canonical_key=inf_dep.canonical_key,
+                                tags=inf_dep.tags,
+                                assertion_kind=inf_dep.assertion_kind,
+                                status=inf_dep.status,
+                                version=inf_dep.version,
+                                user_locked=inf_dep.user_locked,
+                                rejected_inferences=inf_dep.rejected_inferences,
+                                evidences=trimmed_evs,
+                                event_time=inf_dep.event_time,
+                                created_at=inf_dep.created_at,
+                            )
+                            self.memory_repo.update_cas(
+                                trimmed_inf,
+                                expected_version=inf_dep.version,
+                                change_reason=f"Pruned forgotten source evidence {nid}",
+                                actor_id=proposal.actor_id,
+                                origin=proposal.origin,
+                            )
                     if not note.is_forgotten or note.content != "[FORGOTTEN]":
                         scrubbed_note = RawNote(
                             note_id=note.note_id,
@@ -274,16 +310,23 @@ class ChangeService:
                             event_time=note.event_time,
                             created_at=note.created_at,
                             updated_at=utc_now_iso(),
+                            note_kind=note.note_kind,
+                            title="",
+                            pinned=False,
+                            tags=(),
+                            mood="",
+                            journal_date="",
+                            extract_memory=note.extract_memory,
                         )
                         self.note_repo.save(scrubbed_note)
                         self.vector_lifecycle.sync_note(scrubbed_note)
                     purged_note_ids.append(nid)
                 elif not note.is_forgotten:
-                    # Shared RawNote: redact specific spans belonging ONLY to the forgotten memory
+                    # Shared RawNote: redact specific spans belonging ONLY to the forgotten memory (ignoring Dream copies)
                     sibling_blob = "\n".join(
                         f"{d.title}\n{d.summary}\n{d.payload}\n"
                         + "\n".join(e.quote for e in d.evidences)
-                        for d in remaining_deps
+                        for d in stated_deps
                     )
                     candidate_spans: list[str] = []
                     for ev in old_evidences:
@@ -299,8 +342,14 @@ class ChangeService:
                         if sp and sp in visible_now and sp not in sibling_blob and sp not in new_spans:
                             new_spans.append(sp)
                             new_content = new_content.replace(sp, "[REDACTED]")
+                            redacted_spans_all.append(sp)
                             changed_note = True
                     if changed_note:
+                        new_title = note.title
+                        new_tags = list(note.tags)
+                        for sp in redacted_spans_all:
+                            new_title = new_title.replace(sp, "[REDACTED]")
+                            new_tags = [t.replace(sp, "[REDACTED]") for t in new_tags]
                         redacted_note = RawNote(
                             note_id=note.note_id,
                             space_id=note.space_id,
@@ -313,35 +362,43 @@ class ChangeService:
                             event_time=note.event_time,
                             created_at=note.created_at,
                             updated_at=utc_now_iso(),
+                            note_kind=note.note_kind,
+                            title=new_title,
+                            pinned=note.pinned,
+                            tags=tuple(new_tags),
+                            mood=note.mood,
+                            journal_date=note.journal_date,
+                            extract_memory=note.extract_memory,
                         )
                         self.note_repo.save(redacted_note)
                         self.vector_lifecycle.sync_note(redacted_note)
 
-            # Cascade-forget any Dream inferred insights whose `derived_from` sources are now completely broken
-            for cand in self.memory_repo.list_memories(
-                space_id=proposal.space_id, status="active", limit=200
-            ):
-                if cand.assertion_kind != "inferred" or cand.memory_id == saved.memory_id:
-                    continue
-                out_rels = self.relation_repo.get_neighbors(proposal.space_id, cand.memory_id)
-                derived_edges = [
-                    r
-                    for r in out_rels
-                    if r.from_memory_id == cand.memory_id and r.relation_type == "derived_from"
-                ]
-                if derived_edges and all(not r.to_memory_id for r in derived_edges):
-                    self.apply(
-                        ChangeProposal(
-                            space_id=proposal.space_id,
-                            action="forget",
-                            memory_type=cand.memory_type,
-                            target_memory_id=cand.memory_id,
-                            expected_version=cand.version,
-                            actor_id=proposal.actor_id,
-                            origin=proposal.origin,
-                            reason=f"Derived source memory {saved.memory_id} forgotten",
+            # Cascade-forget any Dream inferred insights (active or pending_review) whose sources are broken
+            for cand_status in ("active", "pending_review"):
+                for cand in self.memory_repo.list_memories(
+                    space_id=proposal.space_id, status=cand_status, limit=1000
+                ):
+                    if cand.assertion_kind != "inferred" or cand.memory_id == saved.memory_id:
+                        continue
+                    out_rels = self.relation_repo.get_neighbors(proposal.space_id, cand.memory_id)
+                    derived_edges = [
+                        r
+                        for r in out_rels
+                        if r.from_memory_id == cand.memory_id and r.relation_type == "derived_from"
+                    ]
+                    if derived_edges and all(not r.to_memory_id for r in derived_edges):
+                        self.apply(
+                            ChangeProposal(
+                                space_id=proposal.space_id,
+                                action="forget",
+                                memory_type=cand.memory_type,
+                                target_memory_id=cand.memory_id,
+                                expected_version=cand.version,
+                                actor_id=proposal.actor_id,
+                                origin=proposal.origin,
+                                reason=f"Derived source memory {saved.memory_id} forgotten",
+                            )
                         )
-                    )
 
             if self.media_service is not None and purged_note_ids:
                 self.media_service.purge_for_notes(proposal.space_id, purged_note_ids)
@@ -350,6 +407,7 @@ class ChangeService:
                 proposal.space_id,
                 memory_id=saved.memory_id,
                 note_ids=tuple(purged_note_ids),
+                spans=tuple(dict.fromkeys(redacted_spans_all)),
             )
             return ChangeResult(
                 proposal_id=proposal_id, status="applied", memory=saved, message="Memory forgotten"
@@ -419,6 +477,7 @@ class ChangeService:
                 actor_id=proposal.actor_id,
                 origin=proposal.origin,
             )
+            self.relation_repo.clear_inbound_on_inactive(proposal.space_id, saved.memory_id)
             self.vector_lifecycle.sync_memory(saved)
             return ChangeResult(
                 proposal_id=proposal_id, status="applied", memory=saved, message="Proposal rejected"
@@ -448,6 +507,13 @@ class ChangeService:
                 for k in ("importance", "urgency", "quadrant", "priority_score", "priority_reason", "due_at"):
                     if k in proposal.payload and proposal.payload[k] is not None:
                         new_payload[k] = proposal.payload[k]
+                if "quadrant" not in proposal.payload and any(
+                    k in proposal.payload for k in ("importance", "urgency", "due_at")
+                ):
+                    new_payload.pop("quadrant", None)
+                    new_payload.pop("priority_score", None)
+                elif "quadrant" in proposal.payload and "priority_score" not in proposal.payload:
+                    new_payload.pop("priority_score", None)
             elif proposal.action == "update":
                 # C04: Never silently reopen a finished task during ordinary update!
                 was_done = existing.payload.get("task_status") == "done"
@@ -456,6 +522,13 @@ class ChangeService:
                     incoming_patch.pop("task_status", None)
                     incoming_patch.pop("close_reason", None)
                 new_payload.update(incoming_patch)
+                if "quadrant" not in incoming_patch and not existing.user_locked and any(
+                    k in incoming_patch for k in ("importance", "urgency", "due_at", "blockers")
+                ):
+                    new_payload.pop("quadrant", None)
+                    new_payload.pop("priority_score", None)
+                elif "quadrant" in incoming_patch and "priority_score" not in incoming_patch:
+                    new_payload.pop("priority_score", None)
 
         elif existing.memory_type == "semantic":
             # C01: Temporal causal barrier — late-arriving older history must NOT overwrite newer truth
@@ -512,9 +585,10 @@ class ChangeService:
                     prev_vals.append(old_val)
                 new_payload.update(proposal.payload)
                 new_payload["previous_values"] = prev_vals
+                new_payload["event_time"] = new_event_time
 
         elif existing.memory_type == "preference":
-            # C03: Preserve conditions and exceptions together instead of clobbering
+            # C01 + C03: Preserve conditions/exceptions while blocking late-arriving older history overwrite
             conds = list(
                 dict.fromkeys(
                     [*existing.payload.get("conditions", []), *proposal.payload.get("conditions", [])]
@@ -525,6 +599,44 @@ class ChangeService:
                     [*existing.payload.get("exceptions", []), *proposal.payload.get("exceptions", [])]
                 )
             )
+            inc_dt = parse_iso_datetime(proposal.event_time)
+            cur_dt = parse_iso_datetime(existing.event_time)
+            if inc_dt is not None and cur_dt is not None and inc_dt < cur_dt:
+                new_payload["conditions"] = conds
+                new_payload["exceptions"] = excs
+                backfilled_pref = MemoryItem(
+                    memory_id=existing.memory_id,
+                    space_id=existing.space_id,
+                    permalink=existing.permalink,
+                    memory_type=existing.memory_type,
+                    title=existing.title,
+                    summary=existing.summary,
+                    payload=new_payload,
+                    canonical_key=existing.canonical_key,
+                    tags=tuple(dict.fromkeys([*existing.tags, *proposal.tags])),
+                    assertion_kind=existing.assertion_kind,
+                    status=existing.status,
+                    version=existing.version,
+                    user_locked=existing.user_locked,
+                    rejected_inferences=existing.rejected_inferences,
+                    evidences=merged_evs,
+                    event_time=existing.event_time,
+                    created_at=existing.created_at,
+                )
+                saved = self.memory_repo.update_cas(
+                    backfilled_pref,
+                    expected_version=expected_ver,
+                    change_reason="Recorded historical preference context without overwriting newer preference",
+                    actor_id=proposal.actor_id,
+                    origin=proposal.origin,
+                )
+                self.vector_lifecycle.sync_memory(saved)
+                return ChangeResult(
+                    proposal_id=proposal_id,
+                    status="skipped_older_event",
+                    memory=saved,
+                    message="Recorded historical preference context without overwriting newer preference",
+                )
             new_payload.update(proposal.payload)
             new_payload["conditions"] = conds
             new_payload["exceptions"] = excs
@@ -561,7 +673,7 @@ class ChangeService:
             actor_id=proposal.actor_id,
             origin=proposal.origin,
         )
-        if proposal.relations:
+        if proposal.relations or proposal.replace_relations:
             self.relation_repo.replace_outgoing(
                 proposal.space_id,
                 saved.memory_id,

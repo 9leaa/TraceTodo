@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import timedelta
 import hashlib
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import math
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -152,6 +154,8 @@ def _safe_int(
 ) -> int | None:
     if raw is None or (isinstance(raw, str) and not raw.strip()):
         return default
+    if isinstance(raw, bool):
+        raise ValidationError(f"参数 {name} 必须为整数")
     try:
         val = int(raw)
     except (TypeError, ValueError) as exc:
@@ -173,10 +177,14 @@ def _safe_float(
 ) -> float:
     if raw is None or (isinstance(raw, str) and not raw.strip()):
         return default
+    if isinstance(raw, bool):
+        raise ValidationError(f"参数 {name} 必须为数值")
     try:
         val = float(raw)
     except (TypeError, ValueError) as exc:
         raise ValidationError(f"参数 {name} 必须为数值") from exc
+    if not math.isfinite(val):
+        raise ValidationError(f"参数 {name} 必须为有限数值")
     if min_val is not None and val < min_val:
         val = min_val
     if max_val is not None and val > max_val:
@@ -578,7 +586,7 @@ class ApiDispatcher:
                 res = self.container.task_matrix_service.save_task_card(
                     space_id=space_id,
                     data=payload,
-                    actor_id=str(payload.get("actor_id", user.username if user else "user")),
+                    actor_id=user.username if user else "user",
                 )
                 if res.status != "idempotent_replay":
                     self.container.quota_service.record_usage(
@@ -752,7 +760,7 @@ class ApiDispatcher:
 
             if method == "POST" and path == "/api/memos/save":
                 self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
-                actor_name = str(payload.get("actor_id") or (user.username if user else "user"))
+                actor_name = user.username if user else "user"
                 return 200, self.container.memo_journal_service.save_memo(
                     space_id=space_id,
                     payload=payload,
@@ -779,7 +787,7 @@ class ApiDispatcher:
 
             if method == "POST" and path == "/api/journal/save":
                 self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
-                actor_name = str(payload.get("actor_id") or (user.username if user else "user"))
+                actor_name = user.username if user else "user"
                 return 200, self.container.memo_journal_service.save_journal(
                     space_id=space_id,
                     payload=payload,
@@ -831,7 +839,7 @@ class ApiDispatcher:
                         f"space:{space_id}", llm_calls=1, tokens_used=int(tr_out["tokens_used"])
                     )
                 if bool(payload.get("auto_ingest", False)) and tr_out.get("text"):
-                    actor_name = str(payload.get("actor_id") or (user.username if user else "user"))
+                    actor_name = user.username if user else "user"
                     if self.container.ingest_worker.is_running:
                         ing_res = self.container.ingest_service.enqueue_note(
                             space_id=space_id,
@@ -899,7 +907,7 @@ class ApiDispatcher:
                 if not content and not media_ids:
                     raise ValidationError("content is required")
                 idem = str(payload.get("idempotency_key", "")).strip()
-                actor_name = str(payload.get("actor_id") or (user.username if user else "user"))
+                actor_name = user.username if user else "user"
 
                 # Fast length & noise check BEFORE consuming note/LLM quota (skip noise filter when images attached)
                 if media_ids:
@@ -1003,6 +1011,7 @@ class ApiDispatcher:
                 return 200, status_obj
 
             if method == "GET" and path == "/api/notes/list":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
                 q = qp.get("q", [""])[0].strip()[:300]
                 lim = _safe_int(qp.get("limit", ["40"])[0], name="limit", default=40, min_val=1, max_val=200)
                 if q:
@@ -1033,6 +1042,7 @@ class ApiDispatcher:
                 return 200, out
 
             if method == "GET" and path == "/api/memories":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
                 memory_type = qp.get("memory_type", [""])[0]
                 limit = _safe_int(
                     qp.get("limit", [None])[0], name="limit", default=30, min_val=1, max_val=100
@@ -1042,7 +1052,7 @@ class ApiDispatcher:
                     name="offset",
                     default=0,
                     min_val=0,
-                    max_val=2**63 - 1,
+                    max_val=100_000,
                 ) or 0
                 items, total = self.container.memory_repo.page_active_memories(
                     space_id, memory_type, limit, offset
@@ -1054,6 +1064,7 @@ class ApiDispatcher:
                 }
 
             if method == "GET" and path == "/api/memories/search":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
                 q = qp.get("q", [""])[0][:500]
                 mtype = qp.get("memory_type", [""])[0]
                 top_k = _safe_int(
@@ -1101,7 +1112,7 @@ class ApiDispatcher:
                     identifier=mem_id,
                     markdown_text=md_text,
                     expected_version=exp_v,
-                    actor_id=str(payload.get("actor_id", user.username if user else "markdown_editor")),
+                    actor_id=user.username if user else "markdown_editor",
                     export_to_disk=can_export_disk,
                 )
                 self.container.quota_service.record_usage(f"space:{space_id}", notes=1, embed_calls=2)
@@ -1119,7 +1130,88 @@ class ApiDispatcher:
                 max_chars = int(cfg.get("max_note_chars", 2000))
                 if len(title_txt) > 200 or len(raw_summary) > max_chars:
                     raise ValidationError(f"标题或摘要超出长度上限（摘要上限 {max_chars} 字）")
-                evidences: tuple[MemoryEvidence, ...] = ()
+
+                raw_inner_payload = payload.get("payload")
+                if raw_inner_payload is not None and not isinstance(raw_inner_payload, dict):
+                    raise ValidationError("参数 payload 必须为 JSON 对象")
+                inner_payload = dict(raw_inner_payload or {})
+                top_event_time = str(payload.get("event_time", "") or "").strip()
+                if top_event_time and not str(inner_payload.get("event_time", "")).strip():
+                    inner_payload["event_time"] = top_event_time
+
+                raw_tags = payload.get("tags")
+                if raw_tags is not None and not isinstance(raw_tags, list):
+                    raise ValidationError("参数 tags 必须为数组")
+                clean_tags = tuple(str(t).strip()[:32] for t in (raw_tags or [])[:20] if str(t).strip())
+
+                has_relations_field = "relations" in payload
+                raw_relations = payload.get("relations")
+                if raw_relations is not None and not isinstance(raw_relations, list):
+                    raise ValidationError("参数 relations 必须为数组")
+                rel_specs: list[RelationSpec] = []
+                if action in ("create", "update"):
+                    for r_obj in raw_relations or []:
+                        if not isinstance(r_obj, dict):
+                            raise ValidationError("relations 每一项必须为对象")
+                        if str(r_obj.get("target") or "").strip():
+                            rel_specs.append(
+                                RelationSpec(
+                                    relation_type=str(r_obj.get("relation_type") or "relates_to").strip()[:48],
+                                    target=str(r_obj.get("target")).strip()[:120],
+                                    context=str(r_obj.get("context") or "").strip()[:160],
+                                )
+                            )
+                    if not has_relations_field and raw_summary:
+                        for rt, tgt, ctx in extract_relations_from_markdown(raw_summary):
+                            rel_specs.append(RelationSpec(relation_type=rt, target=tgt, context=ctx))
+
+                exp_v = _safe_int(payload.get("expected_version"), name="expected_version", min_val=1)
+                idem_key = str(payload.get("idempotency_key", "")).strip()
+                prop = ChangeProposal(
+                    space_id=space_id,
+                    action=action,
+                    memory_type=str(payload.get("memory_type", "semantic")),
+                    target_memory_id=str(payload.get("target_memory_id", "")),
+                    expected_version=exp_v,
+                    idempotency_key=idem_key,
+                    actor_id=user.username if user else "user",
+                    origin="user_direct",
+                    title=title_txt,
+                    summary=raw_summary,
+                    payload=inner_payload,
+                    event_time=top_event_time,
+                    permalink=str(payload.get("permalink", ""))[:120],
+                    canonical_key=str(payload.get("canonical_key", ""))[:120],
+                    tags=clean_tags,
+                    lock_for_user=bool(payload.get("lock_for_user", True)),
+                    evidences=(),
+                    relations=tuple(rel_specs),
+                    replace_relations=has_relations_field,
+                    reason=str(payload.get("reason", "Web console mutation"))[:200],
+                )
+                is_replay = bool(
+                    idem_key and self.container.trace_repo.get_idempotent_result(space_id, idem_key) is not None
+                )
+                if is_replay:
+                    res = self.container.change_service.apply(prop)
+                    return 200, res.to_dict()
+
+                if action != "create":
+                    any_mem = self.container.memory_repo.get_any_space(prop.target_memory_id)
+                    if any_mem is not None and any_mem.space_id != space_id:
+                        raise PermissionDeniedError("无权访问其他记忆空间的记忆")
+                    target_mem = self.container.memory_repo.get(
+                        space_id, prop.target_memory_id, include_forgotten=True
+                    )
+                    if target_mem is None:
+                        raise NotFoundError(f"Memory {prop.target_memory_id!r} not found in space {space_id!r}")
+                    if target_mem.status == "forgotten":
+                        if action == "forget":
+                            return 200, self.container.change_service.apply(prop).to_dict()
+                        raise ValidationError("已遗忘的记忆不可恢复或修改")
+                    if exp_v is not None and exp_v != target_mem.version:
+                        raise VersionConflictError(target_mem.memory_id, exp_v, target_mem.version)
+
                 if action != "forget":
                     self._check_daily_quota(
                         user=user, space_id=space_id, require_note_slot=True, require_llm_slot=False
@@ -1133,46 +1225,12 @@ class ApiDispatcher:
                     )
                     self.container.note_repo.save(src_note)
                     self.container.vector_lifecycle.sync_note(src_note)
-                    evidences = (
-                        MemoryEvidence(note_id=src_note.note_id, note_revision=1, quote=summary_txt[:160]),
+                    prop = replace(
+                        prop,
+                        evidences=(
+                            MemoryEvidence(note_id=src_note.note_id, note_revision=1, quote=summary_txt[:160]),
+                        ),
                     )
-                exp_v = _safe_int(payload.get("expected_version"), name="expected_version", min_val=1)
-                raw_tags = payload.get("tags") or []
-                clean_tags = tuple(str(t).strip()[:32] for t in raw_tags[:20] if str(t).strip())
-                rel_specs: list[RelationSpec] = []
-                if action in ("create", "update"):
-                    for r_obj in payload.get("relations") or []:
-                        if isinstance(r_obj, dict) and str(r_obj.get("target") or "").strip():
-                            rel_specs.append(
-                                RelationSpec(
-                                    relation_type=str(r_obj.get("relation_type") or "relates_to").strip()[:48],
-                                    target=str(r_obj.get("target")).strip()[:120],
-                                    context=str(r_obj.get("context") or "").strip()[:160],
-                                )
-                            )
-                    if not rel_specs and raw_summary:
-                        for rt, tgt, ctx in extract_relations_from_markdown(raw_summary):
-                            rel_specs.append(RelationSpec(relation_type=rt, target=tgt, context=ctx))
-                prop = ChangeProposal(
-                    space_id=space_id,
-                    action=action,
-                    memory_type=str(payload.get("memory_type", "semantic")),
-                    target_memory_id=str(payload.get("target_memory_id", "")),
-                    expected_version=exp_v,
-                    idempotency_key=str(payload.get("idempotency_key", "")),
-                    actor_id=user.username if user else "user",
-                    origin="user_direct",
-                    title=title_txt,
-                    summary=raw_summary,
-                    payload=dict(payload.get("payload") or {}),
-                    permalink=str(payload.get("permalink", ""))[:120],
-                    canonical_key=str(payload.get("canonical_key", ""))[:120],
-                    tags=clean_tags,
-                    lock_for_user=bool(payload.get("lock_for_user", True)),
-                    evidences=evidences,
-                    relations=tuple(rel_specs),
-                    reason=str(payload.get("reason", "Web console mutation"))[:200],
-                )
                 res = self.container.change_service.apply(prop)
                 if action != "forget" and res.status != "idempotent_replay":
                     self.container.quota_service.record_usage(
@@ -1245,23 +1303,51 @@ class ApiDispatcher:
                 question = str(payload.get("question", "")).strip()
                 if not question:
                     raise ValidationError("question is required")
+                raw_top_k = payload.get("top_k")
+                ask_top_k: int | None = None
+                if raw_top_k is not None and str(raw_top_k).strip() != "":
+                    if isinstance(raw_top_k, bool):
+                        raise ValidationError("参数 top_k 必须为正整数")
+                    try:
+                        parsed_tk = int(raw_top_k)
+                    except (TypeError, ValueError) as exc:
+                        raise ValidationError("参数 top_k 必须为正整数") from exc
+                    if parsed_tk < 1:
+                        raise ValidationError("参数 top_k 必须大于或等于 1")
+                    ask_top_k = min(25, parsed_tk)
                 guard_ask = self.container.input_guard.inspect_ask(question)
                 if guard_ask.allowed:
                     self._check_daily_quota(
                         user=user, space_id=space_id, require_llm_slot=True
                     )
-                return 200, self.container.ask_service.ask(space_id=space_id, question=question)
+                return 200, self.container.ask_service.ask(
+                    space_id=space_id, question=question, top_k=ask_top_k
+                )
 
             if method == "POST" and path == "/api/dream":
                 self._enforce_rate_and_quota(
                     user=user, space_id=space_id, client_ip=client_ip, require_llm_slot=True
                 )
-                max_calls = payload.get("max_llm_calls")
-                max_tokens = payload.get("max_tokens")
+
+                def _dream_opt_pos_int(raw_v: Any, name: str, cap: int) -> int | None:
+                    if raw_v is None or (isinstance(raw_v, str) and not raw_v.strip()):
+                        return None
+                    if isinstance(raw_v, bool):
+                        raise ValidationError(f"参数 {name} 必须为正整数")
+                    try:
+                        parsed_v = int(raw_v)
+                    except (TypeError, ValueError) as exc:
+                        raise ValidationError(f"参数 {name} 必须为正整数") from exc
+                    if parsed_v < 1:
+                        raise ValidationError(f"参数 {name} 必须大于或等于 1")
+                    return min(cap, parsed_v)
+
+                max_calls = _dream_opt_pos_int(payload.get("max_llm_calls"), "max_llm_calls", 50)
+                max_tokens = _dream_opt_pos_int(payload.get("max_tokens"), "max_tokens", 200_000)
                 return 200, self.container.dream_service.run_dream(
                     space_id=space_id,
-                    max_llm_calls=int(max_calls) if max_calls is not None else None,
-                    max_tokens=int(max_tokens) if max_tokens is not None else None,
+                    max_llm_calls=max_calls,
+                    max_tokens=max_tokens,
                 )
 
             if method == "GET" and path == "/api/markdown/bundle":
@@ -1759,7 +1845,7 @@ def create_fastapi_app(container: AppContainer) -> Any:
             if raw_bytes.strip():
                 try:
                     body = json.loads(raw_bytes.decode("utf-8"))
-                except json.JSONDecodeError:
+                except (UnicodeDecodeError, json.JSONDecodeError):
                     return JSONResponse(content={"error": "Invalid JSON body"}, status_code=400)
                 if not isinstance(body, dict):
                     return JSONResponse(content={"error": "JSON body must be an object"}, status_code=400)
@@ -1894,10 +1980,10 @@ def run_web_server(container: AppContainer, host: str = "127.0.0.1", port: int =
                     )
                 return
 
-            raw = raw_bytes.decode("utf-8", errors="replace") if raw_bytes else "{}"
             try:
+                raw = raw_bytes.decode("utf-8") if raw_bytes else "{}"
                 body = json.loads(raw) if raw.strip() else {}
-            except json.JSONDecodeError:
+            except (UnicodeDecodeError, json.JSONDecodeError):
                 self._write_json(400, {"error": "Invalid JSON body"})
                 return
             if not isinstance(body, dict):

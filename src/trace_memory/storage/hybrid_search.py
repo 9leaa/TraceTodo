@@ -105,21 +105,25 @@ class HybridSearchIndex:
         bm25_hits = self.memory_repo.search_bm25(
             space_id=space_id, query=query, memory_type=memory_type, limit=pool_size
         )
-        query_vec = self.embedder.embed(query)
-        vec_filters: dict[str, Any] = {"status": "active"}
-        if memory_type:
-            vec_filters["memory_type"] = memory_type
-        vec_hits = [
-            h
-            for h in self.vector_store.search(
-                collection=MEMORIES_COLLECTION,
-                space_id=space_id,
-                query_vector=query_vec,
-                top_k=pool_size,
-                filters=vec_filters,
-            )
-            if h.score >= min_vector_score
-        ]
+        vec_hits = []
+        try:
+            query_vec = self.embedder.embed(query)
+            vec_filters: dict[str, Any] = {"status": "active"}
+            if memory_type:
+                vec_filters["memory_type"] = memory_type
+            vec_hits = [
+                h
+                for h in self.vector_store.search(
+                    collection=MEMORIES_COLLECTION,
+                    space_id=space_id,
+                    query_vector=query_vec,
+                    top_k=pool_size,
+                    filters=vec_filters,
+                )
+                if h.score >= min_vector_score
+            ]
+        except Exception:
+            vec_hits = []
 
         items_by_id: dict[str, MemoryItem] = {}
         bm25_meta: dict[str, tuple[int, float]] = {}
@@ -138,6 +142,7 @@ class HybridSearchIndex:
                     if not memory_type or mem_obj.memory_type == memory_type:
                         items_by_id[vhit.doc_id] = mem_obj
 
+        q_low = query.strip().lower()
         fused: list[RankedMemoryHit] = []
         for mem_id, mem in items_by_id.items():
             b_rank, b_score = bm25_meta.get(mem_id, (None, 0.0))
@@ -146,9 +151,10 @@ class HybridSearchIndex:
                 continue
             rrf = 0.0
             if b_rank is not None:
-                rrf += 1.15 / (self.rrf_k + b_rank)
+                title_bonus = 0.008 if (q_low and q_low in mem.title.lower()) else 0.0
+                rrf += 1.15 / (self.rrf_k + b_rank) + 0.004 * min(b_score, 15.0) + title_bonus
             if v_rank is not None:
-                rrf += 1.0 / (self.rrf_k + v_rank) + 0.02 * v_score
+                rrf += 1.0 / (self.rrf_k + v_rank) + 0.015 * v_score
             fused.append(
                 RankedMemoryHit(
                     memory=mem,
@@ -175,18 +181,22 @@ class HybridSearchIndex:
 
         pool_size = max(top_k * 3, 16)
         bm25_hits = self.note_repo.search_bm25(space_id=space_id, query=query, limit=pool_size)
-        query_vec = self.embedder.embed(query)
-        vec_hits = [
-            h
-            for h in self.vector_store.search(
-                collection=NOTES_COLLECTION,
-                space_id=space_id,
-                query_vector=query_vec,
-                top_k=pool_size,
-                filters={"is_forgotten": False},
-            )
-            if h.score >= min_vector_score
-        ]
+        vec_hits = []
+        try:
+            query_vec = self.embedder.embed(query)
+            vec_hits = [
+                h
+                for h in self.vector_store.search(
+                    collection=NOTES_COLLECTION,
+                    space_id=space_id,
+                    query_vector=query_vec,
+                    top_k=pool_size,
+                    filters={"is_forgotten": False},
+                )
+                if h.score >= min_vector_score
+            ]
+        except Exception:
+            vec_hits = []
 
         notes_by_id: dict[str, RawNote] = {}
         bm25_meta: dict[str, tuple[int, float]] = {}

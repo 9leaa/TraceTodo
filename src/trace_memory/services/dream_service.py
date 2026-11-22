@@ -125,114 +125,125 @@ class DreamService:
         skipped_unchanged = 0
         skipped_no_evidence = 0
 
-        for topic, group in sorted(clusters.items()):
-            if len(group) < 2:
-                continue
-            if not guard.can_proceed():
-                break
+        try:
+            for topic, group in sorted(clusters.items()):
+                if len(group) < 2:
+                    continue
+                if not guard.can_proceed():
+                    break
 
-            # Collect ground-truth evidences across source memories (no-evidence -> never commit!)
-            combined_evidences: dict[tuple[str, int], MemoryEvidence] = {}
-            for m in group[:6]:
-                for ev in m.evidences:
-                    combined_evidences[(ev.note_id, ev.note_revision)] = ev
-            if not combined_evidences:
-                skipped_no_evidence += 1
-                continue
+                # Collect ground-truth evidences across source memories (no-evidence -> never commit!)
+                combined_evidences: dict[tuple[str, int], MemoryEvidence] = {}
+                for m in group[:6]:
+                    for ev in m.evidences:
+                        combined_evidences[(ev.note_id, ev.note_revision)] = ev
+                if not combined_evidences:
+                    skipped_no_evidence += 1
+                    continue
 
-            sig = self._evidence_signature(group[:6])
-            idemp_key = f"dream:{topic}:{sig}"
-            if self.trace_repo.get_idempotent_result(space_id, idemp_key) is not None:
-                skipped_unchanged += 1
-                continue
+                sig = self._evidence_signature(group[:6])
+                idemp_key = f"dream:{topic}:{sig}"
+                if self.trace_repo.get_idempotent_result(space_id, idemp_key) is not None:
+                    skipped_unchanged += 1
+                    continue
 
-            batch = self.llm.synthesize_dream_cluster(topic, group[:6])
-            guard.record(batch.llm_calls, batch.tokens_used)
+                try:
+                    batch = self.llm.synthesize_dream_cluster(topic, group[:6])
+                except Exception:
+                    guard.record(1, 0)
+                    if not guard.can_proceed():
+                        break
+                    continue
+                guard.record(batch.llm_calls, batch.tokens_used)
 
-            for insight in batch.insights:
-                existing = self.memory_repo.find_by_canonical_key(
-                    space_id,
-                    insight.canonical_key,
-                    statuses=("active", "pending_review", "superseded"),
+                for idx, insight in enumerate(batch.insights):
+                    item_idemp = f"{idemp_key}:{idx}"
+                    existing = self.memory_repo.find_by_canonical_key(
+                        space_id,
+                        insight.canonical_key,
+                        statuses=("active", "pending_review"),
+                    )
+                    if existing is None:
+                        prop = ChangeProposal(
+                            space_id=space_id,
+                            action="create",
+                            memory_type="semantic",
+                            idempotency_key=item_idemp,
+                            actor_id="dream_engine",
+                            origin="dream_consolidator",
+                            title=insight.title,
+                            summary=insight.summary,
+                            canonical_key=insight.canonical_key,
+                            tags=insight.tags,
+                            payload=insight.payload,
+                            assertion_kind="inferred",  # Strictly tagged inferred!
+                            require_review=require_review,
+                            evidences=tuple(combined_evidences.values()),
+                            relations=insight.relations,
+                            reason=f"Dream consolidated {len(group[:6])} stated memories under '{topic}'",
+                        )
+                    else:
+                        prop = ChangeProposal(
+                            space_id=space_id,
+                            action="update",
+                            memory_type="semantic",
+                            target_memory_id=existing.memory_id,
+                            expected_version=existing.version,
+                            idempotency_key=item_idemp,
+                            actor_id="dream_engine",
+                            origin="dream_consolidator",
+                            title=insight.title,
+                            summary=insight.summary,
+                            canonical_key=insight.canonical_key,
+                            tags=insight.tags,
+                            payload=insight.payload,
+                            assertion_kind="inferred",
+                            require_review=require_review,
+                            evidences=tuple(combined_evidences.values()),
+                            relations=insight.relations,
+                            reason=f"Dream updated pattern under '{topic}'",
+                        )
+                    try:
+                        res = self.change_service.apply(prop)
+                        created_or_updated.append(res)
+                    except Exception:
+                        continue
+
+                self.trace_repo.save_idempotent_result(
+                    space_id, idemp_key, topic, {"topic": topic, "sig": sig}
                 )
-                if existing is None:
-                    prop = ChangeProposal(
-                        space_id=space_id,
-                        action="create",
-                        memory_type="semantic",
-                        idempotency_key=idemp_key,
-                        actor_id="dream_engine",
-                        origin="dream_consolidator",
-                        title=insight.title,
-                        summary=insight.summary,
-                        canonical_key=insight.canonical_key,
-                        tags=insight.tags,
-                        payload=insight.payload,
-                        assertion_kind="inferred",  # Strictly tagged inferred!
-                        require_review=require_review,
-                        evidences=tuple(combined_evidences.values()),
-                        relations=insight.relations,
-                        reason=f"Dream consolidated {len(group[:6])} stated memories under '{topic}'",
-                    )
-                else:
-                    prop = ChangeProposal(
-                        space_id=space_id,
-                        action="update",
-                        memory_type="semantic",
-                        target_memory_id=existing.memory_id,
-                        expected_version=existing.version,
-                        idempotency_key=idemp_key,
-                        actor_id="dream_engine",
-                        origin="dream_consolidator",
-                        title=insight.title,
-                        summary=insight.summary,
-                        canonical_key=insight.canonical_key,
-                        tags=insight.tags,
-                        payload=insight.payload,
-                        assertion_kind="inferred",
-                        require_review=require_review,
-                        evidences=tuple(combined_evidences.values()),
-                        relations=insight.relations,
-                        reason=f"Dream updated pattern under '{topic}'",
-                    )
-                res = self.change_service.apply(prop)
-                created_or_updated.append(res)
-
-            # Stop before next cluster if budget was exhausted by the call that just finished
-            if not guard.can_proceed():
-                break
-
-        duration_ms = (time.perf_counter() - t0) * 1000.0
-        if self.quota_service is not None and (guard.used_llm_calls or guard.used_tokens):
-            self.quota_service.record_usage(
-                f"space:{space_id}",
+        finally:
+            duration_ms = (time.perf_counter() - t0) * 1000.0
+            if self.quota_service is not None and (guard.used_llm_calls or guard.used_tokens):
+                self.quota_service.record_usage(
+                    f"space:{space_id}",
+                    llm_calls=guard.used_llm_calls,
+                    tokens_used=guard.used_tokens,
+                )
+            summary = {
+                "space_id": space_id,
+                "clusters_evaluated": sum(1 for g in clusters.values() if len(g) >= 2),
+                "insights_processed": len(created_or_updated),
+                "results": [r.to_dict() for r in created_or_updated],
+                "skipped_unchanged": skipped_unchanged,
+                "skipped_no_evidence": skipped_no_evidence,
+                "budget": {
+                    "max_llm_calls": guard.max_llm_calls,
+                    "used_llm_calls": guard.used_llm_calls,
+                    "max_tokens": guard.max_tokens,
+                    "used_tokens": guard.used_tokens,
+                    "budget_halted": bool(guard.halted_reason),
+                    "halted_reason": guard.halted_reason,
+                },
+            }
+            trace_id = self.trace_repo.record_trace(
+                space_id=space_id,
+                operation="dream_consolidate",
+                input_summary=f"Dream over {len(active_items)} stated memories",
+                details=summary,
                 llm_calls=guard.used_llm_calls,
                 tokens_used=guard.used_tokens,
+                duration_ms=duration_ms,
             )
-        summary = {
-            "space_id": space_id,
-            "clusters_evaluated": sum(1 for g in clusters.values() if len(g) >= 2),
-            "insights_processed": len(created_or_updated),
-            "results": [r.to_dict() for r in created_or_updated],
-            "skipped_unchanged": skipped_unchanged,
-            "skipped_no_evidence": skipped_no_evidence,
-            "budget": {
-                "max_llm_calls": guard.max_llm_calls,
-                "used_llm_calls": guard.used_llm_calls,
-                "max_tokens": guard.max_tokens,
-                "used_tokens": guard.used_tokens,
-                "budget_halted": bool(guard.halted_reason),
-                "halted_reason": guard.halted_reason,
-            },
-        }
-        trace_id = self.trace_repo.record_trace(
-            space_id=space_id,
-            operation="dream_consolidate",
-            input_summary=f"Dream over {len(active_items)} stated memories",
-            details=summary,
-            llm_calls=guard.used_llm_calls,
-            tokens_used=guard.used_tokens,
-            duration_ms=duration_ms,
-        )
-        summary["trace_id"] = trace_id
+            summary["trace_id"] = trace_id
         return summary

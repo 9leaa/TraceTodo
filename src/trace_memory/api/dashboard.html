@@ -2362,7 +2362,7 @@
       </div>
       <div class="toolbar">
         <div class="btn-group" style="flex:1;">
-          <input id="memSearchInput" class="main-input" style="flex:1;max-width:440px;" aria-label="搜索记忆" placeholder="按关键词或语义搜索记忆…" onkeydown="if(event.key==='Enter' && !event.isComposing) loadMemories(1)" />
+          <input id="memSearchInput" class="main-input" style="flex:1;max-width:440px;" aria-label="搜索记忆" placeholder="按关键词或语义搜索记忆…" oninput="if(!this.value.trim()) loadMemories(1)" onkeydown="if(event.key==='Enter' && !event.isComposing) loadMemories(1)" />
           <select id="memTypeFilter" onchange="loadMemories(1)">
             <option value="">全部四类记忆</option>
             <option value="task">任务 (task)</option>
@@ -3309,7 +3309,7 @@
       return `
         <div class="task-card theme-${esc(theme)} ${isDone ? 'done' : ''}">
           <div class="task-top">
-            <div class="task-title" onclick="openTaskSheet('${t.memory_id}')" title="点击编辑任务卡片">${esc(t.title)}</div>
+            <div class="task-title" data-mem-id="${esc(t.memory_id)}" onclick="openTaskSheet(this.dataset.memId)" title="点击编辑任务卡片">${esc(t.title)}</div>
             <span class="badge badge-${esc(quad)}">${esc(quad.slice(0, 2))} · ${esc(p.priority_score)}分</span>
           </div>
           <div style="font-size:12.5px;color:#475569;">${esc(p.priority_reason || t.summary)}</div>
@@ -3328,20 +3328,20 @@
           </div>
           <div class="card-actions">
             ${!isDone
-              ? `<button onclick="transitionTask('${t.memory_id}', 'complete_task', ${t.version})">✅ 完成</button>
-                 <button onclick="openFocusLock('${t.memory_id}')">🎯 专注</button>
-                 <button onclick="openTaskSheet('${t.memory_id}')">✏️ 编辑</button>
-                 <button onclick="transitionTask('${t.memory_id}', 'cancel_task', ${t.version})">✕ 取消</button>`
-              : `<button onclick="transitionTask('${t.memory_id}', 'reopen_task', ${t.version})">↩️ 重新开启</button>`
+              ? `<button data-mem-id="${esc(t.memory_id)}" data-ver="${Number(t.version) || 1}" onclick="transitionTask(this.dataset.memId, 'complete_task', Number(this.dataset.ver))">✅ 完成</button>
+                 <button data-mem-id="${esc(t.memory_id)}" onclick="openFocusLock(this.dataset.memId)">🎯 专注</button>
+                 <button data-mem-id="${esc(t.memory_id)}" onclick="openTaskSheet(this.dataset.memId)">✏️ 编辑</button>
+                 <button data-mem-id="${esc(t.memory_id)}" data-ver="${Number(t.version) || 1}" onclick="transitionTask(this.dataset.memId, 'cancel_task', Number(this.dataset.ver))">✕ 取消</button>`
+              : `<button data-mem-id="${esc(t.memory_id)}" data-ver="${Number(t.version) || 1}" onclick="transitionTask(this.dataset.memId, 'reopen_task', Number(this.dataset.ver))">↩️ 重新开启</button>`
             }
-            <select onchange="changeQuadrant('${t.memory_id}', ${t.version}, this.value)">
+            <select data-mem-id="${esc(t.memory_id)}" data-ver="${Number(t.version) || 1}" onchange="changeQuadrant(this.dataset.memId, Number(this.dataset.ver), this.value)">
               <option value="" disabled selected>调整象限...</option>
               <option value="Q1_do_first">移至 Q1 重要且紧急</option>
               <option value="Q2_schedule">移至 Q2 重要不紧急</option>
               <option value="Q3_delegate">移至 Q3 紧急不重要</option>
               <option value="Q4_eliminate">移至 Q4 稍后/精简</option>
             </select>
-            <button onclick="openDetail('${t.memory_id}')">🔎 溯源</button>
+            <button data-mem-id="${esc(t.memory_id)}" onclick="openDetail(this.dataset.memId)">🔎 溯源</button>
           </div>
         </div>
       `;
@@ -3439,7 +3439,7 @@
             // Without subtasks show the priority score as 分 — rendering it as % read like completion progress
             const scoreTxt = `${Math.round(Number(t.payload?.priority_score || 0))}分`;
             return `
-              <div class="focus-row" onclick="openTaskSheet('${t.memory_id}')">
+              <div class="focus-row" data-mem-id="${esc(t.memory_id)}" onclick="openTaskSheet(this.dataset.memId)">
                 <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px;">${idx + 1}. ${esc(t.title)}</span>
                 <span class="tag score" style="flex-shrink:0;">${subs.length ? subs.filter(s => s.done).length + '/' + subs.length : scoreTxt}</span>
               </div>
@@ -3976,7 +3976,7 @@
       box.style.display = 'grid';
       box.innerHTML = `<div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">📋 执行清单：</div>` + subs.map(s => `
         <label>
-          <input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleCardSubtask('${focusState.task.memory_id}', '${esc(s.id)}', this.checked, ${focusState.task.version}, this)" />
+          <input type="checkbox" ${s.done ? 'checked' : ''} data-mem-id="${esc(focusState.task.memory_id)}" data-sub-id="${esc(s.id)}" data-ver="${Number(focusState.task.version) || 1}" onchange="toggleCardSubtaskEl(this)" />
           <span style="${s.done ? 'text-decoration:line-through;color:#94a3b8;' : ''}">${esc(s.title)}</span>
         </label>
       `).join('');
@@ -4503,7 +4503,7 @@
             headers: authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ content: item.content, space_id: item.space_id }),
           });
-          if (res.status === 401 || res.status === 429) {
+          if (res.status === 401 || res.status === 429 || res.status >= 500) {
             remaining.push(item);
           }
         } catch (e) {
@@ -5534,35 +5534,40 @@
 
     async function askQuestion(btn) {
       const targetBtn = btn || document.getElementById('askSubmitBtn');
-      const q = document.getElementById('askInput').value.trim();
+      if (targetBtn?.disabled) return;
+      const askInput = document.getElementById('askInput');
+      const q = (askInput?.value || '').trim();
       if (!q) {
         showToast('请输入想要提问的问题');
-        document.getElementById('askInput').focus();
+        askInput?.focus();
         return;
       }
       await withBtnBusy(targetBtn, '⏳ 思考中...', async () => {
         const res = await apiPost('/api/ask', { question: q });
         if (res.error) return showToast(`问答失败: ${res.error}`, 'error');
-        const memCites = ((res.citations || {}).memories || []).map(m => `<button type="button" class="chip-btn" onclick="openDetail('${esc(m.memory_id)}')">🧠 ${esc(m.title)}</button>`).join(' ');
-        const noteCites = ((res.citations || {}).notes || []).map(n => `<span class="tag">📝 ${esc(n.event_time?.slice(0,10) || '')} “${esc(n.content.slice(0, 40))}”</span>`).join(' ');
+        const memCites = ((res.citations || {}).memories || []).map(m => `<button type="button" class="chip-btn" data-mem-id="${esc(m.memory_id)}" onclick="openDetail(this.dataset.memId)">🧠 ${esc(m.title)}</button>`).join(' ');
+        const noteCites = ((res.citations || {}).notes || []).map(n => `<span class="tag">📝 ${esc((n.event_time || '').slice(0, 10))} “${esc((n.content || '').slice(0, 40))}”</span>`).join(' ');
         const mediaCites = ((res.citations || {}).media || []);
         const mediaGridHtml = mediaCites.length
           ? `<div style="margin-top:4px;"><strong>🖼️ 关联图片溯源 (${mediaCites.length} 张):</strong>${renderMediaGridHtml(mediaCites)}</div>`
           : '';
         const modeText = res.query_mode === 'history' ? '🕰️ 历史演进追溯' : '📍 当前状态检索';
-        document.getElementById('askResult').innerHTML = `
+        const askResultEl = document.getElementById('askResult');
+        if (askResultEl) {
+          askResultEl.innerHTML = `
           <div style="margin-top:10px;" class="meta-row">
             <span class="tag score">${modeText}</span>
             <span class="tag" style="background:${res.has_sufficient_evidence ? '#dcfce7;color:#166534' : '#fef3c7;color:#92400e'}">${res.has_sufficient_evidence ? '✓ 证据充分' : '⚠️ 证据不足安全拒答'}</span>
             <span class="tag">Trace: ${esc(res.trace_id)}</span>
           </div>
-          <div class="answer-box">${renderMarkdownHtml(res.answer)}</div>
+          <div class="answer-box">${renderMarkdownHtml(res.answer || '')}</div>
           <div style="margin-top:8px;font-size:12px;display:grid;gap:6px;">
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><strong>引用记忆卡:</strong> ${memCites || '<span style="color:var(--muted);">无</span>'}</div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><strong>支撑原话:</strong> ${noteCites || '<span style="color:var(--muted);">无</span>'}</div>
             ${mediaGridHtml}
           </div>
         `;
+        }
         loadTraces();
       });
     }
@@ -5625,7 +5630,7 @@
                 <select id="mePolarity" style="width:100%;margin-top:4px;">
                   <option value="positive" ${p.polarity === 'positive' ? 'selected' : ''}>positive (正面/偏好)</option>
                   <option value="negative" ${p.polarity === 'negative' ? 'selected' : ''}>negative (负面/回避)</option>
-                  <option value="neutral" ${p.polarity === 'neutral' ? 'selected' : ''}>neutral (中性)</option>
+                  <option value="conditional" ${p.polarity === 'conditional' ? 'selected' : ''}>conditional (视场景条件而定)</option>
                 </select>
               </div>
             </div>
@@ -5646,10 +5651,10 @@
             ${extraFields}
             <div><label style="font-size:12px;color:var(--muted);">追加标签（逗号分隔）</label><input id="meTags" value="${esc((m.tags || []).join(', '))}" style="width:100%;margin-top:4px;" /></div>
             <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:#475569;cursor:pointer;">
-              <input type="checkbox" id="meLock" checked /> 🔒 启用用户锁定保护（防止后续 Dream / AI 抽取自动覆盖此手工修订）
+              <input type="checkbox" id="meLock" ${m.user_locked ? 'checked' : ''} /> 🔒 启用用户锁定保护（防止后续 Dream / AI 抽取自动覆盖此手工修订）
             </label>
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;">
-              <button type="button" onclick="forgetMemory('${m.memory_id}', ${m.version})" style="color:#b91c1c;">🗑️ 遗忘此记忆</button>
+              <button type="button" data-mem-id="${esc(m.memory_id)}" data-ver="${Number(m.version) || 1}" onclick="forgetMemory(this.dataset.memId, Number(this.dataset.ver))" style="color:#b91c1c;">🗑️ 遗忘此记忆</button>
               <button type="button" class="duodo-btn" onclick="saveMemoryForm(this)">💾 保存修改 (CAS v${m.version})</button>
             </div>
           </div>
@@ -6031,8 +6036,20 @@
       try { await apiPost('/api/auth/logout'); } catch (e) {}
       authToken = '';
       localStorage.removeItem('tm_auth_token');
+      localStorage.removeItem('tm_offline_queue');
+      localStorage.removeItem('tm_sent_reminders');
       currentUser = null;
       currentQuota = null;
+      lastLoadedTasks = [];
+      cachedTasksById = {};
+      _cachedMemosById = {};
+      _countdownCache = { items: [], top_capsules: [], today_lunar: '' };
+      activeDetailState = null;
+      document.getElementById('detailModal')?.classList.remove('open');
+      ['matrixContainer', 'listContainer', 'topFocusList', 'memoriesList', 'notesStreamList', 'askResult', 'traceList', 'adminUsersList'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '';
+      });
       document.getElementById('authModal').classList.remove('open');
       updateAccountUi();
       if (document.getElementById('panel-admin').classList.contains('active')) {
@@ -7098,11 +7115,11 @@
     function openCalendarTaskEditor(memoryId) {
       const task = cachedTasksById[memoryId] || (lastLoadedTasks || []).find(t => t.memory_id === memoryId);
       if (task) {
-        openTaskSheet(task);
+        openTaskSheet(task.memory_id);
       } else {
         reloadAll().then(() => {
           const found = cachedTasksById[memoryId] || (lastLoadedTasks || []).find(t => t.memory_id === memoryId);
-          if (found) openTaskSheet(found);
+          if (found) openTaskSheet(found.memory_id);
         });
       }
     }
@@ -7267,7 +7284,7 @@
           <button type="button" class="tag-filter-pill ${_memoPinnedOnly ? 'active' : ''}" onclick="toggleFilterPinnedMemos()">📌 置顶 (${res.all_pinned_count ?? res.pinned_count ?? 0})</button>
         `;
         tHtml += tagsCat.map(tc => `
-          <button type="button" class="tag-filter-pill ${_memoSelectedTag === tc.tag ? 'active' : ''}" onclick="filterMemosByTag('${esc(tc.tag)}')">#${esc(tc.tag)} (${tc.count})</button>
+          <button type="button" class="tag-filter-pill ${_memoSelectedTag === tc.tag ? 'active' : ''}" data-tag="${esc(tc.tag)}" onclick="filterMemosByTag(this.dataset.tag)">#${esc(tc.tag)} (${tc.count})</button>
         `).join('');
         tagBar.innerHTML = tHtml;
       }
@@ -7277,7 +7294,7 @@
       memos.forEach(m => { _cachedMemosById[m.note_id] = m; });
 
       box.innerHTML = memos.length ? memos.map(n => {
-        const tagsPills = (n.tags || []).map(t => `<span class="tag" style="cursor:pointer;" onclick="filterMemosByTag('${esc(t)}')">#${esc(t)}</span>`).join('');
+        const tagsPills = (n.tags || []).map(t => `<span class="tag" style="cursor:pointer;" data-tag="${esc(t)}" onclick="filterMemosByTag(this.dataset.tag)">#${esc(t)}</span>`).join('');
         return `
           <div class="memo-card ${n.pinned ? 'is-pinned' : ''}">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -7292,9 +7309,9 @@
             <div style="font-size:13.5px;color:var(--text);">${renderSimpleMarkdown(n.content)}</div>
             ${Array.isArray(n.media) && n.media.length ? renderMediaGridHtml(n.media) : ''}
             <div class="card-actions" style="justify-content:flex-end;gap:6px;">
-              <button type="button" style="font-size:11.5px;padding:4px 9px;" onclick="toggleMemoPin('${esc(n.note_id)}', ${!n.pinned})">${n.pinned ? '取消置顶' : '📌 置顶'}</button>
-              <button type="button" style="font-size:11.5px;padding:4px 9px;" onclick="startEditMemo('${esc(n.note_id)}')">✏️ 编辑</button>
-              <button type="button" style="color:#b91c1c;font-size:11.5px;padding:4px 9px;" onclick="forgetNoteFromStream('${esc(n.note_id)}')">🗑️ 遗忘</button>
+              <button type="button" style="font-size:11.5px;padding:4px 9px;" data-note-id="${esc(n.note_id)}" data-pinned="${!n.pinned ? '1' : '0'}" onclick="toggleMemoPin(this.dataset.noteId, this.dataset.pinned === '1')">${n.pinned ? '取消置顶' : '📌 置顶'}</button>
+              <button type="button" style="font-size:11.5px;padding:4px 9px;" data-note-id="${esc(n.note_id)}" onclick="startEditMemo(this.dataset.noteId)">✏️ 编辑</button>
+              <button type="button" style="color:#b91c1c;font-size:11.5px;padding:4px 9px;" data-note-id="${esc(n.note_id)}" onclick="forgetNoteFromStream(this.dataset.noteId)">🗑️ 遗忘</button>
             </div>
           </div>
         `;
