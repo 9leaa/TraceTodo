@@ -10,7 +10,14 @@ import time
 from typing import Any
 
 from trace_memory.domain.memories import MemoryEvidence, MemoryItem, parse_iso_datetime
-from trace_memory.domain.notes import RawNote, new_id, utc_now_iso
+from trace_memory.domain.notes import (
+    RawNote,
+    beijing_now,
+    extract_beijing_time_range,
+    new_id,
+    to_beijing,
+    utc_now_iso,
+)
 from trace_memory.domain.proposals import (
     ChangeProposal,
     ChangeResult,
@@ -689,11 +696,35 @@ class IngestService:
                     else "complete_task"
                 )
 
-        # Auto-enable default 15-minute reminder for AI-extracted timed tasks (non-all-day due_at)
+        # Normalize time-range tasks (`start_at` .. `due_at`) and auto-enable 15-minute reminder for timed tasks
         if cand.memory_type == "task" and effective_hint == "upsert":
+            ref_dt = to_beijing(parse_iso_datetime(note.event_time) or beijing_now())
+            start_str = str(payload.get("start_at", "") or "").strip()
             due_str = str(payload.get("due_at", "") or "").strip()
+            start_dt = parse_iso_datetime(start_str) if start_str else None
+            due_dt = parse_iso_datetime(due_str) if due_str else None
+            if start_dt is not None and due_dt is not None and due_dt > start_dt:
+                dur_min = max(15, min(1440, int((due_dt - start_dt).total_seconds() // 60)))
+                payload["start_at"] = to_beijing(start_dt).replace(microsecond=0).isoformat()
+                payload["due_at"] = to_beijing(due_dt).replace(microsecond=0).isoformat()
+                payload["duration_minutes"] = dur_min
+                payload["is_all_day"] = False
+            else:
+                tr = extract_beijing_time_range(cand.quote or note.content, ref_dt)
+                if tr is None and cand.quote and cand.quote != note.content:
+                    tr = extract_beijing_time_range(note.content, ref_dt)
+                if tr is not None:
+                    tr_start, tr_end, tr_dur = tr
+                    payload["start_at"] = tr_start
+                    payload["due_at"] = tr_end
+                    payload["duration_minutes"] = tr_dur
+                    payload["is_all_day"] = False
+                    due_str = tr_end
+                    due_dt = parse_iso_datetime(tr_end)
+
             if due_str and payload.get("reminder_offset_minutes") is None:
-                due_dt = parse_iso_datetime(due_str)
+                if due_dt is None:
+                    due_dt = parse_iso_datetime(due_str)
                 if due_dt is not None and not (due_dt.hour == 23 and due_dt.minute == 59):
                     payload["is_all_day"] = False
                     payload["reminder_offset_minutes"] = 15
@@ -715,9 +746,11 @@ class IngestService:
                         cur_imp = 3
                     if cur_imp < 5:
                         payload["importance"] = max(cur_imp, 4)
-                        old_r = str(payload.get("priority_reason", ""))
+                        old_r = str(payload.get("priority_reason", "")).strip().rstrip("。；;，, ")
                         payload["priority_reason"] = (
-                            f"{old_r}；命中长期关注偏好「{target}」自动提权".strip("；")
+                            f"{old_r}；命中长期关注偏好「{target}」自动提权"
+                            if old_r
+                            else f"命中长期关注偏好「{target}」自动提权"
                         )
                     break
 

@@ -807,6 +807,7 @@ class ApiDispatcher:
                     space_id=space_id,
                     date_str=str(payload.get("date") or payload.get("journal_date") or ""),
                     draft_content=str(payload.get("draft_content", "")),
+                    mood=str(payload.get("mood", "")),
                     trigger_dream=bool(payload.get("trigger_dream", False)),
                 )
 

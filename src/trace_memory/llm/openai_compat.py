@@ -271,7 +271,12 @@ class OpenAICompatLLMProvider:
             "必须直接返回 {\"candidates\": []}，严禁硬凑或编造记忆！严禁在没有明确任务指代时误把现有任务设为 complete_task 或 cancel_task。\n"
             "各类别 payload 必填字段规范：\n"
             "1. task: {\"task_status\": \"todo\"|\"done\", \"importance\": 1-5整数, \"urgency\": 1-5整数, "
-            "\"priority_reason\": \"四象限判定依据\", \"due_at\": \"北京时间ISO8601(+08:00)或空字符串\", \"assignee\": \"self\"}\n"
+            "\"priority_reason\": \"四象限判定依据（若涉及日期请写具体月日如 11-22，严禁只写明天/今天等相对词）\", "
+            "\"start_at\": \"北京时间ISO8601(+08:00)或空字符串\", "
+            "\"due_at\": \"北京时间ISO8601(+08:00)或空字符串\", "
+            "\"duration_minutes\": 15-1440整数或null, \"is_all_day\": true|false, \"assignee\": \"self\"}\n"
+            "   注意：当用户给出明确时间段（如「今天21:00-23:00，我要写作业」「晚上9点到11点」），"
+            "必须设置 start_at 为开始时间、due_at 为结束时间、duration_minutes 为持续分钟数（如 120）、is_all_day=false。\n"
             "   注意：当用户表达某事已做完/已修好/已买好时，必须设置 mutation_hint=\"complete_task\" 且 task_status=\"done\"！\n"
             "   importance 评分标尺（与紧急度相互独立，切勿因为“不急”就压低重要度）：5=线上故障/核心交付/重大风险；"
             "4=长期能力成长（学习新技能/考证）、健康、职业发展、重要关系等对长期目标有实质价值的事（不紧急时应落入 Q2）；"
@@ -323,6 +328,8 @@ class OpenAICompatLLMProvider:
                         str(raw_payload.get("occurred_at")), fallback=ref_iso
                     )
             elif mtype == "task":
+                if raw_payload.get("start_at"):
+                    raw_payload["start_at"] = _normalize_beijing_iso(str(raw_payload.get("start_at")))
                 if raw_payload.get("due_at"):
                     raw_payload["due_at"] = _normalize_beijing_iso(str(raw_payload.get("due_at")))
 

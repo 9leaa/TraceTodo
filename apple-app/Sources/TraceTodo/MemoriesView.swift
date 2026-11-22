@@ -1374,11 +1374,26 @@ struct KnowledgeGraphCanvasView: View {
             }
 
             if isFocus || isNb || node.degree >= 2 || zoomScale >= 0.78 || nodes.count <= 32 {
-                let shortTitle = node.title.count > 14 ? String(node.title.prefix(14)) + "…" : node.title
-                let text = Text(shortTitle)
-                    .font(.system(size: 11, weight: isFocus ? .bold : .medium))
+                let displayTitle: String
+                if isFocus {
+                    var chunks: [String] = []
+                    var current = ""
+                    for ch in node.title {
+                        current.append(ch)
+                        if current.count >= 16 {
+                            chunks.append(current)
+                            current = ""
+                        }
+                    }
+                    if !current.isEmpty { chunks.append(current) }
+                    displayTitle = chunks.joined(separator: "\n")
+                } else {
+                    displayTitle = node.title.count > 16 ? String(node.title.prefix(16)) + "…" : node.title
+                }
+                let text = Text(displayTitle)
+                    .font(.system(size: isFocus ? 12 : 11, weight: isFocus ? .bold : .medium))
                     .foregroundColor((isLightCanvas ? Color.black : Color.white).opacity(nodeOpacity))
-                context.draw(text, at: CGPoint(x: center.x, y: center.y + r + 9), anchor: .center)
+                context.draw(text, at: CGPoint(x: center.x, y: center.y + r + 7), anchor: .top)
             }
         }
     }

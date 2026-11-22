@@ -260,6 +260,7 @@ class TaskPayload:
     quadrant: str = "Q4_eliminate"
     priority_score: float = 0.0
     priority_reason: str = ""
+    start_at: str = ""
     due_at: str = ""
     assignee: str = "self"
     blockers: tuple[str, ...] = field(default_factory=tuple)
@@ -325,12 +326,23 @@ class TaskPayload:
             rem_min = 0
         focus_min = max(1, min(240, _safe_int_field(self.focus_minutes, "focus_minutes", 25) or 25))
         raw_dur = _safe_int_field(self.duration_minutes, "duration_minutes", None)
-        dur_min = max(15, min(480, raw_dur)) if raw_dur is not None else None
+        dur_min = max(15, min(1440, raw_dur)) if raw_dur is not None else None
+        raw_start = _opt_str(self.start_at).strip()
+        if raw_start:
+            parsed_start = parse_iso_datetime(raw_start)
+            norm_start = (
+                to_beijing(parsed_start).replace(microsecond=0).isoformat()
+                if parsed_start is not None
+                else raw_start
+            )
+        else:
+            norm_start = ""
         roll_cnt = max(0, _safe_int_field(self.rollover_count, "rollover_count", 0) or 0)
         f_comp = max(
             0,
             _safe_int_field(self.focus_sessions_completed, "focus_sessions_completed", 0) or 0,
         )
+        object.__setattr__(self, "start_at", norm_start)
         object.__setattr__(self, "color_theme", color)
         object.__setattr__(self, "task_mode", mode)
         object.__setattr__(self, "supervision_enabled", bool(self.supervision_enabled or mode == "multiplayer"))
@@ -359,6 +371,7 @@ class TaskPayload:
             "quadrant_label": QUADRANT_LABELS.get(self.quadrant, self.quadrant),
             "priority_score": self.priority_score,
             "priority_reason": self.priority_reason,
+            "start_at": self.start_at,
             "due_at": self.due_at,
             "assignee": self.assignee,
             "blockers": list(self.blockers),
@@ -385,6 +398,16 @@ class TaskPayload:
     def from_dict(cls, data: dict[str, Any]) -> TaskPayload:
         imp = _safe_int_field(data.get("importance"), "importance", 3) or 3
         urg = _safe_int_field(data.get("urgency"), "urgency", 3) or 3
+        raw_start = _opt_str(data.get("start_at")).strip()
+        if raw_start:
+            parsed_start = parse_iso_datetime(raw_start)
+            start_at = (
+                to_beijing(parsed_start).replace(microsecond=0).isoformat()
+                if parsed_start is not None
+                else raw_start
+            )
+        else:
+            start_at = ""
         due_at = _opt_str(data.get("due_at"))
         blockers = _safe_str_tuple(data.get("blockers"), "blockers")
         progress_notes = _safe_str_tuple(data.get("progress_notes"), "progress_notes")
@@ -413,6 +436,7 @@ class TaskPayload:
             quadrant=quadrant,
             priority_score=score,
             priority_reason=_opt_str(data.get("priority_reason")),
+            start_at=start_at,
             due_at=due_at,
             assignee=_opt_str(data.get("assignee"), "self") or "self",
             blockers=blockers,

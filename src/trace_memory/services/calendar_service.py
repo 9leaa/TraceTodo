@@ -214,9 +214,10 @@ class CalendarService:
 
         for task in all_tasks:
             p = task.get("payload") or {}
+            start_raw = str(p.get("start_at") or "").strip()
             due_raw = str(p.get("due_at") or "").strip()
             is_done = p.get("task_status") == "done"
-            if not due_raw:
+            if not due_raw and not start_raw:
                 if not is_done:
                     unscheduled_tasks.append(
                         {
@@ -233,19 +234,20 @@ class CalendarService:
                     )
                 continue
 
-            total_scheduled_tasks += 1
+            anchor_raw = due_raw or start_raw
             color_theme = str(p.get("color_theme") or "sky")
             if color_theme not in COLOR_THEMES:
                 color_theme = "sky"
-            is_all_day = bool(p.get("is_all_day", False)) or len(due_raw) <= 10
-            dt_bj = None if is_all_day else _parse_iso_beijing(due_raw)
-            due_ymd = dt_bj.date().isoformat() if dt_bj is not None else due_raw[:10]
-            day_bucket = days_by_ymd.get(due_ymd)
-            if day_bucket is None:
-                total_scheduled_tasks -= 1
-                continue
+            is_all_day = bool(p.get("is_all_day", False)) or (not start_raw and len(due_raw) <= 10)
+            start_dt = None if is_all_day else _parse_iso_beijing(start_raw)
+            due_dt = None if is_all_day else _parse_iso_beijing(due_raw)
 
-            if is_all_day or dt_bj is None:
+            if is_all_day or (start_dt is None and due_dt is None):
+                due_ymd = (due_dt or start_dt).date().isoformat() if (due_dt or start_dt) is not None else anchor_raw[:10]
+                day_bucket = days_by_ymd.get(due_ymd)
+                if day_bucket is None:
+                    continue
+                total_scheduled_tasks += 1
                 total_all_day_tasks += 1
                 day_bucket["all_day_tasks"].append(
                     {
@@ -260,43 +262,73 @@ class CalendarService:
                         "is_done": is_done,
                         "is_overdue": bool(p.get("is_overdue", False)),
                         "color_theme": color_theme,
+                        "start_at": start_raw,
                         "due_at": due_raw,
                         "is_all_day": True,
                     }
                 )
             else:
-                total_timed_blocks += 1
                 raw_dur = p.get("duration_minutes")
                 if raw_dur is not None:
-                    dur_min = max(15, min(480, int(raw_dur)))
+                    dur_min = max(15, min(1440, int(raw_dur)))
                 else:
                     dur_min = max(30, min(240, int(p.get("focus_minutes", 60) or 60)))
-                start_min = max(0, min(1425, dt_bj.hour * 60 + dt_bj.minute))
-                end_min = min(1440, start_min + dur_min)
-                eff_dur = max(15, end_min - start_min)
-                day_bucket["timed_blocks"].append(
-                    {
-                        "kind": "task",
-                        "memory_id": task["memory_id"],
-                        "version": task["version"],
-                        "title": task["title"],
-                        "summary": task.get("summary", ""),
-                        "quadrant": p.get("quadrant", "Q4_eliminate"),
-                        "quadrant_label": p.get("quadrant_label", ""),
-                        "task_status": p.get("task_status", "todo"),
-                        "is_done": is_done,
-                        "is_overdue": bool(p.get("is_overdue", False)),
-                        "color_theme": color_theme,
-                        "due_at": due_raw,
-                        "is_all_day": False,
-                        "start_minute": start_min,
-                        "end_minute": end_min,
-                        "duration_minutes": eff_dur,
-                        "time_range_label": f"{_fmt_hhmm(start_min)} - {_fmt_hhmm(end_min)}",
-                        "col_idx": 0,
-                        "col_total": 1,
-                    }
-                )
+
+                if start_dt is not None and due_dt is not None and due_dt > start_dt:
+                    blk_start = start_dt
+                    blk_end = min(due_dt, start_dt + timedelta(minutes=1440))
+                    if (blk_end - blk_start) < timedelta(minutes=15):
+                        blk_end = blk_start + timedelta(minutes=15)
+                elif start_dt is not None:
+                    blk_start = start_dt
+                    blk_end = start_dt + timedelta(minutes=dur_min)
+                else:
+                    assert due_dt is not None
+                    blk_start = due_dt
+                    blk_end = due_dt + timedelta(minutes=dur_min)
+
+                counted_task = False
+                cur_d = blk_start.date()
+                while cur_d <= blk_end.date():
+                    if cur_d == blk_end.date() and blk_end.hour == 0 and blk_end.minute == 0 and blk_end.date() > blk_start.date():
+                        break
+                    cur_ymd = cur_d.isoformat()
+                    day_bucket = days_by_ymd.get(cur_ymd)
+                    if day_bucket is not None:
+                        if not counted_task:
+                            total_scheduled_tasks += 1
+                            counted_task = True
+                        total_timed_blocks += 1
+                        seg_start_raw = (blk_start.hour * 60 + blk_start.minute) if cur_d == blk_start.date() else 0
+                        seg_end_raw = (blk_end.hour * 60 + blk_end.minute) if cur_d == blk_end.date() else 1440
+                        start_min = max(0, min(1425, seg_start_raw))
+                        end_min = max(start_min + 15, min(1440, seg_end_raw))
+                        eff_dur = max(15, end_min - start_min)
+                        day_bucket["timed_blocks"].append(
+                            {
+                                "kind": "task",
+                                "memory_id": task["memory_id"],
+                                "version": task["version"],
+                                "title": task["title"],
+                                "summary": task.get("summary", ""),
+                                "quadrant": p.get("quadrant", "Q4_eliminate"),
+                                "quadrant_label": p.get("quadrant_label", ""),
+                                "task_status": p.get("task_status", "todo"),
+                                "is_done": is_done,
+                                "is_overdue": bool(p.get("is_overdue", False)),
+                                "color_theme": color_theme,
+                                "start_at": start_raw or blk_start.replace(microsecond=0).isoformat(),
+                                "due_at": due_raw or blk_end.replace(microsecond=0).isoformat(),
+                                "is_all_day": False,
+                                "start_minute": start_min,
+                                "end_minute": end_min,
+                                "duration_minutes": eff_dur,
+                                "time_range_label": f"{_fmt_hhmm(start_min)} - {_fmt_hhmm(end_min)}",
+                                "col_idx": 0,
+                                "col_total": 1,
+                            }
+                        )
+                    cur_d += timedelta(days=1)
 
         # 2. Project completed focus_sessions in [start_ymd, end_ymd]
         focus_rows = self.db.query_all(
@@ -443,6 +475,7 @@ class CalendarService:
                 space_id=sp,
                 data={
                     "target_memory_id": target_id,
+                    "start_at": "",
                     "due_at": "",
                     "is_all_day": True,
                 },
@@ -470,6 +503,7 @@ class CalendarService:
             return max(lo, min(hi, val))
 
         if is_all_day:
+            start_iso = ""
             due_iso = slot_date.isoformat()
             dur_min = None
         else:
@@ -485,10 +519,26 @@ class CalendarService:
                 mm = _parse_int_field(payload.get("minute"), 0, 0, 59, "minute", strict_bounds=True)
 
             dt_bj = datetime(slot_date.year, slot_date.month, slot_date.day, hh, mm, 0, tzinfo=BEIJING_TZ)
-            due_iso = dt_bj.isoformat()
-            dur_min = _parse_int_field(payload.get("duration_minutes"), 60, 15, 480, "duration_minutes")
+            start_iso = dt_bj.isoformat()
+
+            raw_end_time = str(payload.get("end_time") or "").strip()
+            if raw_end_time:
+                if ":" not in raw_end_time:
+                    raise ValidationError(f"结束时间格式错误，应为 HH:MM：{raw_end_time!r}")
+                eparts = raw_end_time.split(":", 1)
+                ehh = _parse_int_field(eparts[0], hh, 0, 23, "end_hour", strict_bounds=True)
+                emm = _parse_int_field(eparts[1], 0, 0, 59, "end_minute", strict_bounds=True)
+                end_dt = datetime(slot_date.year, slot_date.month, slot_date.day, ehh, emm, 0, tzinfo=BEIJING_TZ)
+                if end_dt <= dt_bj:
+                    end_dt += timedelta(days=1)
+                dur_min = max(15, min(1440, int((end_dt - dt_bj).total_seconds() // 60)))
+                due_iso = end_dt.isoformat()
+            else:
+                due_iso = dt_bj.isoformat()
+                dur_min = _parse_int_field(payload.get("duration_minutes"), 60, 15, 1440, "duration_minutes")
 
         card_data: dict[str, Any] = {
+            "start_at": start_iso,
             "due_at": due_iso,
             "is_all_day": is_all_day,
             "duration_minutes": dur_min,

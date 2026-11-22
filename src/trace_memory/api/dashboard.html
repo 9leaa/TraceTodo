@@ -1439,13 +1439,17 @@
     .cal-day-cell.is-selected { box-shadow: 0 0 0 2px var(--primary); }
     .cal-task-dot {
       font-size: 10.5px;
-      padding: 1px 5px;
+      padding: 2px 5px;
       border-radius: 5px;
       background: var(--surface-alt);
       color: var(--text);
-      white-space: nowrap;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      white-space: normal;
+      word-break: break-word;
+      line-height: 1.25;
       overflow: hidden;
-      text-overflow: ellipsis;
       border-left: 3px solid var(--primary);
     }
 
@@ -1497,13 +1501,13 @@
       min-height: 34px;
     }
     .cal-week-vscroll {
-      max-height: 600px;
+      max-height: calc(100vh - 220px);
+      min-height: 440px;
       overflow-y: auto;
       position: relative;
     }
     .cal-time-gutter {
       position: relative;
-      height: 1152px; /* 24 * 48px */
       background: var(--surface-alt);
       user-select: none;
     }
@@ -1517,10 +1521,10 @@
       color: var(--muted);
       transform: translateY(-7px);
       pointer-events: none;
+      line-height: 1;
     }
     .cal-day-col {
       position: relative;
-      height: 1152px; /* 24 * 48px */
       border-left: 1px solid var(--border);
       background: var(--surface);
     }
@@ -1550,6 +1554,11 @@
       color: var(--primary);
       opacity: 0.9;
       pointer-events: none;
+    }
+    .cal-hour-slot.is-compact:hover::after {
+      top: 1px;
+      font-size: 9px;
+      line-height: 1.1;
     }
     .cal-macaron-block {
       position: absolute;
@@ -1711,6 +1720,36 @@
       gap: 6px;
     }
 
+    .cd-form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .cd-lunar-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .cd-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+    .cd-field select,
+    .cd-field input {
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    @media (max-width: 540px) {
+      .cd-form-grid,
+      .cd-lunar-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
     /* ---------------- Phase 4: Memo Masonry & Daily Mood Journal ---------------- */
     .memo-masonry {
       column-count: 2;
@@ -1725,6 +1764,13 @@
     .memo-list-stack {
       display: grid;
       gap: 12px;
+    }
+    .memo-empty-card {
+      column-span: all;
+      break-inside: avoid;
+      -webkit-column-break-inside: avoid;
+      width: 100%;
+      grid-column: 1 / -1;
     }
     .memo-card {
       border-radius: 14px;
@@ -1765,14 +1811,24 @@
       font-weight: 600;
       border: 1px solid var(--border);
       background: var(--surface);
+      color: var(--text);
       cursor: pointer;
       transition: all 0.14s ease;
     }
     .mood-pill-btn.active {
-      border-color: var(--primary);
+      border-color: var(--mood-color, var(--primary));
       background: var(--primary-soft);
-      color: var(--primary);
+      color: var(--mood-color, var(--primary));
+      box-shadow: 0 0 0 1px var(--mood-color, var(--primary));
       transform: translateY(-1px);
+    }
+    .mood-group-sep {
+      font-size: 11px;
+      color: var(--muted);
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: var(--surface-alt);
+      font-weight: 600;
     }
     .md-rendered p { margin: 0 0 6px; line-height: 1.65; }
     .md-rendered p:last-child { margin-bottom: 0; }
@@ -2018,7 +2074,7 @@
         <div class="summary-header" style="flex-wrap:wrap;gap:10px;">
           <div>
             <h2 class="summary-title">TODO · 待办中心</h2>
-            <div style="font-size:12px;color:var(--muted);">概览、四象限与多维列表三合一收敛视图</div>
+            <div style="font-size:12px;color:var(--muted);">一处掌控今日重点、四象限优先级与全部待办</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <div class="seg-pill-bar" id="todoViewSegBar">
@@ -2077,13 +2133,17 @@
         <div class="summary-header" style="flex-wrap:wrap;gap:10px;">
           <div>
             <div class="summary-title">CALENDAR · 时间画布</div>
-            <div style="font-size:12px;color:var(--muted);">零重复录入：投影带时间的四象限任务、全天事项与番茄专注轨迹，点选空白时段一键排期</div>
+            <div style="font-size:12px;color:var(--muted);">按周或按月规划时间块，串联番茄专注与重要倒数日</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <div class="seg-pill-bar" id="calViewSegBar">
               <button type="button" class="seg-pill-btn active" id="calSubWeekBtn" onclick="switchCalendarSubView('week')">📊 周视图</button>
               <button type="button" class="seg-pill-btn" id="calSubMonthBtn" onclick="switchCalendarSubView('month')">🗓️ 月视图</button>
               <button type="button" class="seg-pill-btn" id="calSubCountdownBtn" data-module-toggle="countdown" onclick="switchCalendarSubView('countdown')">⏳ 倒数纪念日</button>
+            </div>
+            <div class="seg-pill-bar" id="calWeekDensityToggle">
+              <button type="button" class="seg-pill-btn active" id="calDensityAdaptiveBtn" onclick="setCalWeekDensity('adaptive')">📐 自适应单屏</button>
+              <button type="button" class="seg-pill-btn" id="calDensityUniformBtn" onclick="setCalWeekDensity('uniform')">📏 等比 24h</button>
             </div>
             <div class="btn-group" id="calNavBtnGroup">
               <button type="button" onclick="shiftCalendarPeriod(-1)">◀</button>
@@ -2153,7 +2213,7 @@
         <div class="summary-header" style="flex-wrap:wrap;gap:10px;">
           <div>
             <div class="summary-title">FOCUS · 番茄专注中心</div>
-            <div style="font-size:12px;color:var(--muted);">番茄倒计时 / 正计时双模式 · 统一计时内核 · 专注历史时间轴</div>
+            <div style="font-size:12px;color:var(--muted);">支持番茄倒计时与自由正计时，自动沉淀每一次专注记录</div>
           </div>
           <div class="seg-pill-bar" id="focusModeSegBar">
             <button type="button" class="seg-pill-btn active" id="fcModePomodoroBtn" onclick="setFocusCenterMode('pomodoro')">🍅 番茄计时</button>
@@ -2227,7 +2287,7 @@
         <div class="summary-header" style="flex-wrap:wrap;gap:10px;">
           <div>
             <div class="summary-title">NOTES · 备忘录与每日日记</div>
-            <div style="font-size:12px;color:var(--muted);">万物复用 RawNote 轻结构化内核：支持置顶图文备忘录、一日一页心情日记与 AI 今日小结</div>
+            <div style="font-size:12px;color:var(--muted);">随手记录图文备忘、每日心情日记，一键生成 AI 今日小结</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <div class="seg-pill-bar" id="notesHubSegBar">
@@ -2651,7 +2711,11 @@
             <label style="display:flex;align-items:center;gap:4px;font-size:12.5px;cursor:pointer;">
               <input type="checkbox" id="tsAllDay" checked onchange="toggleAllDayInput()" /> 全天
             </label>
-            <input type="time" id="tsTime" value="18:00" style="display:none;" />
+            <span id="tsTimeRangeWrap" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;">
+              <input type="time" id="tsStartTime" value="" title="可选开始时间（留空则仅按截止时刻排入）" />
+              <span style="font-size:12px;color:var(--muted);">至</span>
+              <input type="time" id="tsTime" value="18:00" title="结束/截止时间" />
+            </span>
           </div>
         </div>
 
@@ -2943,53 +3007,53 @@
         <button type="button" class="voice-mic-btn" title="语音输入名称" onclick="onVoiceBtnClick(event, 'cdTitleInput', false)">🎤</button>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        <label style="font-size:12px;display:grid;gap:4px;">
+      <div class="cd-form-grid">
+        <label class="cd-field" style="font-size:12px;">
           <span style="color:var(--muted);">计时类型</span>
           <select id="cdKindSelect" onchange="onCdKindOrCalTypeChange()">
-            <option value="countdown">⏳ 倒数日（距离未来还有 X 天）</option>
-            <option value="anniversary">💖 正数纪念日（累计已经 X 天）</option>
+            <option value="countdown">⏳ 倒数日（未来目标）</option>
+            <option value="anniversary">💖 正数纪念日（已累计）</option>
           </select>
         </label>
-        <label style="font-size:12px;display:grid;gap:4px;">
+        <label class="cd-field" style="font-size:12px;">
           <span style="color:var(--muted);">历法换算</span>
           <select id="cdCalTypeSelect" onchange="onCdKindOrCalTypeChange()">
-            <option value="solar">☀️ 公历日期</option>
-            <option value="lunar">🌙 农历（春节/长辈生日自动换算）</option>
+            <option value="solar">☀️ 阳历（公历）</option>
+            <option value="lunar">🌙 农历（自动换算阳历）</option>
           </select>
         </label>
       </div>
 
-      <div id="cdSolarPickerRow" style="display:grid;gap:4px;">
+      <div id="cdSolarPickerRow" class="cd-field">
         <label style="font-size:12px;color:var(--muted);">目标公历日期</label>
         <input type="date" id="cdTargetDateInput" />
       </div>
 
-      <div id="cdLunarPickerRow" style="display:none;grid-template-columns:1fr 1fr 1fr;gap:8px;">
-        <label style="font-size:12px;display:grid;gap:4px;">
+      <div id="cdLunarPickerRow" class="cd-lunar-grid" style="display:none;">
+        <label class="cd-field" style="font-size:12px;">
           <span style="color:var(--muted);">农历年份</span>
           <input type="number" id="cdLunarYearInput" min="1900" max="2100" value="2026" />
         </label>
-        <label style="font-size:12px;display:grid;gap:4px;">
+        <label class="cd-field" style="font-size:12px;">
           <span style="color:var(--muted);">农历月份</span>
           <select id="cdLunarMonthSelect"></select>
         </label>
-        <label style="font-size:12px;display:grid;gap:4px;">
+        <label class="cd-field" style="font-size:12px;">
           <span style="color:var(--muted);">农历日</span>
           <select id="cdLunarDaySelect"></select>
         </label>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;">
-        <label style="font-size:12px;display:grid;gap:4px;">
+      <div class="cd-form-grid" style="align-items:center;">
+        <label class="cd-field" style="font-size:12px;">
           <span style="color:var(--muted);">重复周期</span>
           <select id="cdRepeatSelect">
-            <option value="none">不重复（单次目标）</option>
-            <option value="yearly">每年重复（生日/节日/周年）</option>
-            <option value="monthly">每月重复（发薪/还款日）</option>
+            <option value="none">不重复（单次）</option>
+            <option value="yearly">每年重复（生日/周年）</option>
+            <option value="monthly">每月重复（发薪/还款）</option>
           </select>
         </label>
-        <label style="font-size:12.5px;display:flex;align-items:center;gap:6px;padding-top:16px;cursor:pointer;">
+        <label style="font-size:12.5px;display:flex;align-items:center;gap:6px;padding-top:16px;cursor:pointer;min-width:0;">
           <input type="checkbox" id="cdPinnedCheck" />
           <span>📌 置顶至待办顶栏胶囊</span>
         </label>
@@ -3046,6 +3110,8 @@
         <button type="button" class="pomo-preset-btn active" data-dur="60" onclick="selectCalSlotDuration(60)">1h</button>
         <button type="button" class="pomo-preset-btn" data-dur="90" onclick="selectCalSlotDuration(90)">1.5h</button>
         <button type="button" class="pomo-preset-btn" data-dur="120" onclick="selectCalSlotDuration(120)">2h</button>
+        <button type="button" class="pomo-preset-btn" data-dur="180" onclick="selectCalSlotDuration(180)">3h</button>
+        <button type="button" class="pomo-preset-btn" data-dur="240" onclick="selectCalSlotDuration(240)">4h</button>
       </div>
 
       <div class="duodo-card" style="display:grid;gap:8px;">
@@ -3173,7 +3239,7 @@
       if (activeShareToken && path.startsWith('/api/supervision/')) {
         url += `&share_token=${encodeURIComponent(activeShareToken)}`;
       }
-      const res = await fetch(url, { headers: authHeaders() });
+      const res = await fetch(url, { headers: authHeaders(), cache: 'no-store' });
       return parseApiResponse(res);
     }
 
@@ -3268,8 +3334,18 @@
       const doneSubs = subs.filter(s => s.done).length;
       const pct = subs.length ? Math.round((doneSubs / subs.length) * 100) : 0;
 
-      const dueBadge = p.due_at
-        ? `<span class="tag" style="${p.is_overdue ? 'background:#fee2e2;color:#b91c1c;font-weight:600;' : ''}">⏰ ${esc(p.due_at.slice(0, p.is_all_day ? 10 : 16).replace('T', ' '))}${p.is_overdue ? ' (已逾期)' : ''}</span>`
+      let dueLabel = '';
+      if (p.due_at) {
+        if (!p.is_all_day && p.start_at && p.start_at.length >= 16 && p.due_at.length >= 16) {
+          dueLabel = p.start_at.slice(0, 10) === p.due_at.slice(0, 10)
+            ? `${p.start_at.slice(0, 10)} ${p.start_at.slice(11, 16)}–${p.due_at.slice(11, 16)}`
+            : `${p.start_at.slice(0, 16).replace('T', ' ')} → ${p.due_at.slice(5, 16).replace('T', ' ')}`;
+        } else {
+          dueLabel = p.due_at.slice(0, p.is_all_day ? 10 : 16).replace('T', ' ');
+        }
+      }
+      const dueBadge = dueLabel
+        ? `<span class="tag" style="${p.is_overdue ? 'background:#fee2e2;color:#b91c1c;font-weight:600;' : ''}">⏰ ${esc(dueLabel)}${p.is_overdue ? ' (已逾期)' : ''}</span>`
         : '';
       const repeatBadge = p.repeat_rule && p.repeat_rule !== 'never'
         ? `<span class="tag">🔁 ${esc(REPEAT_LABELS[p.repeat_rule] || p.repeat_rule)}</span>`
@@ -3291,12 +3367,12 @@
       const lockBadge = t.user_locked ? `<span class="tag lock">🔒 锁定</span>` : '';
 
       const checklistHtml = subs.length ? `
-        <div class="card-checklist">
+        <div class="card-checklist" data-checklist-for="${esc(t.memory_id)}">
           <div style="display:flex;justify-content:space-between;font-size:11.5px;color:#475569;font-weight:600;">
             <span>📋 子步骤清单</span>
-            <span>${doneSubs}/${subs.length} 已完成</span>
+            <span data-chk-count>${doneSubs}/${subs.length} 已完成</span>
           </div>
-          <div class="chk-progress-bar"><div class="chk-progress-fill" style="width:${pct}%"></div></div>
+          <div class="chk-progress-bar"><div class="chk-progress-fill" data-chk-fill style="width:${pct}%"></div></div>
           ${subs.map(s => `
             <label class="chk-row ${s.done ? 'is-done' : ''}">
               <input type="checkbox" ${s.done ? 'checked' : ''} data-mem-id="${esc(t.memory_id)}" data-sub-id="${esc(s.id)}" data-ver="${Number(t.version) || 1}" onchange="toggleCardSubtaskEl(this)" />
@@ -3306,13 +3382,20 @@
         </div>
       ` : '';
 
+      const cleanTitle = String(t.title || '').trim();
+      const cleanSummary = String(t.summary || '').trim();
+      const summaryHtml = (cleanSummary && cleanSummary !== cleanTitle)
+        ? `<div style="font-size:12.5px;color:#475569;line-height:1.45;">${esc(cleanSummary)}</div>`
+        : '';
+      const reasonTip = p.priority_reason ? String(p.priority_reason) : (p.quadrant_label || '');
+
       return `
         <div class="task-card theme-${esc(theme)} ${isDone ? 'done' : ''}">
           <div class="task-top">
             <div class="task-title" data-mem-id="${esc(t.memory_id)}" onclick="openTaskSheet(this.dataset.memId)" title="点击编辑任务卡片">${esc(t.title)}</div>
-            <span class="badge badge-${esc(quad)}">${esc(quad.slice(0, 2))} · ${esc(p.priority_score)}分</span>
+            <span class="badge badge-${esc(quad)}" title="${esc(reasonTip)}">${esc(quad.slice(0, 2))} · ${esc(p.priority_score)}分</span>
           </div>
-          <div style="font-size:12.5px;color:#475569;">${esc(p.priority_reason || t.summary)}</div>
+          ${summaryHtml}
           ${checklistHtml}
           <div class="meta-row">
             <span class="tag">重要 ${'★'.repeat(p.importance || 3)}</span>
@@ -3439,7 +3522,7 @@
             // Without subtasks show the priority score as 分 — rendering it as % read like completion progress
             const scoreTxt = `${Math.round(Number(t.payload?.priority_score || 0))}分`;
             return `
-              <div class="focus-row" data-mem-id="${esc(t.memory_id)}" onclick="openTaskSheet(this.dataset.memId)">
+              <div class="focus-row" data-mem-id="${esc(t.memory_id)}" title="${esc(t.title)}" onclick="openTaskSheet(this.dataset.memId)">
                 <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px;">${idx + 1}. ${esc(t.title)}</span>
                 <span class="tag score" style="flex-shrink:0;">${subs.length ? subs.filter(s => s.done).length + '/' + subs.length : scoreTxt}</span>
               </div>
@@ -3452,7 +3535,10 @@
       const diags = data.diagnostics || [];
       document.getElementById('diagList').innerHTML = diags.map(d => `<li>${esc(d)}</li>`).join('');
       if (diags.length && document.getElementById('railTipText')) {
-        document.getElementById('railTipText').textContent = Array.from(String(diags[0]).replace(/^(?:\p{Extended_Pictographic}|↻)\uFE0F?\s*/u, '')).slice(0, 48).join('');
+        const cleanTip = String(diags[0]).replace(/^(?:\p{Extended_Pictographic}|↻)\uFE0F?\s*/u, '');
+        const tipEl = document.getElementById('railTipText');
+        tipEl.textContent = cleanTip;
+        tipEl.title = cleanTip;
       }
 
 
@@ -3485,24 +3571,54 @@
       }
     }
 
+    function syncSubtaskProgressDom(memId, subId, checked, newVersion = null) {
+      document.querySelectorAll(`input[type="checkbox"][data-mem-id="${memId}"][data-sub-id="${subId}"]`).forEach(cb => {
+        cb.checked = checked;
+        cb.closest('label')?.classList.toggle('is-done', checked);
+      });
+      if (newVersion !== null && newVersion !== undefined) {
+        document.querySelectorAll(`[data-mem-id="${memId}"][data-ver]`).forEach(node => {
+          node.dataset.ver = String(newVersion);
+        });
+      }
+      let doneCount = 0;
+      let totalCount = 0;
+      document.querySelectorAll(`.card-checklist[data-checklist-for="${memId}"]`).forEach(chkBox => {
+        const boxes = chkBox.querySelectorAll('input[type="checkbox"][data-sub-id]');
+        const cTotal = boxes.length;
+        let cDone = 0;
+        boxes.forEach(b => { if (b.checked) cDone += 1; });
+        totalCount = cTotal;
+        doneCount = cDone;
+        const pct = cTotal ? Math.round((cDone / cTotal) * 100) : 0;
+        const cntEl = chkBox.querySelector('[data-chk-count]');
+        if (cntEl) cntEl.textContent = `${cDone}/${cTotal} 已完成`;
+        const fillEl = chkBox.querySelector('[data-chk-fill]');
+        if (fillEl) fillEl.style.width = `${pct}%`;
+      });
+      if (totalCount > 0) {
+        document.querySelectorAll(`.focus-row[data-mem-id="${memId}"] .tag.score`).forEach(badge => {
+          badge.textContent = `${doneCount}/${totalCount}`;
+        });
+      }
+    }
+
     function toggleCardSubtaskEl(el) {
+      const memId = el.dataset.memId || '';
+      const latestVer = Number(cachedTasksById[memId]?.version || el.dataset.ver || 0) || null;
       return toggleCardSubtask(
-        el.dataset.memId || '',
+        memId,
         el.dataset.subId || '',
         !!el.checked,
-        Number(el.dataset.ver || 0) || null,
+        latestVer,
         el
       );
     }
 
     async function toggleCardSubtask(memId, subId, done, ver, el = null) {
-      // Optimistic checkbox: roll it back whenever the server rejects / fails the write
-      const rollback = () => {
-        if (el) {
-          el.checked = !done;
-          el.closest('label')?.classList.toggle('is-done', !done);
-        }
-      };
+      // Optimistic checklist + counter + progress bar update; roll back on error
+      syncSubtaskProgressDom(memId, subId, done, null);
+      const rollback = () => syncSubtaskProgressDom(memId, subId, !done, null);
       if (el) el.disabled = true;
       let res;
       try {
@@ -3523,14 +3639,22 @@
         loadTasks().catch(() => {});
         return;
       }
+      if (res.memory) {
+        cachedTasksById[memId] = res.memory;
+        const idx = (lastLoadedTasks || []).findIndex(t => t.memory_id === memId);
+        if (idx >= 0) lastLoadedTasks[idx] = res.memory;
+        const subs = Array.isArray(res.memory.payload?.subtasks) ? res.memory.payload.subtasks : [];
+        const matched = subs.find(s => s.id === subId);
+        syncSubtaskProgressDom(memId, subId, matched ? Boolean(matched.done) : done, res.memory.version);
+      }
       if (res.all_subtasks_done) {
         showToast('🎉 子步骤已全部勾选完成！可点击「✅ 完成」归档主任务');
       }
-      await loadTasks();
       if (focusState && focusState.task && focusState.task.memory_id === memId) {
         focusState.task = res.memory;
         renderFocusSubtasks();
       }
+      await loadTasks();
     }
 
     async function transitionTask(memId, action, ver) {
@@ -3591,7 +3715,8 @@
 
     function toggleAllDayInput() {
       const allDay = document.getElementById('tsAllDay').checked;
-      document.getElementById('tsTime').style.display = allDay ? 'none' : 'inline-block';
+      const wrap = document.getElementById('tsTimeRangeWrap');
+      if (wrap) wrap.style.display = allDay ? 'none' : 'inline-flex';
     }
 
     function fmtLocalYMD(d) {
@@ -3683,16 +3808,19 @@
       document.getElementById('tsSupervision').checked = Boolean(p.supervision_enabled);
       updatePrivacyHint();
 
-      if (p.due_at) {
-        document.getElementById('tsDate').value = p.due_at.slice(0, 10);
+      if (p.due_at || p.start_at) {
+        const anchorDate = (p.start_at || p.due_at).slice(0, 10);
+        document.getElementById('tsDate').value = anchorDate;
         const allDay = p.is_all_day !== false;
         document.getElementById('tsAllDay').checked = allDay;
-        document.getElementById('tsTime').value = p.due_at.length >= 16 ? p.due_at.slice(11, 16) : '18:00';
+        document.getElementById('tsStartTime').value = (!allDay && p.start_at && p.start_at.length >= 16) ? p.start_at.slice(11, 16) : '';
+        document.getElementById('tsTime').value = (p.due_at && p.due_at.length >= 16) ? p.due_at.slice(11, 16) : '18:00';
       } else {
         // Editing a dateless task must keep it dateless; only brand-new cards default to today.
         // (Pre-filling today silently set a deadline on save and inflated urgency/score.)
         quickDate(t ? 'clear' : 'today');
         document.getElementById('tsAllDay').checked = true;
+        document.getElementById('tsStartTime').value = '';
         document.getElementById('tsTime').value = '18:00';
       }
       toggleAllDayInput();
@@ -3740,9 +3868,17 @@
       if (!title) return showToast('请输入任务内容');
       const dateStr = document.getElementById('tsDate').value;
       const allDay = document.getElementById('tsAllDay').checked;
+      const startTimeStr = (document.getElementById('tsStartTime')?.value || '').trim();
       const timeStr = document.getElementById('tsTime').value;
       const remRaw = document.getElementById('tsReminder').value;
       const quadVal = document.getElementById('tsQuadrant').value;
+
+      let dueDateStr = dateStr;
+      if (!allDay && dateStr && startTimeStr && timeStr && timeStr <= startTimeStr) {
+        const parts = dateStr.split('-').map(Number);
+        const nextD = new Date(parts[0], (parts[1] || 1) - 1, (parts[2] || 1) + 1);
+        dueDateStr = fmtLocalYMD(nextD);
+      }
 
       const body = {
         target_memory_id: editingMemoryId || '',
@@ -3753,7 +3889,8 @@
         task_mode: sheetMode,
         supervision_enabled: document.getElementById('tsSupervision').checked,
         assignee: sheetMode === 'multiplayer' ? (document.getElementById('tsAssignee').value.trim() || 'self') : 'self',
-        due_at: buildIsoDueAt(dateStr, allDay, timeStr),
+        start_at: (!allDay && dateStr && startTimeStr) ? buildIsoDueAt(dateStr, false, startTimeStr) : '',
+        due_at: buildIsoDueAt(dueDateStr, allDay, timeStr),
         is_all_day: allDay,
         repeat_rule: document.getElementById('tsRepeat').value,
         reminder_offset_minutes: remRaw === '' ? null : Number(remRaw),
@@ -5142,6 +5279,33 @@
       ctx.restore();
     }
 
+    function wrapGraphText(ctx, text, maxWidth, maxLines = 0) {
+      const chars = [...String(text || '')];
+      if (!chars.length) return [];
+      const lines = [];
+      let cur = '';
+      for (const ch of chars) {
+        const next = cur + ch;
+        if (cur && ctx.measureText(next).width > maxWidth) {
+          lines.push(cur);
+          cur = ch;
+        } else {
+          cur = next;
+        }
+      }
+      if (cur) lines.push(cur);
+      if (maxLines > 0 && lines.length > maxLines) {
+        const trimmed = lines.slice(0, maxLines);
+        let tail = trimmed[maxLines - 1];
+        while (tail.length > 1 && ctx.measureText(tail + '…').width > maxWidth) {
+          tail = tail.slice(0, -1);
+        }
+        trimmed[maxLines - 1] = tail + '…';
+        return trimmed;
+      }
+      return lines;
+    }
+
     function drawGraphLabels(ctx, width, height, focusId, neighbors, isLight) {
       const { nodes, scale, seed, selectedId, camX, camY } = graphState;
       const labelRank = node => {
@@ -5149,37 +5313,92 @@
         if (seed && node.hop === 0) return 2;
         return neighbors?.has(node.id) ? 1 : 0;
       };
-      // Allocate less text when many cards share a narrow viewport.
+      // Normal labels (2-line wrapped, zero overlap); active/hovered node gets full untruncated pill on top.
       const candidates = nodes.filter(node => !focusId || labelRank(node))
         .sort((a, b) => labelRank(b) - labelRank(a) || b.degree - a.degree);
       const labelLimit = Math.max(6, Math.floor(width * height / (scale < 0.8 ? 9500 : 6500)));
       const placed = [];
       const fontSize = Math.max(11, Math.min(14, 12 * scale));
+      const worldFontSize = fontSize / scale;
+      const lineStep = worldFontSize * 1.28;
+      const maxNormalW = 116 / scale;
+      const activeNodes = [];
+
       ctx.save();
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.fillStyle = isLight ? '#0f172a' : '#f1f5f9';
       ctx.strokeStyle = isLight ? '#f8fafc' : '#111827';
       ctx.lineWidth = 3 / scale;
+
       for (const node of candidates) {
-        if (placed.length >= labelLimit) break;
+        if (node.id === focusId || node.id === selectedId) {
+          activeNodes.push(node);
+          continue;
+        }
+        if (placed.length >= labelLimit) continue;
         const rank = labelRank(node);
-        const letters = [...String(node.title || '')];
-        const limit = rank >= 2 ? 26 : 14;
-        const label = letters.length > limit ? letters.slice(0, limit).join('') + '…' : letters.join('');
-        if (!label) continue;
-        ctx.font = `${rank >= 2 ? 600 : 500} ${fontSize / scale}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;
+        const titleStr = String(node.title || '').trim();
+        if (!titleStr) continue;
+        ctx.font = `${rank >= 2 ? 600 : 500} ${worldFontSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;
+        const lines = wrapGraphText(ctx, titleStr, maxNormalW, 2);
+        if (!lines.length) continue;
         const textY = node.y + node.radius + 4 / scale;
         const x = node.x * scale + width / 2 + camX;
         const y = textY * scale + height / 2 + camY;
-        const halfWidth = ctx.measureText(label).width * scale / 2 + 3;
-        const box = { left: x - halfWidth, right: x + halfWidth, top: y, bottom: y + fontSize + 3 };
+        const maxLineScreenW = Math.max(...lines.map(l => ctx.measureText(l).width)) * scale;
+        const halfWidth = maxLineScreenW / 2 + 4;
+        const box = { left: x - halfWidth, right: x + halfWidth, top: y, bottom: y + lines.length * (fontSize * 1.28) + 4 };
         if (box.left < 0 || box.right > width || box.top < 0 || box.bottom > height) continue;
         if (placed.some(other => box.left < other.right && box.right > other.left &&
           box.top < other.bottom && box.bottom > other.top)) continue;
         placed.push(box);
-        ctx.strokeText(label, node.x, textY);
-        ctx.fillText(label, node.x, textY);
+        lines.forEach((line, idx) => {
+          const ly = textY + idx * lineStep;
+          ctx.strokeText(line, node.x, ly);
+          ctx.fillText(line, node.x, ly);
+        });
+      }
+
+      // Render hovered / selected node full title inside an untruncated high-contrast pill
+      for (const node of activeNodes) {
+        const titleStr = String(node.title || '').trim();
+        if (!titleStr) continue;
+        ctx.font = `600 ${worldFontSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;
+        const pillMaxW = Math.max(150 / scale, Math.min(240 / scale, (width * 0.6) / scale));
+        const lines = wrapGraphText(ctx, titleStr, pillMaxW, 0);
+        if (!lines.length) continue;
+        const textW = Math.max(...lines.map(l => ctx.measureText(l).width));
+        const padX = 8 / scale;
+        const padY = 5 / scale;
+        const boxW = textW + padX * 2;
+        const boxH = lines.length * lineStep + padY * 2;
+        const boxX = node.x - boxW / 2;
+        const boxY = node.y + node.radius + 6 / scale;
+        const r = Math.min(8 / scale, boxH / 2);
+
+        ctx.beginPath();
+        ctx.moveTo(boxX + r, boxY);
+        ctx.lineTo(boxX + boxW - r, boxY);
+        ctx.quadraticCurveTo(boxX + boxW, boxY, boxX + boxW, boxY + r);
+        ctx.lineTo(boxX + boxW, boxY + boxH - r);
+        ctx.quadraticCurveTo(boxX + boxW, boxY + boxH, boxX + boxW - r, boxY + boxH);
+        ctx.lineTo(boxX + r, boxY + boxH);
+        ctx.quadraticCurveTo(boxX, boxY + boxH, boxX, boxY + boxH - r);
+        ctx.lineTo(boxX, boxY + r);
+        ctx.quadraticCurveTo(boxX, boxY, boxX + r, boxY);
+        ctx.closePath();
+
+        ctx.fillStyle = isLight ? 'rgba(255,255,255,0.96)' : 'rgba(15,23,42,0.94)';
+        ctx.fill();
+        ctx.lineWidth = 1.4 / scale;
+        ctx.strokeStyle = node.color || (isLight ? '#6366f1' : '#818cf8');
+        ctx.stroke();
+
+        ctx.fillStyle = isLight ? '#0f172a' : '#f8fafc';
+        lines.forEach((line, idx) => {
+          ctx.fillText(line, node.x, boxY + padY + idx * lineStep);
+        });
       }
       ctx.restore();
     }
@@ -6550,7 +6769,7 @@
       strip.innerHTML = `
         <div style="display:flex;align-items:center;gap:8px;min-width:0;">
           <span class="countdown-capsule">⏳ ${esc(badgeTxt)}</span>
-          <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;" onclick="openCalendarTaskEditor('${esc(nearest.task.memory_id)}')">${esc(nearest.task.title)}</span>
+          <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;" title="${esc(nearest.task.title)}" onclick="openCalendarTaskEditor('${esc(nearest.task.memory_id)}')">${esc(nearest.task.title)}</span>
         </div>
         <div style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);">
           <span>📅 ${esc(nearest.task.payload.due_at.slice(0, 10))}</span>
@@ -6709,8 +6928,20 @@
     let _calSelectedDate = fmtLocalYMD(new Date());
     let _calOverviewCache = null;
     let _calWeekScrolledOnce = false;
+    let _calWeekDensity = localStorage.getItem('tracetodo_cal_week_density') || 'adaptive'; // 'adaptive' | 'uniform'
     let _calSlotDuration = 60;
     let _calSlotColor = 'sky';
+
+    function setCalWeekDensity(mode) {
+      _calWeekDensity = mode === 'uniform' ? 'uniform' : 'adaptive';
+      localStorage.setItem('tracetodo_cal_week_density', _calWeekDensity);
+      document.getElementById('calDensityAdaptiveBtn')?.classList.toggle('active', _calWeekDensity === 'adaptive');
+      document.getElementById('calDensityUniformBtn')?.classList.toggle('active', _calWeekDensity === 'uniform');
+      _calWeekScrolledOnce = false;
+      if (_calOverviewCache && _calSubView === 'week') {
+        paintCalendarOverview(_calOverviewCache);
+      }
+    }
 
     function switchCalendarSubView(sub) {
       if (sub === 'countdown' && appPreferences.enabled_modules?.countdown !== false) {
@@ -6726,6 +6957,7 @@
       const cd = document.getElementById('calCountdownContainer');
       const btm = document.getElementById('calBottomSplit');
       const navGrp = document.getElementById('calNavBtnGroup');
+      const densGrp = document.getElementById('calWeekDensityToggle');
       const addCdBtn = document.getElementById('calAddCountdownBtn');
       const statsEl = document.getElementById('calSummaryStatsBar');
       if (wk) wk.style.display = _calSubView === 'week' ? '' : 'none';
@@ -6733,6 +6965,9 @@
       if (cd) cd.style.display = _calSubView === 'countdown' ? '' : 'none';
       if (btm) btm.style.display = _calSubView === 'countdown' ? 'none' : '';
       if (navGrp) navGrp.style.display = _calSubView === 'countdown' ? 'none' : '';
+      if (densGrp) densGrp.style.display = _calSubView === 'week' ? '' : 'none';
+      document.getElementById('calDensityAdaptiveBtn')?.classList.toggle('active', _calWeekDensity === 'adaptive');
+      document.getElementById('calDensityUniformBtn')?.classList.toggle('active', _calWeekDensity === 'uniform');
       if (addCdBtn) addCdBtn.style.display = _calSubView === 'countdown' ? '' : 'none';
       if (statsEl) statsEl.style.display = _calSubView === 'countdown' ? 'none' : 'flex';
       renderCalendarPanel();
@@ -6950,14 +7185,20 @@
         paintMonthPanorama(days, data.period_label || '');
       }
 
-      // Selected day agenda
+      // Selected day agenda (include both due_at date and start_at date for overnight tasks)
       const byDateTasks = {};
-      for (const t of (lastLoadedTasks || [])) {
-        const due = t.payload?.due_at ? t.payload.due_at.slice(0, 10) : '';
-        if (due) {
-          if (!byDateTasks[due]) byDateTasks[due] = [];
-          byDateTasks[due].push(t);
+      const pushTaskToDate = (ymd, taskObj) => {
+        if (!ymd) return;
+        if (!byDateTasks[ymd]) byDateTasks[ymd] = [];
+        if (!byDateTasks[ymd].some(x => x.memory_id === taskObj.memory_id)) {
+          byDateTasks[ymd].push(taskObj);
         }
+      };
+      for (const t of (lastLoadedTasks || [])) {
+        const st = t.payload?.start_at ? t.payload.start_at.slice(0, 10) : '';
+        const due = t.payload?.due_at ? t.payload.due_at.slice(0, 10) : '';
+        pushTaskToDate(st, t);
+        pushTaskToDate(due, t);
       }
       const selDayObj = days.find(d => d.date === _calSelectedDate);
       const selTasks = byDateTasks[_calSelectedDate] || [];
@@ -6976,7 +7217,7 @@
         poolEl.innerHTML = pool.length ? pool.map(u => `
           <div class="duodo-card cal-macaron-${esc(u.color_theme || 'sky')}" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 11px;">
             <div style="min-width:0;flex:1;">
-              <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(u.title)}</div>
+              <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(u.title)}">${esc(u.title)}</div>
               <div style="font-size:11px;opacity:0.8;">${esc(u.quadrant_label || u.quadrant || '')} · 预计 ${u.duration_minutes || 45}m</div>
             </div>
             <button type="button" style="font-size:11.5px;padding:4px 9px;" onclick="openSlotScheduleModalForTask('${esc(u.memory_id)}')">📅 排入选中日</button>
@@ -7011,7 +7252,7 @@
         const isSel = d.date === _calSelectedDate;
         const busyH = Math.round((d.busy_minutes || 0) / 6) / 10;
         const freeAwakeH = Math.round((d.awake_free_minutes ?? 840) / 6) / 10;
-        const cdPills = (d.countdowns || []).slice(0, 1).map(c => `<div style="font-size:9.5px;color:var(--primary);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(c.icon || '⏳')} ${esc(c.title)}</div>`).join('');
+        const cdPills = (d.countdowns || []).slice(0, 1).map(c => `<div style="font-size:9.5px;color:var(--primary);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(c.title)}">${esc(c.icon || '⏳')} ${esc(c.title)}</div>`).join('');
         hdrHtml += `
           <div class="cal-week-hdr-cell ${d.is_today ? 'is-today' : ''}" style="${isSel ? 'box-shadow:inset 0 -2.5px 0 var(--primary);' : ''}" onclick="selectCalendarDate('${d.date}')">
             <div style="font-size:11px;color:${d.is_today ? 'var(--primary)' : 'var(--muted)'};font-weight:700;">${esc(d.weekday_label)}${d.is_today ? ' · 今' : ''}</div>
@@ -7041,12 +7282,61 @@
       }
       allDayRow.innerHTML = adHtml;
 
-      // 3. 00:00 - 24:00 Gutter + 7 Day Columns (48px per hour)
-      let gutterHtml = `<div class="cal-time-gutter">`;
-      for (let h = 0; h <= 24; h++) {
-        const topPx = h * 48;
-        if (h < 24) {
-          gutterHtml += `<div class="cal-time-label" style="top:${topPx === 0 ? 8 : topPx}px;">${String(h).padStart(2, '0')}:00</div>`;
+      // 3. Adaptive 00:00 - 24:00 Gutter + 7 Day Columns
+      const activeHours = new Set();
+      for (const d of days) {
+        for (const blk of [...(d.timed_blocks || []), ...(d.focus_blocks || [])]) {
+          const sH = Math.max(0, Math.min(23, Math.floor((blk.start_minute || 0) / 60)));
+          const eH = Math.max(sH, Math.min(23, Math.floor(Math.max(blk.start_minute || 0, (blk.end_minute || 0) - 1) / 60)));
+          for (let h = sH; h <= eH; h++) activeHours.add(h);
+        }
+      }
+
+      document.getElementById('calDensityAdaptiveBtn')?.classList.toggle('active', _calWeekDensity === 'adaptive');
+      document.getElementById('calDensityUniformBtn')?.classList.toggle('active', _calWeekDensity === 'uniform');
+
+      const hourHeights = new Array(24).fill(48);
+      if (_calWeekDensity !== 'uniform') {
+        const targetH = Math.max(440, Math.min(640, (window.innerHeight || 820) - 270));
+        const weights = [];
+        for (let h = 0; h < 24; h++) {
+          if (activeHours.has(h)) weights.push(64);
+          else if (h >= 7 && h <= 22) weights.push(20);
+          else weights.push(10);
+        }
+        const weightSum = weights.reduce((a, b) => a + b, 0) || 1;
+        const rawScale = targetH / weightSum;
+        for (let h = 0; h < 24; h++) {
+          const isSleep = h <= 6 || h === 23;
+          if (activeHours.has(h)) {
+            hourHeights[h] = Math.max(54, Math.min(96, Math.round(weights[h] * rawScale)));
+          } else if (isSleep) {
+            hourHeights[h] = Math.max(9, Math.min(15, Math.round(weights[h] * rawScale)));
+          } else {
+            hourHeights[h] = Math.max(17, Math.min(28, Math.round(weights[h] * rawScale)));
+          }
+        }
+      }
+
+      const hourTop = new Array(25).fill(0);
+      for (let h = 0; h < 24; h++) {
+        hourTop[h + 1] = hourTop[h] + hourHeights[h];
+      }
+      const totalGridH = hourTop[24];
+      const minuteToY = m => {
+        const clamped = Math.max(0, Math.min(1440, Number(m || 0)));
+        if (clamped >= 1440) return totalGridH;
+        const h = Math.floor(clamped / 60);
+        return hourTop[h] + ((clamped % 60) / 60) * hourHeights[h];
+      };
+
+      let gutterHtml = `<div class="cal-time-gutter" style="height:${totalGridH}px;">`;
+      for (let h = 0; h < 24; h++) {
+        const isCompact = _calWeekDensity !== 'uniform' && hourHeights[h] < 16 && !activeHours.has(h);
+        const showLabel = _calWeekDensity === 'uniform' || !isCompact || h === 0 || h === 3 || h === 6 || activeHours.has(h);
+        if (showLabel) {
+          const topPx = hourTop[h];
+          gutterHtml += `<div class="cal-time-label" style="top:${topPx === 0 ? 8 : topPx}px;${activeHours.has(h) ? 'color:var(--primary);font-weight:700;' : ''}">${String(h).padStart(2, '0')}:00</div>`;
         }
       }
       gutterHtml += `</div>`;
@@ -7056,15 +7346,17 @@
         let slotsHtml = '';
         for (let h = 0; h < 24; h++) {
           const isRest = h < 8 || h >= 22;
+          const isCompact = hourHeights[h] < 20;
           const hhLabel = `${String(h).padStart(2, '0')}:00`;
-          slotsHtml += `<div class="cal-hour-slot ${isRest ? 'is-rest' : ''}" data-slot-hint="+ ${hhLabel} 排期" onclick="openSlotScheduleModal('${d.date}', ${h}, false)"></div>`;
+          slotsHtml += `<div class="cal-hour-slot ${isRest ? 'is-rest' : ''} ${isCompact ? 'is-compact' : ''}" style="height:${hourHeights[h]}px;" data-slot-hint="+ ${hhLabel} 排期" onclick="openSlotScheduleModal('${d.date}', ${h}, false)"></div>`;
         }
 
         // Timed Macaron Task Blocks
         let blocksHtml = '';
         for (const blk of (d.timed_blocks || [])) {
-          const topPx = Math.round((blk.start_minute / 60) * 48);
-          const heightPx = Math.max(22, Math.round((blk.duration_minutes / 60) * 48) - 2);
+          const topPx = Math.round(minuteToY(blk.start_minute));
+          const botPx = Math.round(minuteToY(blk.end_minute));
+          const heightPx = Math.max(24, botPx - topPx - 2);
           const colTotal = Math.max(1, blk.col_total || 1);
           const colIdx = Math.min(colTotal - 1, blk.col_idx || 0);
           const leftPct = (colIdx / colTotal) * 100;
@@ -7086,8 +7378,9 @@
         // Completed Focus Session Track Pills
         let focusHtml = '';
         for (const fb of (d.focus_blocks || [])) {
-          const topPx = Math.round((fb.start_minute / 60) * 48);
-          const heightPx = Math.max(18, Math.round((fb.duration_minutes / 60) * 48));
+          const topPx = Math.round(minuteToY(fb.start_minute));
+          const botPx = Math.round(minuteToY(fb.end_minute ?? (fb.start_minute + fb.duration_minutes)));
+          const heightPx = Math.max(18, botPx - topPx);
           focusHtml += `
             <div class="cal-focus-track" style="top:${topPx}px;height:${heightPx}px;" title="已完成专注：${esc(fb.title)} (${fb.duration_minutes}m)">
               🍅 ${fb.duration_minutes}m ${esc(fb.title)}
@@ -7096,18 +7389,17 @@
         }
 
         const nowLineHtml = d.is_today
-          ? `<div class="cal-now-line" style="top:${Math.round((nowMinute / 60) * 48)}px;" title="当前北京时间"></div>`
+          ? `<div class="cal-now-line" style="top:${Math.round(minuteToY(nowMinute))}px;" title="当前北京时间"></div>`
           : '';
 
-        colsHtml += `<div class="cal-day-col ${d.is_today ? 'is-today' : ''}">${slotsHtml}${focusHtml}${blocksHtml}${nowLineHtml}</div>`;
+        colsHtml += `<div class="cal-day-col ${d.is_today ? 'is-today' : ''}" style="height:${totalGridH}px;">${slotsHtml}${focusHtml}${blocksHtml}${nowLineHtml}</div>`;
       }
 
       bodyGrid.innerHTML = gutterHtml + colsHtml;
 
-      // Auto-scroll to 08:00 (384px) on first open while keeping 00:00-24:00 scrollable
       const scroller = document.getElementById('calWeekScrollBox');
       if (scroller && !_calWeekScrolledOnce) {
-        scroller.scrollTop = 8 * 48 - 16;
+        scroller.scrollTop = _calWeekDensity === 'uniform' ? Math.max(0, minuteToY(8 * 60) - 16) : 0;
         _calWeekScrolledOnce = true;
       }
     }
@@ -7135,13 +7427,18 @@
       for (const d of days) {
         const isSel = d.date === _calSelectedDate;
         const allItems = [...(d.all_day_tasks || []), ...(d.timed_blocks || [])];
-        const dots = allItems.slice(0, 3).map(t => `
-          <div class="cal-task-dot cal-macaron-${esc(t.color_theme || 'sky')} ${t.is_done ? 'is-done' : ''}" style="border-left-width:3px;">
-            ${t.start_minute !== undefined ? `<span style="opacity:0.75;">${esc((t.time_range_label || '').slice(0, 5))}</span> ` : ''}${esc(t.title)}
-          </div>
-        `).join('');
+        const dots = allItems.slice(0, 3).map(t => {
+          const tip = t.time_range_label ? `${t.time_range_label} · ${t.title}` : t.title;
+          return `
+          <div class="cal-task-dot cal-macaron-${esc(t.color_theme || 'sky')} ${t.is_done ? 'is-done' : ''}"
+               style="border-left-width:3px;"
+               title="${esc(tip)}"
+               onclick="event.stopPropagation(); openCalendarTaskEditor('${esc(t.memory_id)}')">
+            ${t.start_minute !== undefined ? `<span style="opacity:0.75;">${esc(t.time_range_label ? t.time_range_label.replace(' - ', '–') : '')}</span> ` : ''}${esc(t.title)}
+          </div>`;
+        }).join('');
         const more = allItems.length > 3 ? `<div style="font-size:10px;color:var(--muted);">+${allItems.length - 3} 项</div>` : '';
-        const cdBadges = (d.countdowns || []).slice(0, 1).map(c => `<div style="font-size:10px;color:var(--primary);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(c.icon || '⏳')} ${esc(c.title)}</div>`).join('');
+        const cdBadges = (d.countdowns || []).slice(0, 1).map(c => `<div style="font-size:10px;color:var(--primary);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(c.title)}">${esc(c.icon || '⏳')} ${esc(c.title)}</div>`).join('');
         html += `
           <div class="cal-day-cell ${!d.is_current_month ? 'is-other' : ''} ${d.is_today ? 'is-today' : ''} ${isSel ? 'is-selected' : ''}"
                onclick="selectCalendarDate('${d.date}')"
@@ -7174,12 +7471,18 @@
     let _journalOverviewCache = null;
 
     const _DEFAULT_MOOD_CATALOG = [
-      { id: 'joy', icon: '😊', label: '愉悦' },
-      { id: 'focused', icon: '🔥', label: '充实' },
-      { id: 'calm', icon: '🌿', label: '平静' },
-      { id: 'thinking', icon: '🤔', label: '思考' },
-      { id: 'tired', icon: '😴', label: '疲惫' },
-      { id: 'celebrate', icon: '🎉', label: '惊喜' },
+      { id: 'joy', icon: '😊', label: '愉悦', color: '#f59e0b', group: 'positive' },
+      { id: 'focused', icon: '🔥', label: '充实', color: '#ef4444', group: 'positive' },
+      { id: 'celebrate', icon: '🎉', label: '惊喜', color: '#ec4899', group: 'positive' },
+      { id: 'grateful', icon: '💖', label: '感恩', color: '#f43f5e', group: 'positive' },
+      { id: 'calm', icon: '🌿', label: '平静', color: '#10b981', group: 'neutral' },
+      { id: 'thinking', icon: '🤔', label: '思考', color: '#6366f1', group: 'neutral' },
+      { id: 'meh', icon: '😶', label: '麻木', color: '#94a3b8', group: 'neutral' },
+      { id: 'tired', icon: '😴', label: '疲惫', color: '#64748b', group: 'neutral' },
+      { id: 'sad', icon: '😔', label: '难过', color: '#3b82f6', group: 'negative' },
+      { id: 'anxious', icon: '😰', label: '焦虑', color: '#8b5cf6', group: 'negative' },
+      { id: 'angry', icon: '😠', label: '烦躁', color: '#dc2626', group: 'negative' },
+      { id: 'low', icon: '🌧️', label: '低落', color: '#475569', group: 'negative' },
     ];
 
     function renderSimpleMarkdown(raw) {
@@ -7269,9 +7572,9 @@
       const res = await apiGet(`/api/memos/list?${params.toString()}`);
       const box = document.getElementById('notesStreamList');
       if (!box) return;
-      box.className = _memoLayout === 'masonry' ? 'memo-masonry' : 'memo-list-stack';
       if (res.error) {
-        box.innerHTML = `<div class="card-box" style="color:#dc2626;">加载备忘录失败: ${esc(res.error)}</div>`;
+        box.className = 'memo-list-stack';
+        box.innerHTML = `<div class="card-box memo-empty-card" style="color:#dc2626;">加载备忘录失败: ${esc(res.error)}</div>`;
         return;
       }
 
@@ -7293,6 +7596,9 @@
       _cachedMemosById = {};
       memos.forEach(m => { _cachedMemosById[m.note_id] = m; });
 
+      box.className = memos.length
+        ? (_memoLayout === 'masonry' ? 'memo-masonry' : 'memo-list-stack')
+        : 'memo-list-stack';
       box.innerHTML = memos.length ? memos.map(n => {
         const tagsPills = (n.tags || []).map(t => `<span class="tag" style="cursor:pointer;" data-tag="${esc(t)}" onclick="filterMemosByTag(this.dataset.tag)">#${esc(t)}</span>`).join('');
         return `
@@ -7315,7 +7621,7 @@
             </div>
           </div>
         `;
-      }).join('') : `<div class="card-box" style="color:var(--muted);grid-column:1/-1;">暂无匹配的备忘录，在上方写下第一条 Markdown 备忘或拖拽粘贴一张图片吧。</div>`;
+      }).join('') : `<div class="card-box memo-empty-card" style="color:var(--muted);">暂无匹配的备忘录，在上方写下第一条 Markdown 备忘或拖拽粘贴一张图片吧。</div>`;
     }
 
     function startEditMemo(noteId) {
@@ -7426,13 +7732,28 @@
       const moods = res.mood_catalog || _DEFAULT_MOOD_CATALOG;
       const cur = res.current_entry;
       _journalMood = cur?.mood || 'calm';
-      document.getElementById('journalMoodRow').innerHTML =
-        `<span style="font-size:12px;color:var(--muted);">今日心情：</span>` +
-        moods.map(m => `
-          <button type="button" class="mood-pill-btn ${m.id === _journalMood ? 'active' : ''}" data-mood="${esc(m.id)}" onclick="selectJournalMood('${esc(m.id)}')">
+      const groupLabels = { positive: '积极', neutral: '平和', negative: '低落' };
+      const groupsOrder = ['positive', 'neutral', 'negative'];
+      const hasGroups = moods.some(m => m.group);
+      let moodHtml = `<span style="font-size:12px;color:var(--muted);">今日心情：</span>`;
+      if (hasGroups) {
+        moodHtml += groupsOrder.map(g => {
+          const items = moods.filter(m => (m.group || 'neutral') === g);
+          if (!items.length) return '';
+          return `<span class="mood-group-sep">${groupLabels[g] || g}</span>` + items.map(m => `
+            <button type="button" class="mood-pill-btn ${m.id === _journalMood ? 'active' : ''}" data-mood="${esc(m.id)}" style="--mood-color:${esc(m.color || 'var(--primary)')};" onclick="selectJournalMood('${esc(m.id)}')">
+              ${esc(m.icon)} ${esc(m.label)}
+            </button>
+          `).join('');
+        }).join('');
+      } else {
+        moodHtml += moods.map(m => `
+          <button type="button" class="mood-pill-btn ${m.id === _journalMood ? 'active' : ''}" data-mood="${esc(m.id)}" style="--mood-color:${esc(m.color || 'var(--primary)')};" onclick="selectJournalMood('${esc(m.id)}')">
             ${esc(m.icon)} ${esc(m.label)}
           </button>
         `).join('');
+      }
+      document.getElementById('journalMoodRow').innerHTML = moodHtml;
 
       document.getElementById('journalEditorInput').value = cur ? (cur.content || '') : '';
       document.getElementById('journalExtractCheck').checked = cur ? Boolean(cur.extract_memory) : true;
@@ -7478,6 +7799,7 @@
         const res = await apiPost('/api/journal/ai-summary', {
           date: _journalDate,
           draft_content: curText,
+          mood: _journalMood,
           trigger_dream: Boolean(triggerDream),
         });
         if (res.error) return showToast(`生成今日小结失败: ${res.error}`, 'error');

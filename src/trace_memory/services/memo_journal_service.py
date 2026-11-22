@@ -38,12 +38,18 @@ from trace_memory.storage.repositories import NoteRepository, _row_to_note
 
 
 MOOD_CATALOG: tuple[dict[str, str], ...] = (
-    {"id": "joy", "icon": "😊", "label": "愉悦", "color": "#f59e0b"},
-    {"id": "focused", "icon": "🔥", "label": "充实", "color": "#ef4444"},
-    {"id": "calm", "icon": "🌿", "label": "平静", "color": "#10b981"},
-    {"id": "thinking", "icon": "🤔", "label": "思考", "color": "#6366f1"},
-    {"id": "tired", "icon": "😴", "label": "疲惫", "color": "#64748b"},
-    {"id": "celebrate", "icon": "🎉", "label": "惊喜", "color": "#ec4899"},
+    {"id": "joy", "icon": "😊", "label": "愉悦", "color": "#f59e0b", "group": "positive"},
+    {"id": "focused", "icon": "🔥", "label": "充实", "color": "#ef4444", "group": "positive"},
+    {"id": "celebrate", "icon": "🎉", "label": "惊喜", "color": "#ec4899", "group": "positive"},
+    {"id": "grateful", "icon": "💖", "label": "感恩", "color": "#f43f5e", "group": "positive"},
+    {"id": "calm", "icon": "🌿", "label": "平静", "color": "#10b981", "group": "neutral"},
+    {"id": "thinking", "icon": "🤔", "label": "思考", "color": "#6366f1", "group": "neutral"},
+    {"id": "meh", "icon": "😶", "label": "麻木", "color": "#94a3b8", "group": "neutral"},
+    {"id": "tired", "icon": "😴", "label": "疲惫", "color": "#64748b", "group": "neutral"},
+    {"id": "sad", "icon": "😔", "label": "难过", "color": "#3b82f6", "group": "negative"},
+    {"id": "anxious", "icon": "😰", "label": "焦虑", "color": "#8b5cf6", "group": "negative"},
+    {"id": "angry", "icon": "😠", "label": "烦躁", "color": "#dc2626", "group": "negative"},
+    {"id": "low", "icon": "🌧️", "label": "低落", "color": "#475569", "group": "negative"},
 )
 MOOD_BY_ID: dict[str, dict[str, str]] = {m["id"]: m for m in MOOD_CATALOG}
 WEEKDAY_CN = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
@@ -578,6 +584,7 @@ class MemoAndJournalService:
         space_id: str,
         date_str: str = "",
         draft_content: str = "",
+        mood: str = "",
         trigger_dream: bool = False,
     ) -> dict[str, Any]:
         """Synthesize 'AI 今日小结' from real completed tasks, focus sessions, and memos."""
@@ -585,6 +592,22 @@ class MemoAndJournalService:
         target_d = _parse_beijing_ymd(date_str)
         target_ymd = target_d.isoformat()
         fp = self._collect_day_footprint(sp, target_ymd)
+
+        eff_mood = (mood or "").strip()
+        if not eff_mood:
+            cur_row = self.db.query_one(
+                """
+                SELECT mood FROM raw_notes
+                 WHERE space_id = ? AND is_forgotten = 0 AND note_kind = 'journal'
+                   AND journal_date = ?
+                 ORDER BY updated_at DESC LIMIT 1
+                """,
+                (sp, target_ymd),
+            )
+            if cur_row is not None:
+                eff_mood = str(cur_row["mood"] or "").strip()
+        mood_meta = MOOD_BY_ID.get(eff_mood)
+        is_negative_mood = bool(mood_meta and mood_meta.get("group") == "negative")
 
         done_titles = [t["title"] for t in fp["completed_tasks"]]
         open_titles = [t["title"] for t in fp["open_due_tasks"]]
@@ -599,7 +622,7 @@ class MemoAndJournalService:
         used_provider = "deterministic"
 
         if self.config.llm_provider == "openai" and self.config.openai_api_key:
-            prompt_facts = {
+            prompt_facts: dict[str, Any] = {
                 "date": target_ymd,
                 "completed_tasks": done_titles,
                 "open_due_tasks": open_titles,
@@ -609,19 +632,25 @@ class MemoAndJournalService:
                 "memos": memos,
                 "user_draft": (draft_content or "").strip()[:500],
             }
+            if mood_meta:
+                prompt_facts["mood"] = f"{mood_meta['icon']} {mood_meta['label']}"
+                prompt_facts["mood_group"] = mood_meta.get("group", "neutral")
+            sys_content = (
+                "你是 TraceTodo 的温和复盘助手。请严格依据提供的当日真实完成待办、番茄专注时长与随记片段，"
+                "用第一人称生成一段简洁清爽的 Markdown「✨ AI 今日小结」（120~240字，禁止编造未发生的事实）。"
+            )
+            if is_negative_mood:
+                sys_content += (
+                    "注意：用户今日选择了偏低落/消极的心情，请用更温柔、共情且接纳的语气陪伴复盘，"
+                    "避免说教或苛责未完成事项，给予柔和的肯定与喘息空间。"
+                )
             url = f"{self.config.openai_base_url.rstrip('/')}/chat/completions"
             req_body = {
                 "model": self.config.llm_model,
                 "temperature": 0.4,
                 "max_tokens": 420,
                 "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "你是 TraceTodo 的温和复盘助手。请严格依据提供的当日真实完成待办、番茄专注时长与随记片段，"
-                            "用第一人称生成一段简洁清爽的 Markdown「✨ AI 今日小结」（120~240字，禁止编造未发生的事实）。"
-                        ),
-                    },
+                    {"role": "system", "content": sys_content},
                     {
                         "role": "user",
                         "content": f"今日真实轨迹数据：\n{json.dumps(prompt_facts, ensure_ascii=False)}",
@@ -672,6 +701,10 @@ class MemoAndJournalService:
 
             if open_titles:
                 lines.append(f"- **明日衔接**：仍有 {len(open_titles)} 项今日排期事项待推进（如《{open_titles[0]}》）。")
+            if is_negative_mood and mood_meta is not None:
+                lines.append(
+                    f"- **情绪关照**：今天选择了「{mood_meta['icon']} {mood_meta['label']}」，允许自己先慢下来、照顾好休息与感受；不必苛求事事圆满，哪怕只照顾好眼前的这一刻也很值得肯定。"
+                )
             summary_md = "\n".join(lines)
 
         if llm_calls > 0 and self.quota_service is not None:

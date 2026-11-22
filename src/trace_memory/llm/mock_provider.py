@@ -14,7 +14,13 @@ import re
 from typing import Any
 
 from trace_memory.domain.memories import MemoryItem, parse_iso_datetime
-from trace_memory.domain.notes import BEIJING_TZ, RawNote, beijing_now, to_beijing
+from trace_memory.domain.notes import (
+    BEIJING_TZ,
+    RawNote,
+    beijing_now,
+    extract_beijing_time_range,
+    to_beijing,
+)
 from trace_memory.domain.proposals import RelationSpec
 from trace_memory.domain.relations import extract_relations_from_markdown, slugify_permalink
 from trace_memory.llm.protocol import (
@@ -468,7 +474,7 @@ class DeterministicLLMProvider:
                 )
                 continue
 
-            # 3. Check Task creation cues
+            # 3. Check Task creation cues (including explicit time-range tasks)
             task_cues = (
                 "待办",
                 "任务",
@@ -507,10 +513,44 @@ class DeterministicLLMProvider:
                 "购买",
                 "学习",
                 "汇报",
+                "写作业",
+                "做作业",
+                "开会",
             )
-            if any(k in clause for k in task_cues):
+            ref_dt = parse_iso_datetime(default_event_time) or beijing_now()
+            time_range = extract_beijing_time_range(clause, ref_dt)
+            range_action_cues = (
+                "写作业", "做作业", "写论文", "学习", "复习", "开会", "会议",
+                "运动", "跑步", "健身", "看书", "阅读", "部署", "发版", "测试",
+                "面试", "排练", "讨论", "我要", "准备", "编写", "处理", "去做",
+            )
+            if any(k in clause for k in task_cues) or (
+                time_range is not None and any(k in clause for k in range_action_cues)
+            ):
                 title, assignee, round_num = _clean_task_core_title(clause)
-                due_at = _infer_due_at(clause, default_event_time)
+                start_at = ""
+                dur_min: int | None = None
+                is_all_day = True
+                if time_range is not None:
+                    start_at, due_at, dur_min = time_range
+                    is_all_day = False
+                    cleaned_range_title = re.sub(
+                        r"^(?:凌晨|早上|上午|中午|下午|傍晚|晚上|今晚|明晚|夜里)?\s*"
+                        r"(?:\d{1,2}:\d{2}|\d{1,2}点(?:半|\d{1,2}分?)?)"
+                        r"\s*(?:[-~～—–]|到|至)+\s*"
+                        r"(?:凌晨|早上|上午|中午|下午|傍晚|晚上|今晚|明晚|夜里|次日|明天)?\s*"
+                        r"(?:\d{1,2}:\d{2}|\d{1,2}点(?:半|\d{1,2}分?)?)"
+                        r"\s*[，,、\s]*(?:我想要|我要|我想|去|得)?\s*",
+                        "",
+                        title,
+                    ).strip(" ，,。")
+                    if len(cleaned_range_title) >= 2:
+                        title = cleaned_range_title
+                else:
+                    due_at = _infer_due_at(clause, default_event_time)
+                    parsed_due = parse_iso_datetime(due_at) if due_at else None
+                    if parsed_due is not None and not (parsed_due.hour == 23 and parsed_due.minute == 59):
+                        is_all_day = False
                 imp, urg, p_reason = _score_task_importance_urgency(clause, due_at)
                 if assignee != "self":
                     imp = min(imp, 3)  # Delegated / other person's task
@@ -518,20 +558,26 @@ class DeterministicLLMProvider:
                 display_title = f"[{assignee}] {title}" if assignee != "self" else title
                 if round_num > 0 and f"第{round_num}" not in display_title and "轮" not in display_title:
                     display_title = f"{display_title} (第{round_num}轮)"
+                task_payload: dict[str, Any] = {
+                    "task_status": "todo",
+                    "importance": imp,
+                    "urgency": urg,
+                    "priority_reason": p_reason,
+                    "due_at": due_at,
+                    "is_all_day": is_all_day,
+                    "assignee": assignee,
+                }
+                if start_at:
+                    task_payload["start_at"] = start_at
+                if dur_min is not None:
+                    task_payload["duration_minutes"] = dur_min
                 candidates.append(
                     ExtractedCandidate(
                         memory_type="task",
                         title=display_title,
                         summary=clause,
                         canonical_key=ckey,
-                        payload={
-                            "task_status": "todo",
-                            "importance": imp,
-                            "urgency": urg,
-                            "priority_reason": p_reason,
-                            "due_at": due_at,
-                            "assignee": assignee,
-                        },
+                        payload=task_payload,
                         tags=("task",),
                         relations=tuple(raw_relations),
                         event_time=ev_time,

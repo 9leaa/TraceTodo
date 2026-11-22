@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+import re
 from typing import Any
 import uuid
 
@@ -60,6 +61,142 @@ def format_beijing_prompt_clock(now: datetime | None = None) -> str:
 def utc_now_iso() -> str:
     """Backward-compatible timestamp helper now unified on Beijing Time (`+08:00`)."""
     return beijing_now_iso()
+
+
+_TIME_RANGE_COLON_RE = re.compile(
+    r"(?:(?P<p1>凌晨|早上|上午|中午|下午|傍晚|晚上|今晚|明晚|夜里)\s*)?"
+    r"(?P<sh>\d{1,2}):(?P<sm>\d{2})"
+    r"\s*(?:[-~～—–]|到|至)+\s*"
+    r"(?:(?P<p2>凌晨|早上|上午|中午|下午|傍晚|晚上|今晚|明晚|夜里|次日|明天)\s*)?"
+    r"(?P<eh>\d{1,2}):(?P<em>\d{2})"
+)
+
+_TIME_RANGE_CN_RE = re.compile(
+    r"(?:(?P<p1>凌晨|早上|上午|中午|下午|傍晚|晚上|今晚|明晚|夜里)\s*)?"
+    r"(?P<sh>\d{1,2})点(?:(?P<shalf>半)|(?P<sm>\d{1,2})分?)?"
+    r"\s*(?:[-~～—–]|到|至)+\s*"
+    r"(?:(?P<p2>凌晨|早上|上午|中午|下午|傍晚|晚上|今晚|明晚|夜里|次日|明天)\s*)?"
+    r"(?P<eh>\d{1,2})点(?:(?P<ehalf>半)|(?P<em>\d{1,2})分?)?"
+)
+
+_EXPLICIT_YMD_RE = re.compile(r"(20\d{2})[-年/](\d{1,2})[-月/](\d{1,2})日?")
+
+
+def _adjust_period_hour(hour: int, period: str) -> int:
+    if period in ("下午", "傍晚", "晚上", "今晚", "明晚", "夜里") and 1 <= hour <= 11:
+        return hour + 12
+    if period == "中午" and 1 <= hour <= 10:
+        return hour + 12
+    if period == "凌晨" and hour == 12:
+        return 0
+    return hour
+
+
+def extract_beijing_time_range(
+    text: str, ref_dt: datetime | None = None
+) -> tuple[str, str, int] | None:
+    """Deterministically extract `(start_iso, end_iso, duration_minutes)` from a time range in text.
+
+    Supports formats like:
+    - `"今天21:00-23:00，我要写作业"`
+    - `"晚上9点到11点写论文"`
+    - `"明天下午2点半到4点开会"`
+    - `"今天23:00-01:00部署发版"`
+    """
+    raw = str(text or "").strip()
+    if not raw:
+        return None
+
+    m = _TIME_RANGE_COLON_RE.search(raw)
+    is_colon = m is not None
+    if m is None:
+        m = _TIME_RANGE_CN_RE.search(raw)
+    if m is None:
+        return None
+
+    base = to_beijing(ref_dt) if ref_dt is not None else beijing_now()
+    base_d = base.date()
+
+    # Anchor date in Beijing Time
+    prefix_ctx = raw[: m.start() + 2]
+    m_ymd = _EXPLICIT_YMD_RE.search(prefix_ctx) or _EXPLICIT_YMD_RE.search(raw)
+    anchor_d: date | None = None
+    if m_ymd:
+        try:
+            anchor_d = date(int(m_ymd.group(1)), int(m_ymd.group(2)), int(m_ymd.group(3)))
+        except ValueError:
+            anchor_d = None
+    if anchor_d is None:
+        if "后天" in raw:
+            anchor_d = base_d + timedelta(days=2)
+        elif any(k in raw for k in ("明天", "明日", "明早", "明晚")):
+            anchor_d = base_d + timedelta(days=1)
+        elif any(k in raw for k in ("昨天", "昨日")):
+            anchor_d = base_d - timedelta(days=1)
+        elif "前天" in raw:
+            anchor_d = base_d - timedelta(days=2)
+        else:
+            anchor_d = base_d
+
+    p1 = (m.group("p1") or "").strip()
+    p2 = (m.group("p2") or "").strip()
+    if not p1:
+        # Look back a few chars for period cues immediately preceding digits (e.g. "明天晚上 21:00-23:00")
+        tail_ctx = raw[max(0, m.start() - 4) : m.start()]
+        for cue in ("凌晨", "早上", "上午", "中午", "下午", "傍晚", "晚上", "今晚", "明晚", "夜里"):
+            if cue in tail_ctx:
+                p1 = cue
+                break
+
+    try:
+        sh_raw = int(m.group("sh"))
+        eh_raw = int(m.group("eh"))
+        if is_colon:
+            sm = int(m.group("sm"))
+            em = int(m.group("em"))
+        else:
+            sm = 30 if m.group("shalf") else int(m.group("sm") or 0)
+            em = 30 if m.group("ehalf") else int(m.group("em") or 0)
+    except (TypeError, ValueError):
+        return None
+
+    if not (0 <= sh_raw <= 23 and 0 <= sm <= 59 and 0 <= eh_raw <= 24 and 0 <= em <= 59):
+        return None
+    if eh_raw == 24 and em != 0:
+        return None
+
+    sh = _adjust_period_hour(sh_raw, p1)
+    start_dt = datetime(anchor_d.year, anchor_d.month, anchor_d.day, sh, sm, 0, tzinfo=BEIJING_TZ)
+
+    end_eh_str = m.group("eh")
+    if eh_raw == 24:
+        end_dt = datetime(anchor_d.year, anchor_d.month, anchor_d.day, 0, 0, 0, tzinfo=BEIJING_TZ) + timedelta(days=1)
+    else:
+        eh = _adjust_period_hour(eh_raw, p2) if p2 else eh_raw
+        # Disambiguate omitted end-period (e.g. "晚上9点到11点" -> 21:00-23:00, "下午2点半到4点" -> 14:30-16:00)
+        if not p2 and p1 in ("下午", "傍晚", "晚上", "今晚", "明晚", "夜里", "中午") and 1 <= eh <= 11:
+            if not (sh >= 20 and eh <= 6) and (eh + 12) > sh:
+                eh += 12
+        end_dt = datetime(anchor_d.year, anchor_d.month, anchor_d.day, eh, em, 0, tzinfo=BEIJING_TZ)
+        if p2 in ("次日", "明天") and end_dt <= start_dt:
+            end_dt += timedelta(days=1)
+        elif end_dt <= start_dt:
+            # Handle ambiguous afternoon span without explicit cue (e.g. "2点-4点" vs "23:00-01:00")
+            has_leading_zero = len(end_eh_str) == 2 and end_eh_str.startswith("0")
+            if not is_colon and not has_leading_zero and sh < 20 and 1 <= eh <= 11 and (eh + 12) * 60 + em > sh * 60 + sm:
+                eh += 12
+                end_dt = datetime(anchor_d.year, anchor_d.month, anchor_d.day, eh, em, 0, tzinfo=BEIJING_TZ)
+            else:
+                end_dt += timedelta(days=1)
+
+    dur_min = int((end_dt - start_dt).total_seconds() // 60)
+    if not (15 <= dur_min <= 1440):
+        return None
+    return (
+        start_dt.replace(microsecond=0).isoformat(),
+        end_dt.replace(microsecond=0).isoformat(),
+        dur_min,
+    )
 
 
 def new_id(prefix: str) -> str:
