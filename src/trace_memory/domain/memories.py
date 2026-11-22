@@ -6,9 +6,74 @@ from calendar import monthrange
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import hashlib
+import math
 from typing import Any
 
+from trace_memory.domain.exceptions import ValidationError
 from trace_memory.domain.notes import BEIJING_TZ, beijing_now, to_beijing, utc_now_iso
+
+
+_QUADRANT_BASE = {
+    "Q1_do_first": 80.0,
+    "Q2_schedule": 60.0,
+    "Q3_delegate": 40.0,
+    "Q4_eliminate": 15.0,
+}
+
+
+def _opt_str(raw: Any, default: str = "") -> str:
+    return default if raw is None else str(raw)
+
+
+def _safe_int_field(raw: Any, name: str, default: int | None = 0) -> int | None:
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return default
+    if isinstance(raw, bool):
+        raise ValidationError(f"Field {name!r} must be an integer, got bool")
+    try:
+        return int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(f"Field {name!r} must be an integer") from exc
+
+
+def _safe_float_field(raw: Any, name: str, default: float = 0.0) -> float:
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return default
+    if isinstance(raw, bool):
+        raise ValidationError(f"Field {name!r} must be numeric, got bool")
+    try:
+        val = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(f"Field {name!r} must be numeric") from exc
+    if not math.isfinite(val):
+        raise ValidationError(f"Field {name!r} must be finite")
+    return val
+
+
+def _safe_str_tuple(raw: Any, name: str) -> tuple[str, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, (list, tuple)):
+        raise ValidationError(f"Field {name!r} must be a list of strings")
+    return tuple(str(x) for x in raw if x is not None and str(x))
+
+
+def validate_safe_permalink(permalink: str) -> str:
+    """Validate that a permalink cannot escape export roots or collide with index.md."""
+    raw = str(permalink or "")
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in raw):
+        raise ValidationError("permalink must not contain control characters")
+    if "\\" in raw:
+        raise ValidationError("permalink must not contain backslashes")
+    clean = raw.strip().strip("/")
+    if not clean:
+        raise ValidationError("permalink must not be empty")
+    segs = clean.split("/")
+    if any(not seg or seg in (".", "..") for seg in segs):
+        raise ValidationError("permalink contains invalid path segment")
+    if clean.lower() == "index":
+        raise ValidationError("permalink 'index' is reserved")
+    return clean
 
 MEMORY_TYPES = ("task", "preference", "semantic", "episodic")
 ASSERTION_KINDS = ("stated", "inferred")
@@ -219,35 +284,53 @@ class TaskPayload:
 
     def __post_init__(self) -> None:
         if self.task_status not in TASK_STATUSES:
-            raise ValueError(f"task_status must be one of {TASK_STATUSES}, got {self.task_status!r}")
+            raise ValidationError(
+                f"task_status must be one of {TASK_STATUSES}, got {self.task_status!r}"
+            )
         if self.close_reason not in TASK_CLOSE_REASONS:
-            raise ValueError(f"Invalid close_reason: {self.close_reason!r}")
+            raise ValidationError(f"Invalid close_reason: {self.close_reason!r}")
         if self.task_status == "done" and not self.close_reason:
             object.__setattr__(self, "close_reason", "completed")
         if self.task_status == "todo" and self.close_reason:
             object.__setattr__(self, "close_reason", "")
-        imp = max(1, min(5, int(self.importance)))
-        urg = max(1, min(5, int(self.urgency)))
+        imp = max(1, min(5, _safe_int_field(self.importance, "importance", 3) or 3))
+        urg = max(1, min(5, _safe_int_field(self.urgency, "urgency", 3) or 3))
         object.__setattr__(self, "importance", imp)
         object.__setattr__(self, "urgency", urg)
         eff_urg, auto_quad, auto_score = compute_effective_urgency_and_quadrant(
             imp, urg, self.due_at, has_blockers=bool(self.blockers)
         )
         object.__setattr__(self, "effective_urgency", eff_urg)
-        if self.quadrant not in QUADRANTS or self.priority_score <= 0.0:
-            object.__setattr__(self, "quadrant", auto_quad)
-            object.__setattr__(self, "priority_score", auto_score)
-        elif self.quadrant in QUADRANTS and self.priority_score > 0.0:
-            object.__setattr__(self, "priority_score", float(self.priority_score))
+        pscore = _safe_float_field(self.priority_score, "priority_score", 0.0)
+        if self.quadrant not in QUADRANTS or pscore <= 0.0:
+            if self.quadrant in QUADRANTS and self.quadrant != auto_quad:
+                coherent = round(
+                    _QUADRANT_BASE[self.quadrant] + imp * 5.0 + eff_urg * 4.0, 2
+                )
+                object.__setattr__(self, "quadrant", self.quadrant)
+                object.__setattr__(self, "priority_score", coherent)
+            else:
+                object.__setattr__(self, "quadrant", auto_quad)
+                object.__setattr__(self, "priority_score", auto_score)
+        else:
+            object.__setattr__(self, "priority_score", pscore)
 
         color = self.color_theme if self.color_theme in COLOR_THEMES else "sky"
         mode = self.task_mode if self.task_mode in TASK_MODES else "personal"
         repeat = self.repeat_rule if self.repeat_rule in REPEAT_RULES else "never"
-        rem_min = int(self.reminder_offset_minutes) if self.reminder_offset_minutes is not None else None
+        rem_min = _safe_int_field(
+            self.reminder_offset_minutes, "reminder_offset_minutes", None
+        )
         if rem_min is not None and rem_min < 0:
             rem_min = 0
-        focus_min = max(1, min(240, int(self.focus_minutes or 25)))
-        dur_min = max(15, min(480, int(self.duration_minutes))) if self.duration_minutes is not None else None
+        focus_min = max(1, min(240, _safe_int_field(self.focus_minutes, "focus_minutes", 25) or 25))
+        raw_dur = _safe_int_field(self.duration_minutes, "duration_minutes", None)
+        dur_min = max(15, min(480, raw_dur)) if raw_dur is not None else None
+        roll_cnt = max(0, _safe_int_field(self.rollover_count, "rollover_count", 0) or 0)
+        f_comp = max(
+            0,
+            _safe_int_field(self.focus_sessions_completed, "focus_sessions_completed", 0) or 0,
+        )
         object.__setattr__(self, "color_theme", color)
         object.__setattr__(self, "task_mode", mode)
         object.__setattr__(self, "supervision_enabled", bool(self.supervision_enabled or mode == "multiplayer"))
@@ -255,13 +338,13 @@ class TaskPayload:
         object.__setattr__(self, "repeat_rule", repeat)
         object.__setattr__(self, "reminder_offset_minutes", rem_min)
         object.__setattr__(self, "auto_rollover", bool(self.auto_rollover))
-        object.__setattr__(self, "rollover_count", max(0, int(self.rollover_count)))
-        object.__setattr__(self, "last_rollover_date", str(self.last_rollover_date or ""))
+        object.__setattr__(self, "rollover_count", roll_cnt)
+        object.__setattr__(self, "last_rollover_date", _opt_str(self.last_rollover_date))
         object.__setattr__(self, "subtasks", _normalize_subtasks(self.subtasks))
         object.__setattr__(self, "focus_lock_enabled", bool(self.focus_lock_enabled))
         object.__setattr__(self, "focus_minutes", focus_min)
         object.__setattr__(self, "duration_minutes", dur_min)
-        object.__setattr__(self, "focus_sessions_completed", max(0, int(self.focus_sessions_completed)))
+        object.__setattr__(self, "focus_sessions_completed", f_comp)
         object.__setattr__(self, "focus_interruptions", _normalize_dict_tuple(self.focus_interruptions))
         object.__setattr__(self, "nudges", _normalize_dict_tuple(self.nudges))
 
@@ -300,49 +383,57 @@ class TaskPayload:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TaskPayload:
-        imp = int(data.get("importance", 3))
-        urg = int(data.get("urgency", 3))
-        due_at = str(data.get("due_at", "") or "")
-        blockers = tuple(str(x) for x in data.get("blockers", []) if x)
+        imp = _safe_int_field(data.get("importance"), "importance", 3) or 3
+        urg = _safe_int_field(data.get("urgency"), "urgency", 3) or 3
+        due_at = _opt_str(data.get("due_at"))
+        blockers = _safe_str_tuple(data.get("blockers"), "blockers")
+        progress_notes = _safe_str_tuple(data.get("progress_notes"), "progress_notes")
         eff_urg, auto_quad, auto_score = compute_effective_urgency_and_quadrant(
             imp, urg, due_at, has_blockers=bool(blockers)
         )
-        quadrant = str(data.get("quadrant") or auto_quad)
-        if quadrant not in QUADRANTS:
-            quadrant = auto_quad
-        # If explicit quadrant was requested without explicit score, keep coherent score
-        score = float(data.get("priority_score") or auto_score)
-        rem_raw = data.get("reminder_offset_minutes")
-        rem_val = int(rem_raw) if rem_raw is not None and str(rem_raw).strip() != "" else None
-        dur_raw = data.get("duration_minutes")
-        dur_val = int(dur_raw) if dur_raw is not None and str(dur_raw).strip() != "" else None
+        raw_quad = _opt_str(data.get("quadrant"))
+        quadrant = raw_quad if raw_quad in QUADRANTS else auto_quad
+        raw_score = _safe_float_field(data.get("priority_score"), "priority_score", 0.0)
+        if raw_score > 0.0:
+            score = raw_score
+        elif quadrant != auto_quad:
+            score = round(
+                _QUADRANT_BASE[quadrant] + max(1, min(5, imp)) * 5.0 + eff_urg * 4.0, 2
+            )
+        else:
+            score = auto_score
+        rem_val = _safe_int_field(data.get("reminder_offset_minutes"), "reminder_offset_minutes", None)
+        dur_val = _safe_int_field(data.get("duration_minutes"), "duration_minutes", None)
         return cls(
-            task_status=str(data.get("task_status", "todo")),
-            close_reason=str(data.get("close_reason", "")),
+            task_status=_opt_str(data.get("task_status"), "todo") or "todo",
+            close_reason=_opt_str(data.get("close_reason")),
             importance=imp,
             urgency=urg,
             effective_urgency=eff_urg,
             quadrant=quadrant,
             priority_score=score,
-            priority_reason=str(data.get("priority_reason", "")),
+            priority_reason=_opt_str(data.get("priority_reason")),
             due_at=due_at,
-            assignee=str(data.get("assignee", "self") or "self"),
+            assignee=_opt_str(data.get("assignee"), "self") or "self",
             blockers=blockers,
-            progress_notes=tuple(str(x) for x in data.get("progress_notes", []) if x),
-            color_theme=str(data.get("color_theme", "sky") or "sky"),
-            task_mode=str(data.get("task_mode", "personal") or "personal"),
+            progress_notes=progress_notes,
+            color_theme=_opt_str(data.get("color_theme"), "sky") or "sky",
+            task_mode=_opt_str(data.get("task_mode"), "personal") or "personal",
             supervision_enabled=bool(data.get("supervision_enabled", False)),
             is_all_day=bool(data.get("is_all_day", True)),
-            repeat_rule=str(data.get("repeat_rule", "never") or "never"),
+            repeat_rule=_opt_str(data.get("repeat_rule"), "never") or "never",
             reminder_offset_minutes=rem_val,
             auto_rollover=bool(data.get("auto_rollover", False)),
-            rollover_count=int(data.get("rollover_count", 0) or 0),
-            last_rollover_date=str(data.get("last_rollover_date", "") or ""),
+            rollover_count=_safe_int_field(data.get("rollover_count"), "rollover_count", 0) or 0,
+            last_rollover_date=_opt_str(data.get("last_rollover_date")),
             subtasks=_normalize_subtasks(data.get("subtasks")),
             focus_lock_enabled=bool(data.get("focus_lock_enabled", False)),
-            focus_minutes=int(data.get("focus_minutes", 25) or 25),
+            focus_minutes=_safe_int_field(data.get("focus_minutes"), "focus_minutes", 25) or 25,
             duration_minutes=dur_val,
-            focus_sessions_completed=int(data.get("focus_sessions_completed", 0) or 0),
+            focus_sessions_completed=(
+                _safe_int_field(data.get("focus_sessions_completed"), "focus_sessions_completed", 0)
+                or 0
+            ),
             focus_interruptions=_normalize_dict_tuple(data.get("focus_interruptions")),
             nudges=_normalize_dict_tuple(data.get("nudges")),
         )
@@ -360,9 +451,9 @@ class PreferencePayload:
 
     def __post_init__(self) -> None:
         if not self.target.strip():
-            raise ValueError("Preference target must not be empty")
+            raise ValidationError("Preference target must not be empty")
         if self.polarity not in ("positive", "negative", "conditional"):
-            raise ValueError(f"Invalid preference polarity: {self.polarity}")
+            raise ValidationError(f"Invalid preference polarity: {self.polarity}")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -376,11 +467,11 @@ class PreferencePayload:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PreferencePayload:
         return cls(
-            target=str(data.get("target", "")).strip(),
-            polarity=str(data.get("polarity", "positive")),
-            conditions=tuple(str(x) for x in data.get("conditions", []) if x),
-            exceptions=tuple(str(x) for x in data.get("exceptions", []) if x),
-            details=str(data.get("details", "")),
+            target=_opt_str(data.get("target")).strip(),
+            polarity=_opt_str(data.get("polarity"), "positive") or "positive",
+            conditions=_safe_str_tuple(data.get("conditions"), "conditions"),
+            exceptions=_safe_str_tuple(data.get("exceptions"), "exceptions"),
+            details=_opt_str(data.get("details")),
         )
 
 
@@ -396,7 +487,7 @@ class SemanticPayload:
 
     def __post_init__(self) -> None:
         if not self.subject.strip() or not self.predicate.strip():
-            raise ValueError("SemanticPayload requires non-empty subject and predicate")
+            raise ValidationError("SemanticPayload requires non-empty subject and predicate")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -410,11 +501,11 @@ class SemanticPayload:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SemanticPayload:
         return cls(
-            subject=str(data.get("subject", "user")).strip() or "user",
-            predicate=str(data.get("predicate", "fact")).strip() or "fact",
-            value=str(data.get("value", "")),
-            event_time=str(data.get("event_time", "")),
-            previous_values=tuple(str(x) for x in data.get("previous_values", []) if x),
+            subject=_opt_str(data.get("subject"), "user").strip() or "user",
+            predicate=_opt_str(data.get("predicate"), "fact").strip() or "fact",
+            value=_opt_str(data.get("value")),
+            event_time=_opt_str(data.get("event_time")),
+            previous_values=_safe_str_tuple(data.get("previous_values"), "previous_values"),
         )
 
 
@@ -430,7 +521,7 @@ class EpisodicPayload:
 
     def __post_init__(self) -> None:
         if not self.event_summary.strip():
-            raise ValueError("EpisodicPayload requires event_summary")
+            raise ValidationError("EpisodicPayload requires event_summary")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -444,15 +535,17 @@ class EpisodicPayload:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EpisodicPayload:
         return cls(
-            event_summary=str(data.get("event_summary", "")).strip(),
-            occurred_at=str(data.get("occurred_at", "")),
-            participants=tuple(str(x) for x in data.get("participants", []) if x),
-            location=str(data.get("location", "")),
-            outcome=str(data.get("outcome", "")),
+            event_summary=_opt_str(data.get("event_summary")).strip(),
+            occurred_at=_opt_str(data.get("occurred_at")),
+            participants=_safe_str_tuple(data.get("participants"), "participants"),
+            location=_opt_str(data.get("location")),
+            outcome=_opt_str(data.get("outcome")),
         )
 
 
 def validate_and_normalize_payload(memory_type: str, raw_payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(raw_payload, dict):
+        raise ValidationError("payload must be an object")
     if memory_type == "task":
         return TaskPayload.from_dict(raw_payload).to_dict()
     if memory_type == "preference":
@@ -461,7 +554,7 @@ def validate_and_normalize_payload(memory_type: str, raw_payload: dict[str, Any]
         return SemanticPayload.from_dict(raw_payload).to_dict()
     if memory_type == "episodic":
         return EpisodicPayload.from_dict(raw_payload).to_dict()
-    raise ValueError(f"Unsupported memory_type: {memory_type!r}")
+    raise ValidationError(f"Unsupported memory_type: {memory_type!r}")
 
 
 @dataclass(frozen=True)
@@ -543,11 +636,13 @@ class MemoryItem:
 
     def __post_init__(self) -> None:
         if self.memory_type not in MEMORY_TYPES:
-            raise ValueError(f"Invalid memory_type: {self.memory_type}")
+            raise ValidationError(f"Invalid memory_type: {self.memory_type}")
         if self.assertion_kind not in ASSERTION_KINDS:
-            raise ValueError(f"Invalid assertion_kind: {self.assertion_kind}")
+            raise ValidationError(f"Invalid assertion_kind: {self.assertion_kind}")
         if self.status not in MEMORY_STATUSES:
-            raise ValueError(f"Invalid status: {self.status}")
+            raise ValidationError(f"Invalid status: {self.status}")
+        if self.permalink:
+            validate_safe_permalink(self.permalink)
         if self.status == "forgotten":
             object.__setattr__(self, "payload", {})
         else:
@@ -577,6 +672,17 @@ class MemoryItem:
             )
             if self.payload.get("priority_reason"):
                 parts.append(str(self.payload["priority_reason"]))
+            assignee = str(self.payload.get("assignee", "") or "").strip()
+            if assignee and assignee != "self":
+                parts.extend([assignee, f"负责人 {assignee}"])
+            t_status = str(self.payload.get("task_status", "todo") or "todo")
+            parts.append("done 已完成" if t_status == "done" else "todo 待办 未完成")
+            quad = str(self.payload.get("quadrant", "") or "")
+            if quad in QUADRANT_LABELS:
+                parts.append(QUADRANT_LABELS[quad])
+            due_raw = str(self.payload.get("due_at", "") or "").strip()
+            if due_raw:
+                parts.append(due_raw[:10])
         elif self.memory_type == "preference":
             parts.append(str(self.payload.get("target", "")))
             parts.extend(self.payload.get("conditions", []))
@@ -590,10 +696,15 @@ class MemoryItem:
                     str(self.payload.get("value", "")),
                 ]
             )
+            parts.extend(str(pv) for pv in self.payload.get("previous_values", []) if pv)
         elif self.memory_type == "episodic":
             parts.append(str(self.payload.get("event_summary", "")))
             parts.append(str(self.payload.get("location", "")))
             parts.append(str(self.payload.get("outcome", "")))
+            occ = str(self.payload.get("occurred_at", "") or "").strip()
+            if occ:
+                parts.append(occ[:10])
+            parts.extend(str(pt) for pt in self.payload.get("participants", []) if pt)
         return " | ".join(p for p in parts if p)
 
     def to_dict(self) -> dict[str, Any]:

@@ -1207,3 +1207,54 @@ struct GraphCanvasResponse: Codable {
         case stats
     }
 }
+
+enum TraceTodoDateParser {
+    static let beijingTimeZone = TimeZone(identifier: "Asia/Shanghai") ?? TimeZone(secondsFromGMT: 8 * 3600)!
+
+    static func parseBeijingDate(_ raw: String, defaultAllDayHour: Int = 9) -> Date? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let isoFrac = ISO8601DateFormatter()
+        isoFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = isoFrac.date(from: trimmed) {
+            return d
+        }
+
+        let isoBasic = ISO8601DateFormatter()
+        isoBasic.formatOptions = [.withInternetDateTime]
+        if let d = isoBasic.date(from: trimmed) {
+            return d
+        }
+
+        let naiveFormats = [
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd'T'HH:mm",
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd HH:mm",
+        ]
+        for fmtStr in naiveFormats {
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "en_US_POSIX")
+            df.timeZone = beijingTimeZone
+            df.dateFormat = fmtStr
+            if let d = df.date(from: trimmed) {
+                return d
+            }
+        }
+
+        if trimmed.count >= 10 {
+            let ymd = String(trimmed.prefix(10))
+            let dfDay = DateFormatter()
+            dfDay.locale = Locale(identifier: "en_US_POSIX")
+            dfDay.timeZone = beijingTimeZone
+            dfDay.dateFormat = "yyyy-MM-dd"
+            if let base = dfDay.date(from: ymd) {
+                var cal = Calendar(identifier: .gregorian)
+                cal.timeZone = beijingTimeZone
+                return cal.date(bySettingHour: max(0, min(23, defaultAllDayHour)), minute: 0, second: 0, of: base) ?? base
+            }
+        }
+        return nil
+    }
+}

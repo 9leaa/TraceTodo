@@ -130,9 +130,13 @@ class MarkdownSyncService:
         self.change_service = change_service
 
     def _space_root(self, space_id: str) -> Path:
-        safe_space = re.sub(r"[^a-zA-Z0-9_\-\u4e00-\u9fff]", "_", space_id.strip())
+        raw_sp = space_id.strip()
+        safe_space = re.sub(r"[^a-zA-Z0-9_\-\u4e00-\u9fff]", "_", raw_sp)
         if not safe_space or safe_space in (".", ".."):
             raise ValidationError("Invalid space_id for export directory")
+        if safe_space != raw_sp:
+            digest = hashlib.sha1(raw_sp.encode("utf-8")).hexdigest()[:8]
+            safe_space = f"{safe_space}_{digest}"
         root = (self.knowledge_root / safe_space).resolve()
         base = self.knowledge_root.resolve()
         if root != base and base not in root.parents:
@@ -421,11 +425,16 @@ class MarkdownSyncService:
 
         _fm, body = _parse_simple_frontmatter(raw_text)
         edited_title, edited_summary, obs = _extract_edited_sections(body)
+        rel_body = re.split(r"^##\s+(?:Sources|来源|证据)\b", body, maxsplit=1, flags=re.M | re.I)[0]
         extracted_rels = [
             RelationSpec(relation_type=rt, target=tgt, context=ctx)
-            for rt, tgt, ctx in extract_relations_from_markdown(body)
+            for rt, tgt, ctx in extract_relations_from_markdown(rel_body)
         ]
         payload_patch = self._build_payload_patch(existing, obs)
+
+        # Pre-check CAS version before saving synthetic [Markdown Edit] RawNote so failed CAS leaves zero orphan notes
+        if int(expected_version) != existing.version:
+            raise VersionConflictError(existing.memory_id, int(expected_version), existing.version)
 
         edit_note = RawNote(
             note_id=new_id("note"),
@@ -457,6 +466,7 @@ class MarkdownSyncService:
                 ),
             ),
             relations=tuple(extracted_rels) if extracted_rels else (),
+            replace_relations=True,
             reason=f"Controlled reflow from {rel_label} (base v{expected_version})",
         )
         return self.change_service.apply(proposal)
@@ -510,7 +520,10 @@ class MarkdownSyncService:
                 "unchanged": 0,
             }
 
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise ValidationError(f"Corrupt .manifest.json in {space_id}") from exc
         files_meta: dict[str, dict[str, Any]] = manifest.get("files", {})
 
         applied_ids: list[str] = []
@@ -518,9 +531,10 @@ class MarkdownSyncService:
         unchanged = 0
 
         for rel_file, meta in sorted(files_meta.items()):
-            file_path = self._ensure_safe_child(space_root, rel_file)
-            if file_path.is_symlink():
+            raw_child = space_root / rel_file
+            if raw_child.is_symlink():
                 raise ValidationError(f"Symlink escape rejected during sync: {rel_file}")
+            file_path = self._ensure_safe_child(space_root, rel_file)
             if not file_path.is_file():
                 # Deleting a view file NEVER triggers memory forgetting (§7.2)!
                 continue

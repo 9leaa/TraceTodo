@@ -23,7 +23,7 @@ from trace_memory.domain.notes import (
     format_beijing_prompt_clock,
     to_beijing,
 )
-from trace_memory.domain.proposals import RelationSpec
+from trace_memory.domain.proposals import RelationSpec, TraceMemoryError
 from trace_memory.domain.relations import extract_relations_from_markdown, slugify_permalink
 from trace_memory.llm.mock_provider import DeterministicLLMProvider, SemanticHashEmbedder
 from trace_memory.llm.protocol import (
@@ -65,25 +65,35 @@ def _post_json_with_retry(
         req = urllib.request.Request(url, data=body, headers=headers, method="POST")
         try:
             with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
-                return json.loads(resp.read().decode("utf-8"))
+                parsed = json.loads(resp.read().decode("utf-8"))
+            if not isinstance(parsed, dict):
+                raise TraceMemoryError("LLM API returned non-object JSON payload")
+            return parsed
         except socket.timeout as exc:
             last_err = exc
             if attempt == 0:
                 continue
-            raise
+            raise TraceMemoryError(f"LLM API timed out: {exc}") from exc
+        except TimeoutError as exc:
+            last_err = exc
+            if attempt == 0:
+                continue
+            raise TraceMemoryError(f"LLM API timed out: {exc}") from exc
         except urllib.error.HTTPError as exc:
             detail = ""
             try:
                 detail = exc.read().decode("utf-8", errors="replace")[:500]
             except Exception:
                 detail = str(exc)
-            raise RuntimeError(f"LLM API HTTP {exc.code}: {detail}") from exc
+            raise TraceMemoryError(f"LLM API HTTP {exc.code}: {detail}") from exc
         except urllib.error.URLError as exc:
             if isinstance(exc.reason, socket.timeout) and attempt == 0:
                 last_err = exc
                 continue
-            raise RuntimeError(f"LLM API request failed: {exc}") from exc
-    raise RuntimeError(f"LLM API timed out: {last_err}")
+            raise TraceMemoryError(f"LLM API request failed: {exc}") from exc
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise TraceMemoryError(f"LLM API response parse error: {exc}") from exc
+    raise TraceMemoryError(f"LLM API timed out: {last_err}")
 
 
 class OpenAICompatEmbedder:
@@ -105,7 +115,7 @@ class OpenAICompatEmbedder:
         self._fallback = SemanticHashEmbedder(dimension=dimension)
 
     def embed(self, text: str) -> list[float]:
-        if not self.api_key:
+        if not self.api_key or not str(text or "").strip():
             return self._fallback.embed(text)
         data = _post_json_with_retry(
             f"{self.base_url}/embeddings",
@@ -113,7 +123,10 @@ class OpenAICompatEmbedder:
             {"model": self.model, "input": text},
             timeout_seconds=self.timeout_seconds,
         )
-        raw_vec: list[float] = data["data"][0]["embedding"]
+        try:
+            raw_vec = [float(v) for v in data["data"][0]["embedding"]]
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise TraceMemoryError(f"Embedding API schema error: {exc}") from exc
         if len(raw_vec) > self.dimension:
             raw_vec = raw_vec[: self.dimension]
         norm = math.sqrt(sum(v * v for v in raw_vec))
@@ -162,12 +175,26 @@ class OpenAICompatLLMProvider:
             req_payload,
             timeout_seconds=self.timeout_seconds,
         )
-        content = str(resp["choices"][0]["message"]["content"]).strip()
+        try:
+            content = str(resp["choices"][0]["message"]["content"]).strip()
+        except (KeyError, IndexError, TypeError) as exc:
+            raise TraceMemoryError(f"LLM API malformed choices payload: {exc}") from exc
         # Strip optional markdown code fences if returned by compatible providers
         if content.startswith("```"):
             content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.DOTALL).strip()
-        tokens = int(resp.get("usage", {}).get("total_tokens", 0))
-        return json.loads(content), tokens
+        usage_obj = resp.get("usage")
+        usage = usage_obj if isinstance(usage_obj, dict) else {}
+        try:
+            tokens = int(usage.get("total_tokens", 0) or 0)
+        except (TypeError, ValueError):
+            tokens = 0
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise TraceMemoryError(f"LLM API returned invalid JSON content: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise TraceMemoryError("LLM API returned non-object structured JSON")
+        return parsed, tokens
 
     def extract_candidates(
         self,
@@ -231,7 +258,8 @@ class OpenAICompatLLMProvider:
         )
         type_alias = {"fact": "semantic", "experience": "episodic", "todo": "task", "pref": "preference"}
         items: list[ExtractedCandidate] = []
-        for raw in parsed.get("candidates") or []:
+        raw_cands = parsed.get("candidates")
+        for raw in (raw_cands if isinstance(raw_cands, list) else []):
             if not isinstance(raw, dict):
                 continue
             raw_type = str(raw.get("memory_type", "semantic")).lower().strip()
@@ -246,7 +274,8 @@ class OpenAICompatLLMProvider:
                 title = summary[:24]
             if not summary:
                 summary = title
-            raw_payload = dict(raw.get("payload") or {})
+            raw_payload_obj = raw.get("payload")
+            raw_payload = dict(raw_payload_obj) if isinstance(raw_payload_obj, dict) else {}
 
             # Normalize fallback defaults so LLM schema drift never causes HTTP 400
             if mtype == "preference":
@@ -275,6 +304,8 @@ class OpenAICompatLLMProvider:
             if hint not in ("upsert", "complete_task", "cancel_task", "reopen_task"):
                 hint = "upsert"
 
+            raw_tags = raw.get("tags")
+            clean_tags = tuple(str(t) for t in (raw_tags if isinstance(raw_tags, list) else []) if t)
             items.append(
                 ExtractedCandidate(
                     memory_type=mtype,
@@ -283,7 +314,7 @@ class OpenAICompatLLMProvider:
                     canonical_key=ckey,
                     payload=raw_payload,
                     mutation_hint=hint,
-                    tags=tuple(str(t) for t in (raw.get("tags") or []) if t),
+                    tags=clean_tags,
                     relations=raw_relations,
                     event_time=_normalize_beijing_iso(str(raw.get("event_time") or ""), fallback=ref_iso),
                     quote=str(raw.get("quote") or note_text[:120]),
@@ -328,39 +359,62 @@ class OpenAICompatLLMProvider:
         memories: list[MemoryItem],
         notes: list[RawNote],
         history_versions: list[dict[str, Any]],
+        graph_relations: list[dict[str, Any]] | None = None,
     ) -> AskSynthesis:
-        if not memories and not notes:
+        if not memories and not notes and not graph_relations:
             return self._rule_helper.synthesize_answer(
-                question, query_mode, memories, notes, history_versions
+                question, query_mode, memories, notes, history_versions, graph_relations=graph_relations
             )
         ctx_mem = "\n".join(
-            f"- [{m.memory_id}] ({m.assertion_kind}) {m.title}: {m.summary} | payload={m.payload}"
-            for m in memories[:6]
+            f"- [{m.memory_id}] ({m.memory_type} | {m.assertion_kind} | event_time={m.event_time or 'N/A'} | tags={list(m.tags)}) "
+            f"{m.title}: {m.summary} | payload={m.payload}"
+            for m in memories[:8]
         )
+        rel_lines = [
+            f"- {r.get('from_title') or r.get('from_memory_id', '')} [{r.get('relation_type', 'relates_to')}] -> "
+            f"{r.get('to_title') or r.get('to_memory_id', '')}"
+            + (f" ({r['context']})" if r.get("context") else "")
+            + f" (from_id={r.get('from_memory_id', '')}, to_id={r.get('to_memory_id', '')})"
+            for r in (graph_relations or [])[:12]
+        ]
+        ctx_rels = "\n".join(rel_lines) if rel_lines else "（无）"
         ctx_note = "\n".join(
-            f"- [{n.note_id}] ({n.event_time}) {n.visible_content()}" for n in notes[:8]
+            f"- [{n.note_id}] ({n.event_time}) {n.visible_content()}" for n in notes[:6]
         )
         clock_anchor = format_beijing_prompt_clock()
         sys_prompt = (
-            "你是严格基于证据回答的个人记忆助手。只能依据提供的记忆和原文作答，不得编造。"
+            "你是严格基于证据回答的个人记忆助手。只能依据提供的记忆、关联图谱关系、历史版本和原文作答，不得编造。"
             "系统统一固定使用**北京时间（Asia/Shanghai，UTC+8 / +08:00）**："
             "用户提问中的「今天」「昨天」「前天」「明天」「后天」「最近」等相对时间均须严格对照提供的北京时间锚点判定，"
             "回答中提及日期和时间也统一使用北京时间。"
+            "请充分结合每条记忆的 `event_time`、`tags`、`payload` 结构化属性（如 task 的 assignee/quadrant/due_at，"
+            "semantic 的 subject/predicate/value/previous_values，episodic 的 occurred_at/participants，preference 的 exceptions）"
+            "以及「关联图谱关系」推理跨实体的因果或关联关系。"
             "注意：带有 `[刚录入·整理中]` 标记的原始记录属于用户刚刚提交、后台正在异步整理中的最新真实原话，应优先作为最新事实参考。"
-            "回答可使用清晰的中文分点结构，务必在 cited_memory_ids 和 cited_note_ids 中准确列出实际引用的 ID。"
+            "回答可使用清晰的中文分点结构，务必在 cited_memory_ids 和 cited_note_ids 中准确列出实际引用的 ID；若证据不足以回答问题，请如实说明并将 has_sufficient_evidence 设为 false。"
             '请输出 JSON: {"answer": "...", "cited_memory_ids": [...], "cited_note_ids": [...], '
             '"has_sufficient_evidence": true|false}'
         )
         user_msg = (
             f"当前北京时间: {clock_anchor}\n查询模式: {query_mode}\n问题: {question}\n\n"
-            f"候选记忆:\n{ctx_mem}\n\n原始记录:\n{ctx_note}\n\n历史版本:\n{history_versions[:5]}"
+            f"候选记忆:\n{ctx_mem}\n\n关联图谱关系:\n{ctx_rels}\n\n"
+            f"原始记录:\n{ctx_note}\n\n历史版本:\n{history_versions[:12]}"
         )
         parsed, tokens = self._chat_json(sys_prompt, user_msg)
+        raw_mem_ids = parsed.get("cited_memory_ids")
+        raw_note_ids = parsed.get("cited_note_ids")
+        raw_suff = parsed.get("has_sufficient_evidence", True)
+        if isinstance(raw_suff, bool):
+            has_sufficient = raw_suff
+        elif isinstance(raw_suff, str):
+            has_sufficient = raw_suff.strip().lower() not in ("false", "0", "no", "")
+        else:
+            has_sufficient = bool(raw_suff)
         return AskSynthesis(
             answer=str(parsed.get("answer", "")),
-            cited_memory_ids=tuple(str(x) for x in parsed.get("cited_memory_ids", [])),
-            cited_note_ids=tuple(str(x) for x in parsed.get("cited_note_ids", [])),
-            has_sufficient_evidence=bool(parsed.get("has_sufficient_evidence", True)),
+            cited_memory_ids=tuple(str(x) for x in raw_mem_ids) if isinstance(raw_mem_ids, list) else (),
+            cited_note_ids=tuple(str(x) for x in raw_note_ids) if isinstance(raw_note_ids, list) else (),
+            has_sufficient_evidence=has_sufficient,
             llm_calls=1,
             tokens_used=tokens,
         )
@@ -389,20 +443,28 @@ class OpenAICompatLLMProvider:
         )
         parsed, tokens = self._chat_json(sys_prompt, user_msg)
         steps: list[SubtaskSuggestion] = []
-        for raw in (parsed.get("subtasks") or [])[:6]:
+        raw_subtasks = parsed.get("subtasks")
+        for raw in (raw_subtasks if isinstance(raw_subtasks, list) else [])[:6]:
             if isinstance(raw, str):
                 t = raw.strip()
                 est = 15
             elif isinstance(raw, dict):
                 t = str(raw.get("title") or "").strip()
-                est = max(5, min(180, int(raw.get("estimated_minutes") or 15)))
+                try:
+                    est_val = int(raw.get("estimated_minutes") or 15)
+                except (TypeError, ValueError):
+                    est_val = 15
+                est = max(5, min(180, est_val))
             else:
                 continue
             if t:
                 steps.append(SubtaskSuggestion(title=t, estimated_minutes=est))
         if not steps:
             return self._rule_helper.decompose_task(task_title, task_summary, context_memories)
-        used_ctx = tuple(str(x) for x in (parsed.get("memory_context_used") or []) if str(x).strip())
+        raw_used = parsed.get("memory_context_used")
+        used_ctx = tuple(
+            str(x) for x in (raw_used if isinstance(raw_used, list) else []) if str(x).strip()
+        )
         return DecomposeBatch(
             subtasks=tuple(steps),
             memory_context_used=used_ctx,

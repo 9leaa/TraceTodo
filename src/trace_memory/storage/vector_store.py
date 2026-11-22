@@ -335,26 +335,37 @@ class QdrantVectorStore:
         q_filter = Filter(
             must=[FieldCondition(key="space_id", match=MatchValue(value=space_id))]
         )
-        points, _ = self.client.scroll(
-            collection_name=collection,
-            scroll_filter=q_filter,
-            limit=500,
-            with_payload=True,
-            with_vectors=True,
-        )
         out: dict[str, tuple[list[float], float]] = {}
-        for pt in points:
-            payload = dict(pt.payload or {})
-            did = str(payload.get("doc_id", pt.id))
-            if doc_ids is not None and did not in doc_ids:
-                continue
-            raw_vec = pt.vector
-            if isinstance(raw_vec, list) and raw_vec and isinstance(raw_vec[0], (int, float)):
-                vec = [float(x) for x in raw_vec]
-                norm = _vector_norm(vec)
-                if norm > 1e-12:
-                    out[did] = (vec, norm)
+        offset: Any = None
+        while True:
+            points, next_offset = self.client.scroll(
+                collection_name=collection,
+                scroll_filter=q_filter,
+                limit=500,
+                offset=offset,
+                with_payload=True,
+                with_vectors=True,
+            )
+            for pt in points:
+                payload = dict(pt.payload or {})
+                did = str(payload.get("doc_id", pt.id))
+                if doc_ids is not None and did not in doc_ids:
+                    continue
+                raw_vec = pt.vector
+                if isinstance(raw_vec, list) and raw_vec and isinstance(raw_vec[0], (int, float)):
+                    vec = [float(x) for x in raw_vec]
+                    norm = _vector_norm(vec)
+                    if norm > 1e-12:
+                        out[did] = (vec, norm)
+            if next_offset is None or not points:
+                break
+            offset = next_offset
         return out
+
+    def close(self) -> None:
+        close_fn = getattr(self.client, "close", None)
+        if callable(close_fn):
+            close_fn()
 
 
 class EmbeddingProviderProtocol(Protocol):
@@ -370,7 +381,7 @@ class VectorLifecycleService:
 
     def sync_note(self, note: RawNote) -> None:
         visible = note.visible_content()
-        if note.is_forgotten or not visible.strip():
+        if note.is_forgotten or not visible.replace("[REDACTED]", "").strip():
             # Trigger: note forgotten or redacted empty -> physically purge vector (C07)
             self.vector_store.delete(NOTES_COLLECTION, note.note_id)
             return

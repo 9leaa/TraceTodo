@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 import uuid
 
+from trace_memory.domain.exceptions import ValidationError
+
 
 VALID_SOURCE_TYPES = ("cli", "mcp", "api", "web", "markdown_edit", "system")
 VALID_NOTE_KINDS = ("note", "memo", "journal")
@@ -97,11 +99,11 @@ class RawNote:
 
     def __post_init__(self) -> None:
         if not self.space_id or not self.space_id.strip():
-            raise ValueError("space_id must not be empty")
+            raise ValidationError("space_id must not be empty")
         if self.source_type not in VALID_SOURCE_TYPES:
-            raise ValueError(f"Invalid source_type: {self.source_type}")
+            raise ValidationError(f"Invalid source_type: {self.source_type}")
         if self.revision < 1:
-            raise ValueError("revision must be >= 1")
+            raise ValidationError("revision must be >= 1")
         now = utc_now_iso()
         if not self.created_at:
             object.__setattr__(self, "created_at", now)
@@ -129,12 +131,32 @@ class RawNote:
         if self.is_forgotten:
             return ""
         text = self.content
-        for span in self.forgotten_spans:
-            if span:
-                text = text.replace(span, "[REDACTED]")
+        for span in sorted((s for s in self.forgotten_spans if s), key=len, reverse=True):
+            text = text.replace(span, "[REDACTED]")
         return text
 
     def to_dict(self) -> dict[str, Any]:
+        if self.is_forgotten:
+            return {
+                "note_id": self.note_id,
+                "space_id": self.space_id,
+                "content": "",
+                "source_type": self.source_type,
+                "actor_id": self.actor_id,
+                "revision": self.revision,
+                "is_forgotten": True,
+                "forgotten_spans": list(self.forgotten_spans),
+                "event_time": self.event_time,
+                "created_at": self.created_at,
+                "updated_at": self.updated_at,
+                "note_kind": self.note_kind,
+                "title": "",
+                "pinned": False,
+                "tags": [],
+                "mood": "",
+                "journal_date": "",
+                "extract_memory": self.extract_memory,
+            }
         return {
             "note_id": self.note_id,
             "space_id": self.space_id,

@@ -704,11 +704,7 @@ struct AdminConsoleView: View {
                 }
             }
 
-            if settingsDraft != nil {
-                let binding = Binding(
-                    get: { settingsDraft! },
-                    set: { settingsDraft = $0 }
-                )
+            if let binding = Binding($settingsDraft) {
                 Section("低成本防线与配额策略") {
                     Toggle("允许公开自助注册", isOn: binding.allowRegistration)
                     Toggle("开启本地水话/乱码规则拦截", isOn: binding.noiseFilterEnabled)

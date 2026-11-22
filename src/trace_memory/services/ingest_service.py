@@ -359,31 +359,61 @@ class IngestService:
                 batch = self._call_extract(extract_input, note.event_time, existing_active)
         except Exception as exc:
             if raise_on_transient_llm_error and _is_transient_llm_error(exc):
+                if self.quota_service is not None and (vlm_calls or vlm_tokens):
+                    self.quota_service.record_usage(
+                        f"space:{space_id}", llm_calls=vlm_calls, tokens_used=vlm_tokens
+                    )
                 raise
-            # C10: Still index raw note vector on LLM failure if note was not forgotten mid-flight
+            # C10/C07: Check if note was forgotten mid-flight BEFORE writing trace_runs!
             fresh_err = self.note_repo.get(space_id, note_id, include_forgotten=True)
-            if fresh_err is not None and not fresh_err.is_forgotten and fresh_err.revision == start_revision:
-                try:
-                    self.vector_lifecycle.sync_note(fresh_err)
-                    embed_calls += 1
-                except Exception as vec_exc:
-                    vector_error = f"Note embedding degraded: {vec_exc}"
+            if fresh_err is None or fresh_err.is_forgotten or fresh_err.revision != start_revision:
+                if (fresh_err is None or fresh_err.is_forgotten) and self.media_service is not None:
+                    self.media_service.purge_for_notes(space_id, [note_id])
+                if self.quota_service is not None:
+                    self.quota_service.record_usage(
+                        f"space:{space_id}",
+                        notes=1 if count_note_in_quota else 0,
+                        llm_calls=vlm_calls,
+                        tokens_used=vlm_tokens,
+                    )
+                duration = (time.perf_counter() - t0) * 1000.0
+                trace_id = self.trace_repo.record_trace(
+                    space_id=space_id,
+                    operation="ingest_aborted_forgotten_or_stale",
+                    input_summary="[REDACTED]",
+                    details={"note_id": note_id, "error": str(exc)},
+                    duration_ms=duration,
+                )
+                return IngestResult(
+                    note=fresh_err or note,
+                    extraction_status="cancelled_forgotten",
+                    changes=(),
+                    error_message="Source note was forgotten or modified during extraction",
+                    trace_id=trace_id,
+                )
+            try:
+                self.vector_lifecycle.sync_note(fresh_err)
+                embed_calls += 1
+            except Exception as vec_exc:
+                vector_error = f"Note embedding degraded: {vec_exc}"
             if self.quota_service is not None:
                 self.quota_service.record_usage(
                     f"space:{space_id}",
                     notes=1 if count_note_in_quota else 0,
+                    llm_calls=vlm_calls,
                     embed_calls=embed_calls,
+                    tokens_used=vlm_tokens,
                 )
             duration = (time.perf_counter() - t0) * 1000.0
             trace_id = self.trace_repo.record_trace(
                 space_id=space_id,
                 operation="ingest_degraded",
-                input_summary=note.content,
+                input_summary=fresh_err.visible_content(),
                 details={"note_id": note.note_id, "error": str(exc), "vector_error": vector_error},
                 duration_ms=duration,
             )
             return IngestResult(
-                note=note,
+                note=fresh_err,
                 extraction_status="degraded_error",
                 changes=(),
                 error_message=str(exc),
@@ -444,6 +474,13 @@ class IngestService:
                         event_time=fresh_note.event_time,
                         created_at=fresh_note.created_at,
                         updated_at=fresh_note.updated_at,
+                        note_kind=fresh_note.note_kind,
+                        title=fresh_note.title,
+                        pinned=fresh_note.pinned,
+                        tags=fresh_note.tags,
+                        mood=fresh_note.mood,
+                        journal_date=fresh_note.journal_date,
+                        extract_memory=fresh_note.extract_memory,
                     )
                     if visual_text
                     else fresh_note
@@ -459,6 +496,7 @@ class IngestService:
             space_id=space_id, memory_type="preference", status="active", limit=30
         )
         results: list[ChangeResult] = []
+        aborted_mid_commit = False
         for cand in batch.candidates:
             # Silent extraction for memos/journals distills ONLY long-term preferences/facts/experiences, never transient tasks
             if fresh_note.note_kind in ("memo", "journal") and cand.memory_type == "task":
@@ -466,6 +504,7 @@ class IngestService:
             # Final per-candidate check against mid-commit forget
             still_alive = self.note_repo.get(space_id, note_id, include_forgotten=True)
             if still_alive is None or still_alive.is_forgotten or still_alive.revision != start_revision:
+                aborted_mid_commit = True
                 break
             res = self._adjudicate_candidate(fresh_note, cand, active_prefs)
             results.append(res)
@@ -482,6 +521,25 @@ class IngestService:
             )
 
         duration = (time.perf_counter() - t0) * 1000.0
+        if aborted_mid_commit:
+            if self.media_service is not None:
+                self.media_service.purge_for_notes(space_id, [note_id])
+            trace_id = self.trace_repo.record_trace(
+                space_id=space_id,
+                operation="ingest_aborted_forgotten_or_stale",
+                input_summary="[REDACTED]",
+                details={"note_id": fresh_note.note_id, "aborted_mid_commit": True},
+                llm_calls=batch.llm_calls,
+                tokens_used=batch.tokens_used,
+                duration_ms=duration,
+            )
+            return IngestResult(
+                note=fresh_note,
+                extraction_status="cancelled_forgotten",
+                changes=tuple(results),
+                error_message="Source note was forgotten or modified during candidate commit",
+                trace_id=trace_id,
+            )
         status = "degraded_error" if vector_error else "completed"
         trace_id = self.trace_repo.record_trace(
             space_id=space_id,
@@ -558,7 +616,10 @@ class IngestService:
         m = re.search(r"第([一二三四五六七八九十\d]+)(?:轮|期|版|次)", text)
         if not m:
             return ""
-        mapping = {"一": "1", "二": "2", "三": "3", "四": "4", "五": "5"}
+        mapping = {
+            "一": "1", "二": "2", "三": "3", "四": "4", "五": "5",
+            "六": "6", "七": "7", "八": "8", "九": "9", "十": "10",
+        }
         raw = m.group(1)
         return mapping.get(raw, raw)
 
@@ -576,7 +637,7 @@ class IngestService:
         return (2.0 * inter) / (len(grams_a) + len(grams_b))
 
     def _find_reconcilable_task(
-        self, space_id: str, cand: ExtractedCandidate, cand_assignee: str
+        self, space_id: str, cand: ExtractedCandidate, cand_assignee: str, *, include_done: bool = False
     ) -> MemoryItem | None:
         """Match a task candidate against existing active tasks while preserving C05 assignee/round boundaries."""
         cand_round = self._extract_round_marker(cand.title + " " + cand.canonical_key)
@@ -586,6 +647,8 @@ class IngestService:
         for t_item in self.memory_repo.list_memories(
             space_id=space_id, memory_type="task", status="active", limit=100
         ):
+            if not include_done and t_item.payload.get("task_status") == "done":
+                continue
             item_assignee = str(t_item.payload.get("assignee", "self") or "self")
             # C05 Guard 1: Never merge tasks belonging to different assignees
             if item_assignee != cand_assignee:
@@ -646,7 +709,10 @@ class IngestService:
                 if len(target) >= 4:
                     stems.extend(target[i : i + 4] for i in range(len(target) - 3))
                 if any(s in task_text for s in stems):
-                    cur_imp = int(payload.get("importance", 3))
+                    try:
+                        cur_imp = int(payload.get("importance", 3) or 3)
+                    except (TypeError, ValueError):
+                        cur_imp = 3
                     if cur_imp < 5:
                         payload["importance"] = max(cur_imp, 4)
                         old_r = str(payload.get("priority_reason", ""))
@@ -656,10 +722,20 @@ class IngestService:
                     break
 
         existing = self.memory_repo.find_by_canonical_key(note.space_id, cand.canonical_key)
+        is_state_transition = effective_hint in ("complete_task", "cancel_task", "reopen_task")
+        if (
+            existing is not None
+            and cand.memory_type == "task"
+            and not is_state_transition
+            and existing.payload.get("task_status") == "done"
+        ):
+            existing = None
         # Hybrid task reconciliation: handle typos ("告警" vs "告急") and LLM canonical_key drift!
         if existing is None and cand.memory_type == "task":
             cand_assignee = str(payload.get("assignee", "self") or "self")
-            existing = self._find_reconcilable_task(note.space_id, cand, cand_assignee)
+            existing = self._find_reconcilable_task(
+                note.space_id, cand, cand_assignee, include_done=is_state_transition
+            )
 
         if existing is None:
             action = "create"
@@ -758,6 +834,13 @@ class IngestService:
             event_time=old_note.event_time,
             created_at=old_note.created_at,
             updated_at=utc_now_iso(),
+            note_kind=old_note.note_kind,
+            title=old_note.title,
+            pinned=old_note.pinned,
+            tags=old_note.tags,
+            mood=old_note.mood,
+            journal_date=old_note.journal_date,
+            extract_memory=old_note.extract_memory,
         )
         self.note_repo.save(updated_note)
         self.vector_lifecycle.sync_note(updated_note)
@@ -912,6 +995,13 @@ class IngestService:
                 event_time=note.event_time,
                 created_at=note.created_at,
                 updated_at=utc_now_iso(),
+                note_kind=note.note_kind,
+                title="",
+                pinned=False,
+                tags=(),
+                mood="",
+                journal_date="",
+                extract_memory=note.extract_memory,
             )
             self.note_repo.save(updated_note)
             if self.job_repo is not None:
@@ -971,10 +1061,21 @@ class IngestService:
             if self.sync_tracker is not None:
                 self.sync_tracker.bump(space_id, reason="note_forgotten")
         else:
-            # Partial span redaction (C07): scrub span in stored content while keeping non-selected memories intact!
+            # Never resurrect an already-forgotten RawNote when span_to_forget is supplied
             span = span_to_forget.strip()
+            if note.is_forgotten:
+                self.trace_repo.redact_for_forgotten(space_id, note_ids=(note_id,), spans=(span,))
+                return {
+                    "note_id": note.note_id,
+                    "is_forgotten": True,
+                    "forgotten_memory_ids": [],
+                    "forgotten_spans": list(note.forgotten_spans),
+                }
+            # Partial span redaction (C07): scrub span in stored content while keeping non-selected memories intact!
             spans = tuple(dict.fromkeys([*note.forgotten_spans, span]))
             scrubbed_content = note.content.replace(span, "[REDACTED]")
+            redacted_title = note.title.replace(span, "[REDACTED]") if note.title else ""
+            redacted_tags = tuple(t.replace(span, "[REDACTED]") for t in note.tags)
             updated_note = RawNote(
                 note_id=note.note_id,
                 space_id=note.space_id,
@@ -987,6 +1088,13 @@ class IngestService:
                 event_time=note.event_time,
                 created_at=note.created_at,
                 updated_at=utc_now_iso(),
+                note_kind=note.note_kind,
+                title=redacted_title,
+                pinned=note.pinned,
+                tags=redacted_tags,
+                mood=note.mood,
+                journal_date=note.journal_date,
+                extract_memory=note.extract_memory,
             )
             self.note_repo.save(updated_note)
             if self.job_repo is not None:
@@ -1051,6 +1159,10 @@ class IngestService:
                         actor_id=actor_id,
                         origin="user_direct",
                     )
+
+            self.trace_repo.redact_for_forgotten(space_id, spans=(span,))
+            if self.sync_tracker is not None:
+                self.sync_tracker.bump(space_id, reason="note_span_forgotten")
 
         return {
             "note_id": note_id,

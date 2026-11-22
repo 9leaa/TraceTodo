@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import inspect
+import re
 import time
 from typing import Any
 
 from trace_memory.domain.memories import MemoryItem
 from trace_memory.domain.notes import RawNote
 from trace_memory.domain.proposals import ValidationError
+from trace_memory.llm.mock_provider import DeterministicLLMProvider
 from trace_memory.llm.protocol import LLMProvider
 from trace_memory.services.guard_service import InputGuardService, RateLimitAndQuotaService
 from trace_memory.services.ingest_queue import IngestJobRepository
@@ -25,7 +28,12 @@ _HISTORY_CUES = (
     "变迁",
     "变化",
     "改过",
+    "原本",
     "最早",
+    "起初",
+    "搬家前",
+    "原定",
+    "改期前",
     "演进",
     "history",
     "previously",
@@ -112,24 +120,80 @@ class AskService:
         candidate_memories: list[MemoryItem] = [h.memory for h in mem_hits]
         seen_mem_ids = {m.memory_id for m in candidate_memories}
 
-        # 2. 1-hop graph expansion for top seed memory to pull in linked context
-        if candidate_memories:
+        # 2. 1-hop graph expansion for top-2 seed memories to pull in linked context & active relation edges
+        direct_memories: list[MemoryItem] = [h.memory for h in mem_hits]
+        candidate_memories: list[MemoryItem] = list(direct_memories)
+        seen_mem_ids = {m.memory_id for m in candidate_memories}
+        neighbor_memories: list[MemoryItem] = []
+        mem_by_id: dict[str, MemoryItem] = {m.memory_id: m for m in candidate_memories}
+        graph_relations: list[dict[str, Any]] = []
+        seen_rel_keys: set[tuple[str, str, str, str]] = set()
+
+        for seed_mem in direct_memories[:2]:
             graph_ctx = self.retrieval_service.build_graph_context(
                 space_id=space_id,
-                seed_identifier_or_query=candidate_memories[0].memory_id,
+                seed_identifier_or_query=seed_mem.memory_id,
                 max_hops=1,
-                max_nodes=4,
-                max_chars=1500,
+                max_nodes=5,
+                max_chars=2000,
             )
-            for node in graph_ctx["nodes"]:
-                nid = node["memory"]["memory_id"]
-                if nid not in seen_mem_ids:
+            for node in graph_ctx.get("nodes", []):
+                nid = str(node["memory"]["memory_id"])
+                if nid not in mem_by_id:
                     extra = self.memory_repo.get(space_id, nid)
                     if extra is not None and extra.status == "active":
-                        candidate_memories.append(extra)
-                        seen_mem_ids.add(nid)
+                        mem_by_id[nid] = extra
+                if nid in mem_by_id and nid not in seen_mem_ids:
+                    extra = mem_by_id[nid]
+                    candidate_memories.append(extra)
+                    neighbor_memories.append(extra)
+                    seen_mem_ids.add(nid)
+            for edge in graph_ctx.get("edges", []):
+                from_id = str(edge.get("from_memory_id") or "")
+                to_id = str(edge.get("to_memory_id") or "")
+                to_txt = str(edge.get("to_target_text") or "")
+                rtype = str(edge.get("relation_type") or "relates_to")
+                if to_txt == "[FORGOTTEN]" or not from_id:
+                    continue
+                from_mem = mem_by_id.get(from_id) or self.memory_repo.get(space_id, from_id)
+                if from_mem is None or from_mem.status != "active":
+                    continue
+                to_mem = (mem_by_id.get(to_id) or self.memory_repo.get(space_id, to_id)) if to_id else None
+                if to_id and (to_mem is None or to_mem.status != "active"):
+                    continue
+                rel_key = (from_id, rtype, to_id, to_txt)
+                if rel_key in seen_rel_keys:
+                    continue
+                seen_rel_keys.add(rel_key)
+                graph_relations.append(
+                    {
+                        "from_memory_id": from_id,
+                        "from_title": from_mem.title,
+                        "relation_type": rtype,
+                        "to_memory_id": to_id,
+                        "to_title": to_mem.title if to_mem is not None else to_txt,
+                        "context": str(edge.get("context") or ""),
+                    }
+                )
 
-        # 3. Hybrid search over ground-truth RawNotes (capped at 5 notes)
+        # Build bounded LLM memory context up to 8 slots, reserving space for 1-hop neighbors
+        direct_head = direct_memories[:5]
+        llm_memories: list[MemoryItem] = list(direct_head)
+        llm_mem_ids = {m.memory_id for m in llm_memories}
+        for nm in neighbor_memories:
+            if len(llm_memories) >= 8:
+                break
+            if nm.memory_id not in llm_mem_ids:
+                llm_memories.append(nm)
+                llm_mem_ids.add(nm.memory_id)
+        for cm in candidate_memories:
+            if len(llm_memories) >= 8:
+                break
+            if cm.memory_id not in llm_mem_ids:
+                llm_memories.append(cm)
+                llm_mem_ids.add(cm.memory_id)
+
+        # 3. Hybrid search over ground-truth RawNotes (capped at 5 direct hits)
         note_hits = [
             nh
             for nh in self.search_index.search_notes(
@@ -141,16 +205,17 @@ class AskService:
         seen_note_ids = {n.note_id for n in candidate_notes}
 
         # Also pull direct supporting source notes of top memories if not already included
-        for m in candidate_memories[:3]:
+        for m in llm_memories[:4]:
             for ev in m.evidences:
-                if ev.note_id not in seen_note_ids and len(candidate_notes) < 5:
+                if ev.note_id not in seen_note_ids and len(candidate_notes) < 6:
                     src_note = self.note_repo.get(space_id, ev.note_id)
                     if src_note is not None and not src_note.is_forgotten:
                         candidate_notes.append(src_note)
                         seen_note_ids.add(src_note.note_id)
 
-        # 3b. Read-Your-Own-Writes: inject latest queued/processing RawNotes so immediate Q&A sees just-submitted inputs
+        # 3b. Read-Your-Own-Writes: inject latest queued/processing RawNotes without evicting top search hits
         pending_notes: list[RawNote] = []
+        pending_by_id: dict[str, RawNote] = {}
         if self.job_repo is not None:
             for pid in self.job_repo.list_pending_note_ids(space_id, limit=5):
                 pnote = self.note_repo.get(space_id, pid)
@@ -170,25 +235,51 @@ class AskService:
                     updated_at=pnote.updated_at,
                 )
                 pending_notes.append(tagged)
-                if pnote.note_id in seen_note_ids:
-                    candidate_notes = [
-                        tagged if n.note_id == pnote.note_id else n for n in candidate_notes
-                    ]
-                else:
-                    candidate_notes.insert(0, tagged)
-                    seen_note_ids.add(pnote.note_id)
+                pending_by_id[tagged.note_id] = tagged
 
-        # 4. Load version history only when answering historical evolution questions
+        base_notes = [pending_by_id.get(n.note_id, n) for n in candidate_notes]
+        q_tokens = {tok for tok in re.findall(r"[a-zA-Z0-9\u4e00-\u9fff]+", q_clean.lower()) if len(tok) >= 2}
+        unseen_pending = [pn for pn in pending_notes if pn.note_id not in seen_note_ids]
+        unseen_pending.sort(
+            key=lambda pn: sum(1 for tok in q_tokens if tok in pn.visible_content().lower()),
+            reverse=True,
+        )
+        candidate_notes = list(base_notes) + unseen_pending
+        for pn in unseen_pending:
+            seen_note_ids.add(pn.note_id)
+
+        reserve_pending = min(2, len(unseen_pending))
+        head_limit = max(4, 6 - reserve_pending)
+        raw_llm_notes: list[RawNote] = list(base_notes[:head_limit])
+        llm_note_ids = {n.note_id for n in raw_llm_notes}
+        for pn in unseen_pending:
+            if len(raw_llm_notes) >= 6:
+                break
+            if pn.note_id not in llm_note_ids:
+                raw_llm_notes.append(pn)
+                llm_note_ids.add(pn.note_id)
+        for bn in base_notes[head_limit:]:
+            if len(raw_llm_notes) >= 6:
+                break
+            if bn.note_id not in llm_note_ids:
+                raw_llm_notes.append(bn)
+                llm_note_ids.add(bn.note_id)
+
+        # 4. Load version history only when answering historical evolution questions (capped)
         history_versions: list[dict[str, Any]] = []
         if query_mode == "history":
-            for m in candidate_memories[:3]:
-                for ver in self.memory_repo.get_history(space_id, m.memory_id):
+            for m in llm_memories[:3]:
+                ver_list = self.memory_repo.get_history(space_id, m.memory_id)
+                if len(ver_list) > 4:
+                    selected_vers = [ver_list[0], *ver_list[-3:]]
+                else:
+                    selected_vers = ver_list
+                for ver in selected_vers:
                     history_versions.append(ver.to_dict())
+            history_versions = history_versions[:12]
 
-        notes_limit = max(5, min(8, 5 + len(pending_notes)))
-        sliced_notes = candidate_notes[:notes_limit]
         llm_notes: list[RawNote] = []
-        for n in sliced_notes:
+        for n in raw_llm_notes:
             if self.media_service is not None:
                 vtxt = self.media_service.get_visual_text_for_note(space_id, n.note_id)
                 if vtxt:
@@ -208,17 +299,35 @@ class AskService:
                     continue
             llm_notes.append(n)
 
-        synthesis = self.llm.synthesize_answer(
-            question=q_clean,
-            query_mode=query_mode,
-            memories=candidate_memories[:5],
-            notes=llm_notes,
-            history_versions=history_versions,
-        )
+        def _invoke_synth(provider: Any) -> Any:
+            sig = inspect.signature(provider.synthesize_answer)
+            kwargs: dict[str, Any] = {
+                "question": q_clean,
+                "query_mode": query_mode,
+                "memories": llm_memories,
+                "notes": llm_notes,
+                "history_versions": history_versions,
+            }
+            if "graph_relations" in sig.parameters:
+                kwargs["graph_relations"] = graph_relations
+            return provider.synthesize_answer(**kwargs)
 
-        # Citation Hallucination Guard: keep only IDs actually present in retrieved candidates!
-        valid_mem_ids = [mid for mid in synthesis.cited_memory_ids if mid in seen_mem_ids]
-        valid_note_ids = [nid for nid in synthesis.cited_note_ids if nid in seen_note_ids]
+        try:
+            synthesis = _invoke_synth(self.llm)
+        except Exception:
+            synthesis = _invoke_synth(DeterministicLLMProvider())
+
+        # Strict Citation Hallucination Guard: only allow IDs actually sent to synthesis (and clear when insufficient)
+        if not synthesis.has_sufficient_evidence:
+            valid_mem_ids: list[str] = []
+            valid_note_ids: list[str] = []
+        else:
+            valid_mem_ids = list(
+                dict.fromkeys(mid for mid in synthesis.cited_memory_ids if mid in llm_mem_ids)
+            )
+            valid_note_ids = list(
+                dict.fromkeys(nid for nid in synthesis.cited_note_ids if nid in llm_note_ids)
+            )
 
         cited_media: list[dict[str, Any]] = []
         if self.media_service is not None and synthesis.has_sufficient_evidence:

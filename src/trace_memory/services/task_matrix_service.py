@@ -26,6 +26,7 @@ from trace_memory.domain.proposals import (
     PermissionDeniedError,
     RelationSpec,
     ValidationError,
+    VersionConflictError,
 )
 from trace_memory.domain.relations import slugify_permalink
 from trace_memory.services.change_service import ChangeService
@@ -499,6 +500,17 @@ class TaskMatrixService:
             )
         )
 
+    @staticmethod
+    def _parse_int(raw: Any, default_val: int, name: str) -> int:
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            return default_val
+        if isinstance(raw, bool):
+            raise ValidationError(f"参数 {name} 必须为整数")
+        try:
+            return int(raw)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(f"参数 {name} 必须为整数") from exc
+
     def transition_task_state_with_repeat(
         self,
         space_id: str,
@@ -509,6 +521,8 @@ class TaskMatrixService:
         now: datetime | None = None,
     ) -> dict[str, Any]:
         """Transition task state and spawn next recurring cycle when completing a repeating task."""
+        prev_task = self.memory_repo.get(space_id, memory_id)
+        was_done = prev_task is not None and prev_task.payload.get("task_status") == "done"
         res = self.transition_task_state(
             space_id=space_id,
             memory_id=memory_id,
@@ -517,7 +531,12 @@ class TaskMatrixService:
             actor_id=actor_id,
         )
         next_task_dict: dict[str, Any] | None = None
-        if action == "complete_task" and res.memory is not None:
+        if (
+            action == "complete_task"
+            and res.memory is not None
+            and res.status != "idempotent_replay"
+            and not was_done
+        ):
             p = res.memory.payload
             repeat_rule = str(p.get("repeat_rule", "never") or "never")
             if repeat_rule in ("daily", "weekdays", "weekly", "monthly"):
@@ -584,13 +603,24 @@ class TaskMatrixService:
             any_mem = self.memory_repo.get_any_space(target_id)
             if any_mem is not None and any_mem.space_id != space_id:
                 raise PermissionDeniedError("Access denied to target memory in another space")
-            existing = self.memory_repo.get(space_id, target_id)
+            existing = self.memory_repo.get(space_id, target_id, include_forgotten=True)
             if existing is None:
                 raise NotFoundError(f"Task {target_id!r} not found")
+            if existing.status == "forgotten":
+                raise ValidationError("已遗忘的记忆不可恢复或修改")
+
+        exp_ver_raw = data.get("expected_version")
+        exp_ver: int | None = (
+            self._parse_int(exp_ver_raw, 1, "expected_version")
+            if exp_ver_raw is not None and str(exp_ver_raw).strip() != ""
+            else None
+        )
+        if existing is not None and exp_ver is not None and exp_ver != existing.version:
+            raise VersionConflictError(existing.memory_id, exp_ver, existing.version)
 
         base_payload = dict(existing.payload) if existing else {}
-        imp = max(1, min(5, int(data.get("importance", base_payload.get("importance", 3)) or 3)))
-        urg = max(1, min(5, int(data.get("urgency", base_payload.get("urgency", 3)) or 3)))
+        imp = max(1, min(5, self._parse_int(data.get("importance", base_payload.get("importance", 3)), 3, "importance")))
+        urg = max(1, min(5, self._parse_int(data.get("urgency", base_payload.get("urgency", 3)), 3, "urgency")))
         due_at = (
             str(data["due_at"] or "")
             if "due_at" in data
@@ -613,7 +643,11 @@ class TaskMatrixService:
 
         if "reminder_offset_minutes" in data:
             rem_raw = data.get("reminder_offset_minutes")
-            rem_val = int(rem_raw) if rem_raw is not None and str(rem_raw).strip() != "" else None
+            rem_val = (
+                self._parse_int(rem_raw, 0, "reminder_offset_minutes")
+                if rem_raw is not None and str(rem_raw).strip() != ""
+                else None
+            )
         else:
             rem_val = base_payload.get("reminder_offset_minutes")
 
@@ -636,11 +670,15 @@ class TaskMatrixService:
             if "focus_lock_enabled" in data
             else bool(base_payload.get("focus_lock_enabled", False))
         )
-        focus_min = max(1, min(240, int(data.get("focus_minutes", base_payload.get("focus_minutes", 25)) or 25)))
-        if "duration_minutes" in data and data["duration_minutes"] is not None and str(data["duration_minutes"]).strip() != "":
-            duration_min: int | None = max(15, min(480, int(data["duration_minutes"])))
+        focus_min = max(1, min(240, self._parse_int(data.get("focus_minutes", base_payload.get("focus_minutes", 25)), 25, "focus_minutes")))
+        if "duration_minutes" in data:
+            raw_dur = data.get("duration_minutes")
+            if raw_dur is None or str(raw_dur).strip() == "":
+                duration_min: int | None = None
+            else:
+                duration_min = max(15, min(480, self._parse_int(raw_dur, 60, "duration_minutes")))
         elif base_payload.get("duration_minutes") is not None:
-            duration_min = max(15, min(480, int(base_payload["duration_minutes"])))
+            duration_min = max(15, min(480, self._parse_int(base_payload["duration_minutes"], 60, "duration_minutes")))
         else:
             duration_min = None
         raw_subtasks = (
@@ -713,9 +751,8 @@ class TaskMatrixService:
             "subtasks": subtasks,
             "focus_lock_enabled": focus_lock,
             "focus_minutes": focus_min,
+            "duration_minutes": duration_min,
         }
-        if duration_min is not None:
-            patch["duration_minutes"] = duration_min
 
         evidences: tuple[MemoryEvidence, ...] = ()
         if self.note_repo is not None:
@@ -768,14 +805,13 @@ class TaskMatrixService:
                 )
             )
 
-        exp_ver = data.get("expected_version")
         return self.change_service.apply(
             ChangeProposal(
                 space_id=space_id,
                 action="update",
                 memory_type="task",
                 target_memory_id=existing.memory_id,
-                expected_version=int(exp_ver) if exp_ver is not None else existing.version,
+                expected_version=exp_ver if exp_ver is not None else existing.version,
                 actor_id=actor_id,
                 origin="user_direct",
                 title=final_title,
@@ -784,6 +820,7 @@ class TaskMatrixService:
                 lock_for_user=lock_quad,
                 evidences=evidences,
                 relations=rels,
+                replace_relations="relations" in data,
                 reason="Updated task via DuoDo card sheet",
             )
         )
@@ -828,7 +865,10 @@ class TaskMatrixService:
         if provider is None or not hasattr(provider, "decompose_task"):
             provider = DeterministicLLMProvider()
 
-        batch = provider.decompose_task(clean_title, summary, ctx_memories[:8])
+        try:
+            batch = provider.decompose_task(clean_title, summary, ctx_memories[:8])
+        except Exception:
+            batch = DeterministicLLMProvider().decompose_task(clean_title, summary, ctx_memories[:8])
         formatted_subs = [
             {
                 "id": new_id("sub"),
@@ -931,7 +971,7 @@ class TaskMatrixService:
             interrupts.append(
                 {
                     "reason": reason.strip() or "提前退出专注",
-                    "elapsed_seconds": max(0, int(elapsed_seconds)),
+                    "elapsed_seconds": max(0, self._parse_int(elapsed_seconds, 0, "elapsed_seconds")),
                     "created_at": utc_now_iso(),
                 }
             )

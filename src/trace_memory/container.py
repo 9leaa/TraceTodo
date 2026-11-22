@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 
 from trace_memory.config import TraceMemoryConfig
 from trace_memory.llm.mock_provider import DeterministicLLMProvider, SemanticHashEmbedder
@@ -142,12 +143,23 @@ class AppContainer:
             vector_store = SQLiteVectorStore(db)
 
         vector_lifecycle = VectorLifecycleService(vector_store=vector_store, embedder=embedder)
+        effective_min_score = (
+            0.0
+            if (
+                embedder_override is None
+                and isinstance(embedder, SemanticHashEmbedder)
+                and cfg.llm_provider == "openai"
+                and not cfg.openai_api_key
+                and "TRACE_MEMORY_VECTOR_ONLY_MIN_SCORE" not in os.environ
+            )
+            else cfg.vector_only_min_score
+        )
         search_index = HybridSearchIndex(
             note_repo=note_repo,
             memory_repo=memory_repo,
             vector_store=vector_store,
             embedder=embedder,
-            vector_only_min_score=cfg.vector_only_min_score,
+            vector_only_min_score=effective_min_score,
         )
         settings_store = SystemSettingsStore(db=db, config=cfg)
         input_guard = InputGuardService(settings=settings_store)
@@ -321,4 +333,9 @@ class AppContainer:
     def close(self) -> None:
         self.daily_scheduler.stop()
         self.ingest_worker.stop()
+        if hasattr(self.vector_store, "close"):
+            try:
+                self.vector_store.close()
+            except Exception:
+                pass
         self.db.close()

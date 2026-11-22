@@ -161,10 +161,15 @@ class DailyTaskMaintenanceScheduler:
         total_rolled = 0
         total_refreshed = 0
         touched_spaces: list[str] = []
+        failed_spaces: list[str] = []
 
         for sp in spaces:
-            rolled = self.task_matrix_service.apply_auto_rollover(sp, now=ref_now)
-            refreshed = self.task_matrix_service.refresh_due_task_statuses(sp, now=ref_now)
+            try:
+                rolled = self.task_matrix_service.apply_auto_rollover(sp, now=ref_now)
+                refreshed = self.task_matrix_service.refresh_due_task_statuses(sp, now=ref_now)
+            except Exception:
+                failed_spaces.append(sp)
+                continue
             if rolled or refreshed:
                 total_rolled += len(rolled)
                 total_refreshed += len(refreshed)
@@ -174,6 +179,7 @@ class DailyTaskMaintenanceScheduler:
         report = {
             "checked_spaces": len(spaces),
             "touched_spaces": touched_spaces,
+            "failed_spaces": failed_spaces,
             "rolled_count": total_rolled,
             "refreshed_count": total_refreshed,
             "beijing_date": beijing_today_date(ref_now),

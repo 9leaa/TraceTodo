@@ -335,21 +335,30 @@
         NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
         if (![json isKindOfClass:[NSDictionary class]]) return;
 
-        NSDictionary *counts = json[@"summary_counts"] ?: @{};
-        NSInteger totalTodo = [counts[@"total_todo"] integerValue];
-        NSInteger q1 = [counts[@"Q1_do_first"] integerValue];
-        NSArray *sorted = json[@"sorted_tasks"] ?: @[];
+        NSDictionary *rawCounts = json[@"summary_counts"];
+        NSDictionary *counts = [rawCounts isKindOfClass:[NSDictionary class]] ? rawCounts : @{};
+        NSInteger totalTodo = [counts[@"total_todo"] respondsToSelector:@selector(integerValue)] ? [counts[@"total_todo"] integerValue] : 0;
+        NSInteger q1 = [counts[@"Q1_do_first"] respondsToSelector:@selector(integerValue)] ? [counts[@"Q1_do_first"] integerValue] : 0;
+        id rawSorted = json[@"sorted_tasks"];
+        NSArray *sorted = [rawSorted isKindOfClass:[NSArray class]] ? rawSorted : @[];
 
         NSMutableArray<TodoQuickRow *> *rows = [NSMutableArray array];
-        for (NSDictionary *item in sorted) {
+        for (id rawItem in sorted) {
             if (rows.count >= 7) break;
+            if (![rawItem isKindOfClass:[NSDictionary class]]) continue;
+            NSDictionary *item = (NSDictionary *)rawItem;
             TodoQuickRow *row = [[TodoQuickRow alloc] init];
-            row.memoryId = item[@"memory_id"] ?: @"";
-            row.title = item[@"title"] ?: @"";
-            row.version = [item[@"version"] integerValue];
-            NSDictionary *pl = item[@"payload"] ?: @{};
-            row.quadrant = [pl[@"quadrant"] ?: @"Q4" substringToIndex:2];
-            row.score = [pl[@"priority_score"] doubleValue];
+            id rawMemId = item[@"memory_id"];
+            row.memoryId = [rawMemId isKindOfClass:[NSString class]] ? rawMemId : @"";
+            id rawTitle = item[@"title"];
+            row.title = [rawTitle isKindOfClass:[NSString class]] ? rawTitle : @"";
+            row.version = [item[@"version"] respondsToSelector:@selector(integerValue)] ? [item[@"version"] integerValue] : 1;
+            id rawPl = item[@"payload"];
+            NSDictionary *pl = [rawPl isKindOfClass:[NSDictionary class]] ? rawPl : @{};
+            id rawQuad = pl[@"quadrant"];
+            NSString *quadStr = [rawQuad isKindOfClass:[NSString class]] ? rawQuad : @"Q4";
+            row.quadrant = quadStr.length >= 2 ? [quadStr substringToIndex:2] : @"Q4";
+            row.score = [pl[@"priority_score"] respondsToSelector:@selector(doubleValue)] ? [pl[@"priority_score"] doubleValue] : 0.0;
             [rows addObject:row];
         }
 

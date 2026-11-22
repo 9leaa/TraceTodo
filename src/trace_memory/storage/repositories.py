@@ -8,7 +8,7 @@ from typing import Any
 
 from trace_memory.domain.memories import MemoryEvidence, MemoryItem, MemoryVersion
 from trace_memory.domain.notes import RawNote, new_id, utc_now_iso
-from trace_memory.domain.proposals import VersionConflictError
+from trace_memory.domain.proposals import PermissionDeniedError, VersionConflictError
 from trace_memory.domain.relations import MemoryRelation, parse_memory_uri
 from trace_memory.storage.database import Database, build_fts_match_query, tokenize_for_fts
 
@@ -78,6 +78,15 @@ class NoteRepository:
 
     def save(self, note: RawNote) -> RawNote:
         with self.db.transaction() as conn:
+            existing = conn.execute(
+                "SELECT space_id, revision, is_forgotten FROM raw_notes WHERE note_id = ?",
+                (note.note_id,),
+            ).fetchone()
+            if existing is not None:
+                if existing["space_id"] != note.space_id:
+                    raise PermissionDeniedError("Cross-space note overwrite denied")
+                if bool(existing["is_forgotten"]) and not note.is_forgotten:
+                    raise PermissionDeniedError("Cannot resurrect forgotten RawNote")
             conn.execute(
                 """
                 INSERT INTO raw_notes (
@@ -100,6 +109,8 @@ class NoteRepository:
                     mood = excluded.mood,
                     journal_date = excluded.journal_date,
                     extract_memory = excluded.extract_memory
+                WHERE raw_notes.space_id = excluded.space_id
+                  AND raw_notes.revision <= excluded.revision
                 """,
                 (
                     note.note_id,
@@ -128,7 +139,12 @@ class NoteRepository:
     def _refresh_fts(self, conn: sqlite3.Connection, note: RawNote) -> None:
         conn.execute("DELETE FROM notes_fts WHERE note_id = ?", (note.note_id,))
         visible = note.visible_content()
-        combined = " ".join(part for part in (note.title, " ".join(note.tags), visible) if part).strip()
+        title_vis = note.title
+        tags_vis = " ".join(note.tags)
+        for sp in sorted((s for s in note.forgotten_spans if s), key=len, reverse=True):
+            title_vis = title_vis.replace(sp, "")
+            tags_vis = tags_vis.replace(sp, "")
+        combined = " ".join(part for part in (title_vis, tags_vis, visible) if part).strip()
         if not note.is_forgotten and combined:
             conn.execute(
                 "INSERT INTO notes_fts (note_id, space_id, segmented_text) VALUES (?, ?, ?)",
@@ -194,16 +210,26 @@ class MemoryRepository:
         self.db = db
 
     def ensure_unique_permalink(
-        self, space_id: str, desired_permalink: str, exclude_memory_id: str = ""
+        self,
+        space_id: str,
+        desired_permalink: str,
+        exclude_memory_id: str = "",
+        conn: sqlite3.Connection | None = None,
     ) -> str:
         base = desired_permalink.strip("/")
         candidate = base
         suffix = 2
         while True:
-            row = self.db.query_one(
-                "SELECT memory_id FROM memories WHERE space_id = ? AND permalink = ?",
-                (space_id, candidate),
-            )
+            if conn is not None:
+                row = conn.execute(
+                    "SELECT memory_id FROM memories WHERE space_id = ? AND permalink = ?",
+                    (space_id, candidate),
+                ).fetchone()
+            else:
+                row = self.db.query_one(
+                    "SELECT memory_id FROM memories WHERE space_id = ? AND permalink = ?",
+                    (space_id, candidate),
+                )
             if row is None or row["memory_id"] == exclude_memory_id:
                 return candidate
             candidate = f"{base}-{suffix}"
@@ -216,33 +242,34 @@ class MemoryRepository:
         actor_id: str,
         origin: str,
     ) -> MemoryItem:
-        unique_permalink = self.ensure_unique_permalink(item.space_id, item.permalink)
-        if unique_permalink != item.permalink:
-            item = MemoryItem(
-                memory_id=item.memory_id,
-                space_id=item.space_id,
-                permalink=unique_permalink,
-                memory_type=item.memory_type,
-                title=item.title,
-                summary=item.summary,
-                payload=item.payload,
-                canonical_key=item.canonical_key,
-                tags=item.tags,
-                assertion_kind=item.assertion_kind,
-                status=item.status,
-                version=1,
-                user_locked=item.user_locked,
-                rejected_inferences=item.rejected_inferences,
-                evidences=item.evidences,
-                event_time=item.event_time,
-                created_at=item.created_at,
-                updated_at=item.updated_at,
-            )
-
         evidences_json = json.dumps([e.to_dict() for e in item.evidences], ensure_ascii=False)
         payload_json = json.dumps(item.payload, ensure_ascii=False)
 
         with self.db.transaction() as conn:
+            unique_permalink = self.ensure_unique_permalink(
+                item.space_id, item.permalink, conn=conn
+            )
+            if unique_permalink != item.permalink:
+                item = MemoryItem(
+                    memory_id=item.memory_id,
+                    space_id=item.space_id,
+                    permalink=unique_permalink,
+                    memory_type=item.memory_type,
+                    title=item.title,
+                    summary=item.summary,
+                    payload=item.payload,
+                    canonical_key=item.canonical_key,
+                    tags=item.tags,
+                    assertion_kind=item.assertion_kind,
+                    status=item.status,
+                    version=1,
+                    user_locked=item.user_locked,
+                    rejected_inferences=item.rejected_inferences,
+                    evidences=item.evidences,
+                    event_time=item.event_time,
+                    created_at=item.created_at,
+                    updated_at=item.updated_at,
+                )
             conn.execute(
                 """
                 INSERT INTO memories (
@@ -289,34 +316,37 @@ class MemoryRepository:
     ) -> MemoryItem:
         """Atomically update `item` only when database `version == expected_version`."""
         next_version = expected_version + 1
-        updated_item = MemoryItem(
-            memory_id=item.memory_id,
-            space_id=item.space_id,
-            permalink=self.ensure_unique_permalink(
-                item.space_id, item.permalink, exclude_memory_id=item.memory_id
-            ),
-            memory_type=item.memory_type,
-            title=item.title,
-            summary=item.summary,
-            payload=item.payload,
-            canonical_key=item.canonical_key,
-            tags=item.tags,
-            assertion_kind=item.assertion_kind,
-            status=item.status,
-            version=next_version,
-            user_locked=item.user_locked,
-            rejected_inferences=item.rejected_inferences,
-            evidences=item.evidences,
-            event_time=item.event_time,
-            created_at=item.created_at,
-            updated_at=utc_now_iso(),
-        )
-        evidences_json = json.dumps(
-            [e.to_dict() for e in updated_item.evidences], ensure_ascii=False
-        )
-        payload_json = json.dumps(updated_item.payload, ensure_ascii=False)
-
         with self.db.transaction() as conn:
+            unique_pl = self.ensure_unique_permalink(
+                item.space_id,
+                item.permalink,
+                exclude_memory_id=item.memory_id,
+                conn=conn,
+            )
+            updated_item = MemoryItem(
+                memory_id=item.memory_id,
+                space_id=item.space_id,
+                permalink=unique_pl,
+                memory_type=item.memory_type,
+                title=item.title,
+                summary=item.summary,
+                payload=item.payload,
+                canonical_key=item.canonical_key,
+                tags=item.tags,
+                assertion_kind=item.assertion_kind,
+                status=item.status,
+                version=next_version,
+                user_locked=item.user_locked,
+                rejected_inferences=item.rejected_inferences,
+                evidences=item.evidences,
+                event_time=item.event_time,
+                created_at=item.created_at,
+                updated_at=utc_now_iso(),
+            )
+            evidences_json = json.dumps(
+                [e.to_dict() for e in updated_item.evidences], ensure_ascii=False
+            )
+            payload_json = json.dumps(updated_item.payload, ensure_ascii=False)
             cursor = conn.execute(
                 """
                 UPDATE memories SET
@@ -439,19 +469,32 @@ class MemoryRepository:
         self, space_id: str, identifier: str, include_forgotten: bool = False
     ) -> MemoryItem | None:
         """Resolve a MemoryItem by `memory_id`, `memory://permalink`, `permalink`, or exact `title`."""
-        cleaned = parse_memory_uri(identifier)
+        raw_ident = (identifier or "").strip()
+        cleaned = parse_memory_uri(raw_ident)
+        if not cleaned and not raw_ident:
+            return None
+        status_filter = "" if include_forgotten else "AND status != 'forgotten'"
         row = self.db.query_one(
-            """
+            f"""
             SELECT * FROM memories
-            WHERE space_id = ? AND (memory_id = ? OR permalink = ? OR title = ?)
-            ORDER BY CASE
-                WHEN memory_id = ? THEN 0
-                WHEN permalink = ? THEN 1
-                ELSE 2
-            END, version DESC
+            WHERE space_id = ? {status_filter}
+              AND (memory_id = ? OR permalink = ? OR title = ? OR title = ?)
+            ORDER BY
+                CASE status
+                    WHEN 'active' THEN 0
+                    WHEN 'pending_review' THEN 1
+                    WHEN 'superseded' THEN 2
+                    ELSE 3
+                END ASC,
+                CASE
+                    WHEN memory_id = ? THEN 0
+                    WHEN permalink = ? THEN 1
+                    ELSE 2
+                END ASC,
+                version DESC
             LIMIT 1
             """,
-            (space_id, cleaned, cleaned, cleaned, cleaned, cleaned),
+            (space_id, cleaned, cleaned, cleaned, raw_ident, cleaned, cleaned),
         )
         if row is None:
             return None
@@ -873,30 +916,30 @@ class TraceRepository:
         *,
         memory_id: str = "",
         note_ids: tuple[str, ...] = (),
+        spans: tuple[str, ...] = (),
     ) -> int:
-        """Scrub trace summaries/details and purge idempotency caches referencing forgotten memory or note IDs."""
-        tokens = [t for t in (memory_id, *note_ids) if t and t.strip()]
+        """Scrub trace summaries/details and purge idempotency caches referencing forgotten records or spans."""
+        tokens = [t.strip() for t in (memory_id, *note_ids, *spans) if t and t.strip()]
         if not tokens:
             return 0
         redacted_count = 0
         with self.db.transaction() as conn:
             for tok in tokens:
-                pat = f"%{tok}%"
                 cur = conn.execute(
                     """
                     UPDATE trace_runs
                     SET input_summary = '[FORGOTTEN]',
                         details_json = '{"redacted": true}'
-                    WHERE space_id = ? AND (details_json LIKE ? OR input_summary LIKE ?)
+                    WHERE space_id = ? AND (instr(details_json, ?) > 0 OR instr(input_summary, ?) > 0)
                     """,
-                    (space_id, pat, pat),
+                    (space_id, tok, tok),
                 )
                 redacted_count += int(cur.rowcount or 0)
                 conn.execute(
                     """
                     DELETE FROM idempotency_records
-                    WHERE space_id = ? AND result_json LIKE ?
+                    WHERE space_id = ? AND instr(result_json, ?) > 0
                     """,
-                    (space_id, pat),
+                    (space_id, tok),
                 )
         return redacted_count

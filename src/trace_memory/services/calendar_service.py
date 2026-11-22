@@ -233,17 +233,17 @@ class CalendarService:
                     )
                 continue
 
-            due_ymd = due_raw[:10]
-            day_bucket = days_by_ymd.get(due_ymd)
-            if day_bucket is None:
-                continue
-
             total_scheduled_tasks += 1
             color_theme = str(p.get("color_theme") or "sky")
             if color_theme not in COLOR_THEMES:
                 color_theme = "sky"
             is_all_day = bool(p.get("is_all_day", False)) or len(due_raw) <= 10
             dt_bj = None if is_all_day else _parse_iso_beijing(due_raw)
+            due_ymd = dt_bj.date().isoformat() if dt_bj is not None else due_raw[:10]
+            day_bucket = days_by_ymd.get(due_ymd)
+            if day_bucket is None:
+                total_scheduled_tasks -= 1
+                continue
 
             if is_all_day or dt_bj is None:
                 total_all_day_tasks += 1
@@ -456,32 +456,43 @@ class CalendarService:
         slot_date = _parse_ymd(raw_date)
         is_all_day = bool(payload.get("is_all_day", False))
 
+        def _parse_int_field(raw: Any, default_val: int, lo: int, hi: int, name: str, *, strict_bounds: bool = False) -> int:
+            if raw is None or raw == "":
+                return default_val
+            if isinstance(raw, bool):
+                raise ValidationError(f"参数 {name} 必须为整数")
+            try:
+                val = int(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValidationError(f"参数 {name} 格式错误：{raw!r}") from exc
+            if strict_bounds and (val < lo or val > hi):
+                raise ValidationError(f"参数 {name} 超出有效范围 [{lo}, {hi}]：{val}")
+            return max(lo, min(hi, val))
+
         if is_all_day:
             due_iso = slot_date.isoformat()
             dur_min = None
         else:
             raw_time = str(payload.get("time") or "").strip()
-            if raw_time and ":" in raw_time:
+            if raw_time:
+                if ":" not in raw_time:
+                    raise ValidationError(f"时间格式错误，应为 HH:MM：{raw_time!r}")
                 parts = raw_time.split(":", 1)
-                try:
-                    hh = max(0, min(23, int(parts[0])))
-                    mm = max(0, min(59, int(parts[1])))
-                except ValueError as exc:
-                    raise ValidationError(f"时间格式错误：{raw_time!r}") from exc
+                hh = _parse_int_field(parts[0], 9, 0, 23, "hour", strict_bounds=True)
+                mm = _parse_int_field(parts[1], 0, 0, 59, "minute", strict_bounds=True)
             else:
-                hh = max(0, min(23, int(payload.get("hour", 9) if payload.get("hour") is not None else 9)))
-                mm = max(0, min(59, int(payload.get("minute", 0) if payload.get("minute") is not None else 0)))
+                hh = _parse_int_field(payload.get("hour"), 9, 0, 23, "hour", strict_bounds=True)
+                mm = _parse_int_field(payload.get("minute"), 0, 0, 59, "minute", strict_bounds=True)
 
             dt_bj = datetime(slot_date.year, slot_date.month, slot_date.day, hh, mm, 0, tzinfo=BEIJING_TZ)
             due_iso = dt_bj.isoformat()
-            dur_min = max(15, min(480, int(payload.get("duration_minutes", 60) or 60)))
+            dur_min = _parse_int_field(payload.get("duration_minutes"), 60, 15, 480, "duration_minutes")
 
         card_data: dict[str, Any] = {
             "due_at": due_iso,
             "is_all_day": is_all_day,
+            "duration_minutes": dur_min,
         }
-        if dur_min is not None:
-            card_data["duration_minutes"] = dur_min
 
         if target_id:
             card_data["target_memory_id"] = target_id
@@ -494,8 +505,8 @@ class CalendarService:
             card_data["title"] = title
             card_data["summary"] = str(payload.get("summary") or title).strip()
             card_data["color_theme"] = str(payload.get("color_theme") or "sky")
-            card_data["importance"] = max(1, min(5, int(payload.get("importance", 4) or 4)))
-            card_data["urgency"] = max(1, min(5, int(payload.get("urgency", 3) or 3)))
+            card_data["importance"] = _parse_int_field(payload.get("importance"), 4, 1, 5, "importance")
+            card_data["urgency"] = _parse_int_field(payload.get("urgency"), 3, 1, 5, "urgency")
             if dur_min is not None:
                 card_data["focus_minutes"] = min(240, dur_min)
 
