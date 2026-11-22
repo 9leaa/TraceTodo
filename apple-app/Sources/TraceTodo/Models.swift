@@ -268,6 +268,7 @@ struct TaskPayloadModel: Codable, Hashable {
     let quadrantLabel: String?
     let priorityScore: Double
     let priorityReason: String?
+    let startAt: String?
     let dueAt: String?
     let isOverdue: Bool?
     let assignee: String?
@@ -283,6 +284,7 @@ struct TaskPayloadModel: Codable, Hashable {
     let subtasks: [SubtaskItem]?
     let focusLockEnabled: Bool?
     let focusMinutes: Int?
+    let durationMinutes: Int?
     let focusSessionsCompleted: Int?
     let nudges: [NudgeItem]?
 
@@ -316,6 +318,7 @@ struct TaskPayloadModel: Codable, Hashable {
         case quadrantLabel = "quadrant_label"
         case priorityScore = "priority_score"
         case priorityReason = "priority_reason"
+        case startAt = "start_at"
         case dueAt = "due_at"
         case isOverdue = "is_overdue"
         case assignee
@@ -331,6 +334,7 @@ struct TaskPayloadModel: Codable, Hashable {
         case subtasks
         case focusLockEnabled = "focus_lock_enabled"
         case focusMinutes = "focus_minutes"
+        case durationMinutes = "duration_minutes"
         case focusSessionsCompleted = "focus_sessions_completed"
         case nudges
     }
@@ -346,6 +350,7 @@ struct TaskPayloadModel: Codable, Hashable {
         quadrantLabel = try c.decodeIfPresent(String.self, forKey: .quadrantLabel)
         priorityScore = try c.decodeIfPresent(Double.self, forKey: .priorityScore) ?? 0.0
         priorityReason = try c.decodeIfPresent(String.self, forKey: .priorityReason)
+        startAt = try c.decodeIfPresent(String.self, forKey: .startAt)
         dueAt = try c.decodeIfPresent(String.self, forKey: .dueAt)
         isOverdue = try c.decodeIfPresent(Bool.self, forKey: .isOverdue)
         assignee = try c.decodeIfPresent(String.self, forKey: .assignee)
@@ -361,6 +366,7 @@ struct TaskPayloadModel: Codable, Hashable {
         subtasks = try c.decodeIfPresent([SubtaskItem].self, forKey: .subtasks)
         focusLockEnabled = try c.decodeIfPresent(Bool.self, forKey: .focusLockEnabled)
         focusMinutes = try c.decodeIfPresent(Int.self, forKey: .focusMinutes)
+        durationMinutes = try c.decodeIfPresent(Int.self, forKey: .durationMinutes)
         focusSessionsCompleted = try c.decodeIfPresent(Int.self, forKey: .focusSessionsCompleted)
         nudges = try c.decodeIfPresent([NudgeItem].self, forKey: .nudges)
     }

@@ -7,6 +7,7 @@ struct MoodCatalogItem: Codable, Identifiable, Hashable {
     let icon: String
     let label: String
     let color: String
+    let group: String?
 }
 
 struct MemoTagCountItem: Codable, Identifiable, Hashable {
@@ -165,7 +166,7 @@ struct MemoAndJournalStudioView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("📝 备忘录与每日日记")
                             .font(.headline.bold())
-                        Text("复用 RawNote 轻结构化内核 · 支持图文混排与 AI 今日小结")
+                        Text("备忘卡片、每日心情日记与 AI 今日小结")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -504,12 +505,18 @@ struct JournalDailyStudioView: View {
     @State private var isBusy: Bool = false
 
     private let fallbackMoods: [MoodCatalogItem] = [
-        MoodCatalogItem(id: "joy", icon: "😊", label: "愉悦", color: "#f59e0b"),
-        MoodCatalogItem(id: "focused", icon: "🔥", label: "充实", color: "#ef4444"),
-        MoodCatalogItem(id: "calm", icon: "🌿", label: "平静", color: "#10b981"),
-        MoodCatalogItem(id: "thinking", icon: "🤔", label: "思考", color: "#6366f1"),
-        MoodCatalogItem(id: "tired", icon: "😴", label: "疲惫", color: "#64748b"),
-        MoodCatalogItem(id: "celebrate", icon: "🎉", label: "惊喜", color: "#ec4899")
+        MoodCatalogItem(id: "joy", icon: "😊", label: "愉悦", color: "#f59e0b", group: "positive"),
+        MoodCatalogItem(id: "focused", icon: "🔥", label: "充实", color: "#ef4444", group: "positive"),
+        MoodCatalogItem(id: "celebrate", icon: "🎉", label: "惊喜", color: "#ec4899", group: "positive"),
+        MoodCatalogItem(id: "grateful", icon: "💖", label: "感恩", color: "#f43f5e", group: "positive"),
+        MoodCatalogItem(id: "calm", icon: "🌿", label: "平静", color: "#10b981", group: "neutral"),
+        MoodCatalogItem(id: "thinking", icon: "🤔", label: "思考", color: "#6366f1", group: "neutral"),
+        MoodCatalogItem(id: "meh", icon: "😶", label: "麻木", color: "#94a3b8", group: "neutral"),
+        MoodCatalogItem(id: "tired", icon: "😴", label: "疲惫", color: "#64748b", group: "neutral"),
+        MoodCatalogItem(id: "sad", icon: "😔", label: "难过", color: "#3b82f6", group: "negative"),
+        MoodCatalogItem(id: "anxious", icon: "😰", label: "焦虑", color: "#8b5cf6", group: "negative"),
+        MoodCatalogItem(id: "angry", icon: "😠", label: "烦躁", color: "#dc2626", group: "negative"),
+        MoodCatalogItem(id: "low", icon: "🌧️", label: "低落", color: "#475569", group: "negative")
     ]
 
     var body: some View {

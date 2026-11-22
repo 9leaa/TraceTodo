@@ -318,13 +318,17 @@ class TaskMatrixService:
             if not item.user_locked:
                 patch["quadrant"] = auto_quad
             if is_overdue:
-                old_r = str(p.get("priority_reason", "")).strip()
+                old_r = str(p.get("priority_reason", "")).strip().rstrip("。；;，, ")
                 if "已逾期" not in old_r:
-                    patch["priority_reason"] = f"{old_r}；任务已逾期自动提权".strip("；")
+                    patch["priority_reason"] = (
+                        f"{old_r}；任务已逾期自动提权" if old_r else "任务已逾期自动提权"
+                    )
             elif eff_urg > base_urg:
-                old_r = str(p.get("priority_reason", "")).strip()
+                old_r = str(p.get("priority_reason", "")).strip().rstrip("。；;，, ")
                 if "临近截止" not in old_r:
-                    patch["priority_reason"] = f"{old_r}；临近截止自动提权".strip("；")
+                    patch["priority_reason"] = (
+                        f"{old_r}；临近截止自动提权" if old_r else "临近截止自动提权"
+                    )
 
             res = self.change_service.apply(
                 ChangeProposal(
@@ -675,6 +679,11 @@ class TaskMatrixService:
                 raise ValidationError("urgency 必须在 1 到 5 之间")
         else:
             urg = max(1, min(5, self._parse_int(base_payload.get("urgency", 3), 3, "urgency")))
+        start_at = (
+            str(data["start_at"] or "").strip()
+            if "start_at" in data
+            else str(base_payload.get("start_at", "") or "").strip()
+        )
         due_at = (
             str(data["due_at"] or "")
             if "due_at" in data
@@ -685,6 +694,12 @@ class TaskMatrixService:
             if "is_all_day" in data
             else bool(base_payload.get("is_all_day", True))
         )
+        if is_all_day:
+            start_at = ""
+        elif start_at:
+            parsed_start = parse_iso_datetime(start_at)
+            if parsed_start is not None:
+                start_at = to_beijing(parsed_start).replace(microsecond=0).isoformat()
         color = str(data.get("color_theme", base_payload.get("color_theme", "sky")) or "sky")
         if color not in COLOR_THEMES:
             color = "sky"
@@ -725,16 +740,27 @@ class TaskMatrixService:
             else bool(base_payload.get("focus_lock_enabled", False))
         )
         focus_min = max(1, min(240, self._parse_int(data.get("focus_minutes", base_payload.get("focus_minutes", 25)), 25, "focus_minutes")))
+        explicit_dur = (
+            "duration_minutes" in data
+            and data.get("duration_minutes") is not None
+            and str(data.get("duration_minutes")).strip() != ""
+        )
         if "duration_minutes" in data:
             raw_dur = data.get("duration_minutes")
             if raw_dur is None or str(raw_dur).strip() == "":
                 duration_min: int | None = None
             else:
-                duration_min = max(15, min(480, self._parse_int(raw_dur, 60, "duration_minutes")))
+                duration_min = max(15, min(1440, self._parse_int(raw_dur, 60, "duration_minutes")))
         elif base_payload.get("duration_minutes") is not None:
-            duration_min = max(15, min(480, self._parse_int(base_payload["duration_minutes"], 60, "duration_minutes")))
+            duration_min = max(15, min(1440, self._parse_int(base_payload["duration_minutes"], 60, "duration_minutes")))
         else:
             duration_min = None
+
+        if not is_all_day and start_at and due_at and not explicit_dur:
+            st_dt = parse_iso_datetime(start_at)
+            du_dt = parse_iso_datetime(due_at)
+            if st_dt is not None and du_dt is not None and du_dt > st_dt:
+                duration_min = max(15, min(1440, int((du_dt - st_dt).total_seconds() // 60)))
         raw_subtasks = (
             data["subtasks"]
             if "subtasks" in data
@@ -795,6 +821,7 @@ class TaskMatrixService:
             "quadrant": quad,
             "priority_score": score,
             "priority_reason": prio_reason,
+            "start_at": start_at,
             "due_at": due_at,
             "assignee": assignee,
             "color_theme": color,
