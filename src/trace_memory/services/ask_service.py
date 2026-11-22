@@ -40,6 +40,26 @@ _HISTORY_CUES = (
     "used to",
 )
 
+_ENUMERATION_CUES = (
+    "有哪些",
+    "有什么",
+    "列出",
+    "所有",
+    "全部",
+    "汇总",
+    "盘点",
+    "清单",
+    "一共",
+    "总共",
+    "多少",
+    "几项",
+    "几个",
+    "几条",
+    "list all",
+    "what are all",
+    "how many",
+)
+
 
 class AskService:
     """ strictly read-only evidence-grounded QA combining structured Memory + original RawNotes.
@@ -78,7 +98,12 @@ class AskService:
         q = question.lower()
         return "history" if any(cue in q for cue in _HISTORY_CUES) else "current"
 
-    def ask(self, space_id: str, question: str, top_k: int = 5) -> dict[str, Any]:
+    @staticmethod
+    def is_enumeration_query(question: str) -> bool:
+        q = question.lower()
+        return any(cue in q for cue in _ENUMERATION_CUES)
+
+    def ask(self, space_id: str, question: str, top_k: int | None = None) -> dict[str, Any]:
         t0 = time.perf_counter()
         q_clean = question.strip()
         if self.input_guard is not None:
@@ -108,17 +133,32 @@ class AskService:
                     "trace_id": trace_id,
                 }
         query_mode = self.detect_query_mode(q_clean)
+        is_enum = self.is_enumeration_query(q_clean)
+        if top_k is not None:
+            eff_top_k = max(1, min(25, int(top_k)))
+        else:
+            eff_top_k = 16 if is_enum else 10
 
-        # 1. Hybrid search over active Memories (high threshold so unrelated noise doesn't trigger false answers C12)
-        mem_hits = [
+        # 1. Hybrid search over active Memories (C12 gate + relative tail-noise filter beyond rank 5)
+        base_mem_hits = [
             h
             for h in self.search_index.search_memories(
-                space_id=space_id, query=q_clean, top_k=top_k, min_vector_score=0.25
+                space_id=space_id, query=q_clean, top_k=eff_top_k, min_vector_score=0.25
             )
             if h.bm25_rank is not None or h.vector_score >= 0.34
         ]
-        candidate_memories: list[MemoryItem] = [h.memory for h in mem_hits]
-        seen_mem_ids = {m.memory_id for m in candidate_memories}
+        mem_hits = []
+        if base_mem_hits:
+            top_rrf = base_mem_hits[0].rrf_score
+            for idx, h in enumerate(base_mem_hits):
+                if idx < 5:
+                    mem_hits.append(h)
+                elif (
+                    (is_enum and (h.bm25_rank is not None or h.vector_score >= 0.42))
+                    or h.rrf_score >= top_rrf * 0.55
+                    or h.vector_score >= 0.48
+                ):
+                    mem_hits.append(h)
 
         # 2. 1-hop graph expansion for top-2 seed memories to pull in linked context & active relation edges
         direct_memories: list[MemoryItem] = [h.memory for h in mem_hits]
@@ -176,28 +216,32 @@ class AskService:
                     }
                 )
 
-        # Build bounded LLM memory context up to 8 slots, reserving space for 1-hop neighbors
-        direct_head = direct_memories[:5]
+        # Build bounded LLM memory context with adaptive window & reserved slots for 1-hop neighbors
+        llm_mem_cap = min(24, eff_top_k + 3)
+        reserve_neighbors = min(3, len(neighbor_memories))
+        direct_slot_cap = min(eff_top_k, max(1, llm_mem_cap - reserve_neighbors))
+        direct_head = direct_memories[:direct_slot_cap]
         llm_memories: list[MemoryItem] = list(direct_head)
         llm_mem_ids = {m.memory_id for m in llm_memories}
         for nm in neighbor_memories:
-            if len(llm_memories) >= 8:
+            if len(llm_memories) >= llm_mem_cap:
                 break
             if nm.memory_id not in llm_mem_ids:
                 llm_memories.append(nm)
                 llm_mem_ids.add(nm.memory_id)
         for cm in candidate_memories:
-            if len(llm_memories) >= 8:
+            if len(llm_memories) >= llm_mem_cap:
                 break
             if cm.memory_id not in llm_mem_ids:
                 llm_memories.append(cm)
                 llm_mem_ids.add(cm.memory_id)
 
-        # 3. Hybrid search over ground-truth RawNotes (capped at 5 direct hits)
+        # 3. Hybrid search over ground-truth RawNotes (scaled proportionally)
+        note_top_k = min(10 if is_enum else 8, max(3, eff_top_k))
         note_hits = [
             nh
             for nh in self.search_index.search_notes(
-                space_id=space_id, query=q_clean, top_k=min(top_k, 5), min_vector_score=0.25
+                space_id=space_id, query=q_clean, top_k=note_top_k, min_vector_score=0.25
             )
             if nh.bm25_rank is not None or nh.vector_score >= 0.34
         ]
@@ -205,9 +249,9 @@ class AskService:
         seen_note_ids = {n.note_id for n in candidate_notes}
 
         # Also pull direct supporting source notes of top memories if not already included
-        for m in llm_memories[:4]:
+        for m in llm_memories[:6]:
             for ev in m.evidences:
-                if ev.note_id not in seen_note_ids and len(candidate_notes) < 6:
+                if ev.note_id not in seen_note_ids and len(candidate_notes) < note_top_k:
                     src_note = self.note_repo.get(space_id, ev.note_id)
                     if src_note is not None and not src_note.is_forgotten:
                         candidate_notes.append(src_note)
@@ -248,18 +292,23 @@ class AskService:
         for pn in unseen_pending:
             seen_note_ids.add(pn.note_id)
 
+        llm_note_cap = (
+            min(12, max(6, note_top_k))
+            if (top_k is None or eff_top_k >= 6)
+            else max(3, eff_top_k + 1)
+        )
         reserve_pending = min(2, len(unseen_pending))
-        head_limit = max(4, 6 - reserve_pending)
+        head_limit = max(2, llm_note_cap - reserve_pending)
         raw_llm_notes: list[RawNote] = list(base_notes[:head_limit])
         llm_note_ids = {n.note_id for n in raw_llm_notes}
         for pn in unseen_pending:
-            if len(raw_llm_notes) >= 6:
+            if len(raw_llm_notes) >= llm_note_cap:
                 break
             if pn.note_id not in llm_note_ids:
                 raw_llm_notes.append(pn)
                 llm_note_ids.add(pn.note_id)
         for bn in base_notes[head_limit:]:
-            if len(raw_llm_notes) >= 6:
+            if len(raw_llm_notes) >= llm_note_cap:
                 break
             if bn.note_id not in llm_note_ids:
                 raw_llm_notes.append(bn)
@@ -356,6 +405,8 @@ class AskService:
             input_summary=q_clean,
             details={
                 "query_mode": query_mode,
+                "enumeration_intent": is_enum,
+                "effective_top_k": eff_top_k,
                 "has_sufficient_evidence": synthesis.has_sufficient_evidence,
                 "cited_memory_ids": valid_mem_ids,
                 "cited_note_ids": valid_note_ids,

@@ -713,7 +713,7 @@ class DeterministicLLMProvider:
         if memories:
             header = "相关记忆状态：" if not lines else "当前最新生效记忆："
             lines.append(header)
-            for m in memories[:8]:
+            for m in memories[:20]:
                 cited_mems.append(m.memory_id)
                 tag_kind = "推断" if m.assertion_kind == "inferred" else "陈述"
                 extra = ""
@@ -725,7 +725,7 @@ class DeterministicLLMProvider:
 
         if graph_relations:
             lines.append("关联图谱关系：")
-            for rel in graph_relations[:6]:
+            for rel in graph_relations[:12]:
                 from_label = rel.get("from_title") or rel.get("from_memory_id", "")
                 to_label = rel.get("to_title") or rel.get("to_memory_id", "")
                 rtype = rel.get("relation_type", "relates_to")
@@ -734,7 +734,7 @@ class DeterministicLLMProvider:
 
         if notes:
             lines.append("原始记录证据摘录：")
-            for n in notes[:6]:
+            for n in notes[:10]:
                 cited_notes.append(n.note_id)
                 lines.append(f"- ({n.event_time[:10]}) “{n.visible_content()}” [`{n.note_id}`]")
 

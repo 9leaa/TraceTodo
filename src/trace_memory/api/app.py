@@ -1303,12 +1303,26 @@ class ApiDispatcher:
                 question = str(payload.get("question", "")).strip()
                 if not question:
                     raise ValidationError("question is required")
+                raw_top_k = payload.get("top_k")
+                ask_top_k: int | None = None
+                if raw_top_k is not None and str(raw_top_k).strip() != "":
+                    if isinstance(raw_top_k, bool):
+                        raise ValidationError("参数 top_k 必须为正整数")
+                    try:
+                        parsed_tk = int(raw_top_k)
+                    except (TypeError, ValueError) as exc:
+                        raise ValidationError("参数 top_k 必须为正整数") from exc
+                    if parsed_tk < 1:
+                        raise ValidationError("参数 top_k 必须大于或等于 1")
+                    ask_top_k = min(25, parsed_tk)
                 guard_ask = self.container.input_guard.inspect_ask(question)
                 if guard_ask.allowed:
                     self._check_daily_quota(
                         user=user, space_id=space_id, require_llm_slot=True
                     )
-                return 200, self.container.ask_service.ask(space_id=space_id, question=question)
+                return 200, self.container.ask_service.ask(
+                    space_id=space_id, question=question, top_k=ask_top_k
+                )
 
             if method == "POST" and path == "/api/dream":
                 self._enforce_rate_and_quota(

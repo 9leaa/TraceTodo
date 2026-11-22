@@ -121,7 +121,13 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "question": {"type": "string", "description": "Question about current state or historical evolution"}
+                "question": {"type": "string", "description": "Question about current state or historical evolution"},
+                "top_k": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 25,
+                    "description": "Optional retrieval cap (auto-scales for summary/list questions when omitted)",
+                },
             },
             "required": ["question"],
         },
@@ -292,10 +298,17 @@ class MCPToolDispatcher:
 
             if name == "tm_ask":
                 question = str(args.get("question", ""))[:2000]
+                raw_top_k = args.get("top_k")
+                ask_top_k: int | None = None
+                if raw_top_k is not None and str(raw_top_k).strip() != "":
+                    parsed_tk = self._parse_int_arg(raw_top_k, 10, "top_k")
+                    if parsed_tk < 1:
+                        raise ValidationError("Argument top_k must be >= 1")
+                    ask_top_k = min(25, parsed_tk)
                 guard_ask = self.container.input_guard.inspect_ask(question)
                 if guard_ask.allowed and self.enforce_remote_guards:
                     self._guard_daily_quota(require_llm_slot=True)
-                data = self.container.ask_service.ask(self.space_id, question)
+                data = self.container.ask_service.ask(self.space_id, question, top_k=ask_top_k)
                 return self._ok_payload(data)
 
             if name == "tm_record":

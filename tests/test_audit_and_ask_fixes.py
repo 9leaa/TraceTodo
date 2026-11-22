@@ -559,6 +559,68 @@ class TestAuditAndAskFixes(unittest.TestCase):
         self.assertTrue(res_hist["has_sufficient_evidence"])
         self.assertIn("杭州", res_hist["answer"])
 
+    def test_ask_adaptive_topk_enumeration_and_explicit_override(self) -> None:
+        created_ids: list[str] = []
+        for idx in range(12):
+            res = self.app.change_service.apply(
+                ChangeProposal(
+                    space_id=self.space,
+                    action="create",
+                    memory_type="preference",
+                    title=f"架构规范条目{idx:02d}",
+                    summary=f"架构规范条目编号{idx:02d}要求模块必须严格解耦",
+                    canonical_key=f"pref:arch_rule_{idx:02d}",
+                    payload=PreferencePayload(target=f"架构规范条目{idx:02d}", polarity="positive").to_dict(),
+                )
+            )
+            assert res.memory is not None
+            created_ids.append(res.memory.memory_id)
+
+        stub = _CapturingAskLLM()
+        with patch.object(self.app.ask_service, "llm", stub):
+            res_enum = self.app.ask_service.ask(self.space, "列出我所有的架构规范条目有哪些？")
+            res_single = self.app.ask_service.ask(self.space, "架构规范条目模块的解耦要求")
+
+        self.assertEqual(len(stub.calls), 2)
+        enum_passed_ids = {m.memory_id for m in stub.calls[0]["memories"]}
+        self.assertEqual(len(enum_passed_ids.intersection(created_ids)), 12)
+
+        traces = {t["trace_id"]: t for t in self.app.trace_repo.list_traces(self.space, limit=20)}
+        t_enum = traces[res_enum["trace_id"]]
+        t_single = traces[res_single["trace_id"]]
+        self.assertTrue(t_enum["details"]["enumeration_intent"])
+        self.assertEqual(t_enum["details"]["effective_top_k"], 16)
+        self.assertFalse(t_single["details"]["enumeration_intent"])
+        self.assertEqual(t_single["details"]["effective_top_k"], 10)
+
+        # HTTP /api/ask explicit top_k override + validation
+        stub_api = _CapturingAskLLM()
+        with patch.object(self.app.ask_service, "llm", stub_api):
+            c_ok, r_ok = self.api.dispatch(
+                "POST",
+                "/api/ask",
+                body={"question": "架构规范条目有哪些？", "top_k": 3},
+                auth_token=self.token,
+            )
+        self.assertEqual(c_ok, 200, r_ok)
+        self.assertLessEqual(len(stub_api.calls[0]["memories"]), 3)
+
+        c_zero, err_zero = self.api.dispatch(
+            "POST",
+            "/api/ask",
+            body={"question": "架构规范条目", "top_k": 0},
+            auth_token=self.token,
+        )
+        self.assertEqual(c_zero, 400, err_zero)
+
+        c_bad, err_bad = self.api.dispatch(
+            "POST",
+            "/api/ask",
+            body={"question": "架构规范条目", "top_k": "bad"},
+            auth_token=self.token,
+        )
+        self.assertEqual(c_bad, 400, err_bad)
+
 
 if __name__ == "__main__":
     unittest.main()

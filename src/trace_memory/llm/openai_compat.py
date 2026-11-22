@@ -368,18 +368,18 @@ class OpenAICompatLLMProvider:
         ctx_mem = "\n".join(
             f"- [{m.memory_id}] ({m.memory_type} | {m.assertion_kind} | event_time={m.event_time or 'N/A'} | tags={list(m.tags)}) "
             f"{m.title}: {m.summary} | payload={m.payload}"
-            for m in memories[:8]
+            for m in memories[:24]
         )
         rel_lines = [
             f"- {r.get('from_title') or r.get('from_memory_id', '')} [{r.get('relation_type', 'relates_to')}] -> "
             f"{r.get('to_title') or r.get('to_memory_id', '')}"
             + (f" ({r['context']})" if r.get("context") else "")
             + f" (from_id={r.get('from_memory_id', '')}, to_id={r.get('to_memory_id', '')})"
-            for r in (graph_relations or [])[:12]
+            for r in (graph_relations or [])[:16]
         ]
         ctx_rels = "\n".join(rel_lines) if rel_lines else "（无）"
         ctx_note = "\n".join(
-            f"- [{n.note_id}] ({n.event_time}) {n.visible_content()}" for n in notes[:6]
+            f"- [{n.note_id}] ({n.event_time}) {n.visible_content()}" for n in notes[:12]
         )
         clock_anchor = format_beijing_prompt_clock()
         sys_prompt = (
@@ -398,7 +398,7 @@ class OpenAICompatLLMProvider:
         user_msg = (
             f"当前北京时间: {clock_anchor}\n查询模式: {query_mode}\n问题: {question}\n\n"
             f"候选记忆:\n{ctx_mem}\n\n关联图谱关系:\n{ctx_rels}\n\n"
-            f"原始记录:\n{ctx_note}\n\n历史版本:\n{history_versions[:12]}"
+            f"原始记录:\n{ctx_note}\n\n历史版本:\n{history_versions[:16]}"
         )
         parsed, tokens = self._chat_json(sys_prompt, user_msg)
         raw_mem_ids = parsed.get("cited_memory_ids")
