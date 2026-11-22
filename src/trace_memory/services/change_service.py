@@ -122,16 +122,23 @@ class ChangeService:
         )
         initial_status = "pending_review" if proposal.require_review else "active"
         eff_event_time = proposal.event_time or utc_now_iso()
+        eff_summary = proposal.summary.strip() or title
         create_payload = dict(proposal.payload)
         if proposal.memory_type == "semantic" and not str(create_payload.get("event_time", "")).strip():
             create_payload["event_time"] = eff_event_time
+        elif proposal.memory_type == "preference":
+            if not str(create_payload.get("target", "") or "").strip():
+                create_payload["target"] = title
+        elif proposal.memory_type == "episodic":
+            if not str(create_payload.get("event_summary", "") or "").strip():
+                create_payload["event_summary"] = eff_summary
         item = MemoryItem(
             memory_id=mem_id,
             space_id=proposal.space_id,
             permalink=permalink,
             memory_type=proposal.memory_type,
             title=title,
-            summary=proposal.summary.strip() or title,
+            summary=eff_summary,
             payload=create_payload,
             canonical_key=proposal.canonical_key,
             tags=proposal.tags,
@@ -306,7 +313,7 @@ class ChangeService:
                             actor_id=proposal.actor_id,
                             revision=note.revision + 1,
                             is_forgotten=True,
-                            forgotten_spans=(),
+                            forgotten_spans=note.forgotten_spans,
                             event_time=note.event_time,
                             created_at=note.created_at,
                             updated_at=utc_now_iso(),
@@ -792,7 +799,7 @@ class ChangeService:
                             actor_id="legacy_purge",
                             revision=note.revision + 1,
                             is_forgotten=True,
-                            forgotten_spans=(),
+                            forgotten_spans=note.forgotten_spans,
                             event_time=note.event_time,
                             created_at=note.created_at,
                             updated_at=utc_now_iso(),

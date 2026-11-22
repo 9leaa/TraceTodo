@@ -721,8 +721,19 @@ class IngestService:
                         )
                     break
 
-        existing = self.memory_repo.find_by_canonical_key(note.space_id, cand.canonical_key)
+        eff_canonical_key = cand.canonical_key
+        existing = self.memory_repo.find_by_canonical_key(note.space_id, eff_canonical_key)
         is_state_transition = effective_hint in ("complete_task", "cancel_task", "reopen_task")
+        cand_assignee = str(payload.get("assignee", "self") or "self").strip() or "self"
+        if (
+            existing is not None
+            and cand.memory_type == "task"
+            and existing.memory_type == "task"
+        ):
+            existing_assignee = str(existing.payload.get("assignee", "self") or "self").strip() or "self"
+            if existing_assignee != cand_assignee:
+                eff_canonical_key = f"{cand.canonical_key}:{cand_assignee}"
+                existing = self.memory_repo.find_by_canonical_key(note.space_id, eff_canonical_key)
         if (
             existing is not None
             and cand.memory_type == "task"
@@ -732,7 +743,6 @@ class IngestService:
             existing = None
         # Hybrid task reconciliation: handle typos ("告警" vs "告急") and LLM canonical_key drift!
         if existing is None and cand.memory_type == "task":
-            cand_assignee = str(payload.get("assignee", "self") or "self")
             existing = self._find_reconcilable_task(
                 note.space_id, cand, cand_assignee, include_done=is_state_transition
             )
@@ -752,7 +762,7 @@ class IngestService:
                 origin="ingest_extractor",
                 title=cand.title,
                 summary=cand.summary,
-                canonical_key=cand.canonical_key,
+                canonical_key=eff_canonical_key,
                 tags=cand.tags,
                 payload=payload,
                 assertion_kind=cand.assertion_kind,

@@ -16,6 +16,12 @@ _WORD_OR_CJK_RE = re.compile(
 )
 
 
+_CJK_SHORTHAND_MAP: tuple[tuple[str, str], ...] = (
+    ("半程马拉松", "半马"),
+    ("全程马拉松", "全马"),
+)
+
+
 def tokenize_for_fts(text: str) -> str:
     """Segment mixed CJK + ASCII text into FTS5-friendly space-separated tokens.
 
@@ -38,6 +44,9 @@ def tokenize_for_fts(text: str) -> str:
                     tokens.append(chunk[i : i + 2])
                 for ch in chunk:
                     tokens.append(ch)
+                for full_phrase, short_alias in _CJK_SHORTHAND_MAP:
+                    if full_phrase in chunk:
+                        tokens.append(short_alias)
         else:
             tokens.append(chunk)
     return " ".join(tokens)

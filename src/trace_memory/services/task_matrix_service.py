@@ -660,8 +660,21 @@ class TaskMatrixService:
             raise VersionConflictError(existing.memory_id, exp_ver, existing.version)
 
         base_payload = dict(existing.payload) if existing else {}
-        imp = max(1, min(5, self._parse_int(data.get("importance", base_payload.get("importance", 3)), 3, "importance")))
-        urg = max(1, min(5, self._parse_int(data.get("urgency", base_payload.get("urgency", 3)), 3, "urgency")))
+        raw_imp = data.get("importance")
+        if "importance" in data and raw_imp is not None and str(raw_imp).strip() != "":
+            imp = self._parse_int(raw_imp, 3, "importance")
+            if not 1 <= imp <= 5:
+                raise ValidationError("importance 必须在 1 到 5 之间")
+        else:
+            imp = max(1, min(5, self._parse_int(base_payload.get("importance", 3), 3, "importance")))
+
+        raw_urg = data.get("urgency")
+        if "urgency" in data and raw_urg is not None and str(raw_urg).strip() != "":
+            urg = self._parse_int(raw_urg, 3, "urgency")
+            if not 1 <= urg <= 5:
+                raise ValidationError("urgency 必须在 1 到 5 之间")
+        else:
+            urg = max(1, min(5, self._parse_int(base_payload.get("urgency", 3), 3, "urgency")))
         due_at = (
             str(data["due_at"] or "")
             if "due_at" in data
@@ -748,7 +761,9 @@ class TaskMatrixService:
         eff_urg, auto_quad, auto_score = compute_effective_urgency_and_quadrant(
             imp, urg, due_at, has_blockers=bool(base_payload.get("blockers"))
         )
-        manual_quad = str(data.get("quadrant") or "")
+        manual_quad = str(data.get("quadrant") or "").strip()
+        if manual_quad and manual_quad not in QUADRANTS:
+            raise ValidationError(f"非法的四象限枚举值: {manual_quad}")
         lock_quad = bool(data.get("lock_for_user", False))
         if lock_quad and manual_quad in QUADRANTS:
             quad = manual_quad
