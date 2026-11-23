@@ -977,51 +977,6 @@
     }
 
     /* Immersive Focus Lock Overlay */
-    .focus-overlay {
-      position: fixed;
-      inset: 0;
-      background: radial-gradient(circle at top, #1e1b4b 0%, #090d1a 70%);
-      color: #f8fafc;
-      z-index: 200;
-      display: none;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-    }
-    .focus-overlay.open { display: flex; }
-    .focus-card {
-      max-width: 520px;
-      width: 100%;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.14);
-      border-radius: 26px;
-      padding: 28px 24px;
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      gap: 18px;
-    }
-    .focus-timer {
-      font-size: 62px;
-      font-weight: 800;
-      font-variant-numeric: tabular-nums;
-      letter-spacing: 2px;
-      background: linear-gradient(135deg, #c4b5fd, #f9a8d4);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    .focus-progress-track {
-      height: 8px;
-      background: rgba(255,255,255,0.12);
-      border-radius: 999px;
-      overflow: hidden;
-    }
-    .focus-progress-bar {
-      height: 100%;
-      background: linear-gradient(90deg, #a855f7, #ec4899);
-      transition: width 0.5s linear;
-    }
     .focus-sublist {
       text-align: left;
       background: rgba(15,23,42,0.45);
@@ -2381,21 +2336,94 @@
       position: absolute;
       inset: 0;
       background: linear-gradient(180deg,
-        color-mix(in srgb, var(--bg) 46%, transparent) 0%,
-        color-mix(in srgb, var(--bg) 74%, transparent) 52%,
-        color-mix(in srgb, var(--bg) 88%, transparent) 100%);
+        color-mix(in srgb, var(--bg) 35%, transparent) 0%,
+        color-mix(in srgb, var(--bg) 56%, transparent) 52%,
+        color-mix(in srgb, var(--bg) 73%, transparent) 100%);
     }
     .ambient-scene-layer canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-    body.has-scene .card-box,
-    body.has-scene .duodo-card,
-    body.has-scene .memo-card,
-    body.has-scene .tl-card,
-    body.has-scene .analytic-card,
+    body { isolation: isolate; }
+    [data-theme] {
+      --theme-light: #94bfff;
+      --theme-wash: color-mix(in srgb, var(--theme-light) var(--theme-tint), transparent);
+      --theme-shape: radial-gradient(ellipse at 100% 0%, var(--theme-wash), transparent 72%);
+      --theme-radius: 16px;
+      --theme-tint: 16%;
+      --theme-shadow: 0 8px 24px;
+    }
+    [data-theme="westlake"] { --theme-light: #75dec1; --theme-radius: 22px; }
+    [data-theme="autumn"] {
+      --theme-light: #ffbe77; --theme-radius: 10px 26px 10px 10px;
+      --theme-shape: linear-gradient(150deg, transparent 28%, var(--theme-wash));
+    }
+    [data-theme="golden_gate"] {
+      --theme-light: #ffa58f; --theme-radius: 24px 24px 12px 12px;
+      --theme-shape: linear-gradient(180deg, var(--theme-wash), transparent 70%);
+    }
+    [data-theme="snow_peak"] {
+      --theme-light: #91baff; --theme-radius: 8px 22px 8px 22px;
+      --theme-shape: linear-gradient(125deg, var(--theme-wash), transparent 60%);
+    }
+    [data-theme="sakura"] {
+      --theme-light: #f7a5d5; --theme-radius: 25px;
+      --theme-shape: radial-gradient(ellipse at 10% 0%, var(--theme-wash), transparent 68%);
+    }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"]) {
+      --theme-tint: 9%;
+      --theme-shadow: 0 12px 36px;
+    }
+    [data-theme="deep_forest"] { --theme-light: #5fe7ae; --theme-radius: 22px 10px 22px 10px; }
+    [data-theme="nebula"] {
+      --theme-light: #ca8dff; --theme-radius: 25px;
+      --theme-shape: radial-gradient(ellipse at 90% 0%, var(--theme-wash), transparent 65%),
+        radial-gradient(ellipse at 0% 100%, #ec489916, transparent 55%);
+    }
+    [data-theme="cyber"] {
+      --theme-light: #40d9f8; --theme-radius: 4px 16px 4px 16px;
+      --theme-shape: repeating-linear-gradient(135deg, transparent 0 15px, var(--theme-wash) 15px 16px),
+        linear-gradient(135deg, var(--theme-wash), transparent 62%);
+    }
+    [data-theme="polar"] { --theme-light: #7fead6; --theme-radius: 12px 25px 12px 25px; }
+    body.has-scene { --theme-surface: color-mix(in srgb, var(--surface) 89%, transparent); }
+    body.has-scene .workspace-shell { background: transparent; }
+    [data-theme] body :is(.left-rail, .quad-box, .card-box, .task-card, .memo-card, .mem-card, .tl-card, .analytic-card, .kpi-card, .cd-big-card, .focus-stat-box, .duodo-card:not([class*="cal-macaron-"])) {
+      background: radial-gradient(ellipse at 85% 0%, color-mix(in srgb, var(--site-scene-light, transparent) 14%, transparent), transparent 74%),
+        var(--theme-shape), var(--card-base, var(--theme-surface, var(--surface)));
+      border-radius: var(--theme-radius);
+      border-color: color-mix(in srgb, var(--site-scene-light, var(--theme-light)) 38%, var(--border));
+      box-shadow: var(--theme-shadow) color-mix(in srgb, var(--bg) 82%, var(--primary) 18%), inset 0 1px #ffffff16;
+    }
+    [data-theme] body .task-card {
+      --card-light: color-mix(in srgb, var(--card-accent, var(--primary)) 30%, var(--site-scene-light, var(--theme-light)));
+      background: linear-gradient(115deg, color-mix(in srgb, var(--card-light) 18%, transparent), transparent 78%),
+        var(--theme-shape), var(--theme-surface, var(--surface));
+    }
+    [data-theme] body .task-card::before {
+      width: 3px;
+      background: linear-gradient(var(--card-accent, var(--primary)), color-mix(in srgb, var(--card-accent, var(--primary)) 30%, transparent));
+    }
+    [data-theme] body .memo-card.is-pinned { border-color: var(--primary); --card-base: var(--primary-soft); }
+    [data-theme] body .quad-box { box-shadow: none; }
+    :is([data-theme]:not([data-theme="classic"]) body, body.has-scene) .hero-kpi {
+      color: var(--heading);
+      background: var(--theme-shape), linear-gradient(110deg, color-mix(in srgb, var(--kpi-light) 17%, transparent), transparent 74%),
+        var(--theme-surface, var(--surface));
+      border: 1px solid color-mix(in srgb, var(--theme-light) 48%, var(--border));
+      border-inline-start: 3px solid var(--kpi-light);
+      border-radius: var(--theme-radius);
+      box-shadow: var(--theme-shadow) color-mix(in srgb, var(--bg) 82%, var(--primary) 18%);
+    }
+    .hero-kpi.coral { --kpi-light: #fb7185; }
+    .hero-kpi.indigo { --kpi-light: #818cf8; }
+    .hero-kpi.teal { --kpi-light: #2dd4bf; }
+    .hero-kpi.violet { --kpi-light: #c084fc; }
+    .quad-Q1_do_first { --card-base: var(--q1-bg); }
+    .quad-Q2_schedule { --card-base: var(--q2-bg); }
+    .quad-Q3_delegate { --card-base: var(--q3-bg); }
+    .quad-Q4_eliminate { --card-base: var(--q4-bg); }
     body.has-scene .modal,
     body.has-scene .duodo-sheet {
       background: color-mix(in srgb, var(--surface) 87%, transparent);
     }
-    body.has-scene .task-card { background: color-mix(in srgb, var(--surface) 93%, transparent); }
     body.has-scene header {
       background: color-mix(in srgb, var(--surface) 80%, transparent);
       backdrop-filter: blur(12px);
@@ -2462,7 +2490,21 @@
       border: 1px dashed var(--border);
     }
 
-    .focus-overlay { overflow: hidden; padding: 56px 24px 196px; }
+    body:has(.focus-overlay[open]) { overflow: hidden; }
+    .focus-overlay {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      max-width: none;
+      max-height: none;
+      border: 0;
+      color: #f8fafc;
+      color-scheme: dark;
+      background: radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--scene-acc, #a78bfa) 26%, #080b15), #080b15 72%);
+      overflow: hidden;
+    }
+    .focus-overlay[open] { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
     .focus-scene-layer { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
     .focus-scene-layer img {
       position: absolute;
@@ -2474,20 +2516,18 @@
     }
     .focus-scene-dim { position: absolute; inset: 0; background: #04060f; opacity: 0.45; transition: opacity 0.25s ease; }
     .focus-scene-layer canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-    .focus-overlay > .focus-card { position: relative; z-index: 1; }
+    .focus-stage,
     .focus-overlay > .focus-topbar,
-    .focus-overlay > .focus-scene-dock { z-index: 1; }
+    .focus-overlay > .focus-scene-dock { position: relative; z-index: 1; }
     .focus-topbar {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 10px;
-      padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+      flex-wrap: wrap;
+      gap: 6px 12px;
+      padding: calc(10px + env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 10px max(14px, env(safe-area-inset-left));
     }
+    .focus-top-actions { display: flex; gap: 6px; flex-wrap: wrap; }
     .focus-mode-chip {
       font-size: 11.5px;
       letter-spacing: 1.2px;
@@ -2505,7 +2545,7 @@
       color: #f1f5f9;
       border: 1px solid rgba(255, 255, 255, 0.22);
       border-radius: 999px;
-      padding: 5px 14px;
+      padding: 8px 12px;
       font-size: 12px;
       font-weight: 700;
       cursor: pointer;
@@ -2515,35 +2555,83 @@
     }
     .focus-sound-btn:hover { background: rgba(30, 24, 60, 0.7); }
     .focus-sound-btn.muted { color: #94a3b8; border-color: rgba(148, 163, 184, 0.35); }
-    .focus-overlay .focus-card {
-      margin: auto 0;
-      background: rgba(8, 10, 22, 0.55);
-      border: 1px solid color-mix(in srgb, var(--scene-acc, #a855f7) 45%, rgba(255, 255, 255, 0.14));
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      max-height: calc(100vh - 250px);
+    .focus-stage {
       overflow-y: auto;
       scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+      overscroll-behavior: contain;
+      display: flex;
+      padding: 12px max(14px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
     }
-    .focus-overlay.glow-on .focus-card { animation: focusBreath 5s ease-in-out infinite; }
+    .focus-card {
+      width: min(100%, 520px);
+      margin: auto;
+      display: grid;
+      gap: clamp(10px, 2vh, 18px);
+      text-align: center;
+    }
+    .focus-dial {
+      width: min(100%, clamp(156px, min(58vw, 45dvh), 350px));
+      aspect-ratio: 1;
+      margin: 0 auto;
+      display: grid;
+      place-items: center;
+      position: relative;
+      border-radius: 50%;
+      background: radial-gradient(circle, #070a14b8, #070a144f 65%, transparent 74%);
+    }
+    .focus-overlay.glow-on .focus-dial { animation: focusBreath 6s ease-in-out infinite; }
     @keyframes focusBreath {
-      0%, 100% { box-shadow: 0 0 26px color-mix(in srgb, var(--scene-acc, #a855f7) 22%, transparent); }
-      50% { box-shadow: 0 0 58px color-mix(in srgb, var(--scene-acc, #a855f7) 48%, transparent); }
+      0%, 100% { box-shadow: 0 0 30px color-mix(in srgb, var(--scene-acc, #a78bfa) 16%, transparent); }
+      50% { box-shadow: 0 0 68px color-mix(in srgb, var(--scene-acc, #a78bfa) 32%, transparent); }
     }
-    .focus-overlay .focus-timer {
-      background: linear-gradient(135deg, var(--scene-acc, #c4b5fd), var(--scene-acc2, #f9a8d4));
-      -webkit-background-clip: text;
-      background-clip: text;
+    .focus-dial svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+    .focus-dial circle { fill: none; stroke: #ffffff42; stroke-width: 1; }
+    .focus-dial .focus-dial-progress {
+      stroke: url(#focusDialGradient);
+      stroke-width: 2;
+      stroke-linecap: round;
+      transition: stroke-dashoffset .35s linear;
     }
-    .focus-overlay .focus-progress-bar {
-      background: linear-gradient(90deg, var(--scene-acc, #a855f7), var(--scene-acc2, #ec4899));
-      box-shadow: 0 0 12px color-mix(in srgb, var(--scene-acc, #a855f7) 65%, transparent);
+    .focus-overlay[data-mode="stopwatch"] .focus-dial-progress { visibility: hidden; }
+    .focus-dial-readout { position: relative; }
+    .focus-timer {
+      font-size: clamp(34px, min(11vw, 11dvh), 92px);
+      font-weight: 300;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -.055em;
+      line-height: 1.05;
+      text-shadow: 0 2px 16px #000;
     }
+    .focus-timer.long-clock { font-size: clamp(27px, min(8vw, 8dvh), 70px); }
+    .focus-clock-caption { font-size: 11px; letter-spacing: .24em; color: #f0eefa; text-shadow: 0 1px 8px #000; }
+    .focus-task-title {
+      justify-self: center;
+      max-width: 100%;
+      padding: 4px 14px;
+      border-radius: 16px;
+      background: #070a1499;
+      overflow-wrap: anywhere;
+      font-size: clamp(16px, 3vw, 23px);
+      font-weight: 600;
+    }
+    .focus-session-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; }
+    .focus-session-actions button {
+      min-height: 40px;
+      padding-inline: 15px;
+      border-radius: 999px;
+      color: #f1f5f9;
+      border-color: #ffffff38;
+      background: #101522bb;
+    }
+    .focus-session-actions button:hover { background: #242d47; }
+    .focus-session-actions .focus-finish {
+      color: #fff;
+      border-color: color-mix(in srgb, var(--scene-acc, #a78bfa) 65%, #ffffff36);
+      background: color-mix(in srgb, var(--scene-acc, #a78bfa) 32%, #111526);
+    }
+    .focus-session-actions .focus-finish:hover { filter: brightness(1.18); }
+    .focus-scene-dock[hidden] { display: none; }
     .focus-scene-dock {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
       display: grid;
       gap: 8px;
       padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
@@ -2551,8 +2639,9 @@
       border-top: 1px solid rgba(255, 255, 255, 0.14);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
-      max-height: min(42vh, 196px);
+      max-height: min(42dvh, 270px);
       overflow-y: auto;
+      overscroll-behavior: contain;
       scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
     }
     .focus-scene-dock::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.3); border: 2.5px solid transparent; background-clip: padding-box; }
@@ -2667,17 +2756,15 @@
     }
     .fs-action-btn:hover { background: rgba(255, 255, 255, 0.2); }
     @media (max-width: 640px) {
-      .focus-overlay { padding: 52px 14px 236px; }
-      .focus-overlay .focus-card { max-height: calc(100vh - 300px); padding: 20px 16px; gap: 13px; }
-      .focus-overlay .focus-timer { font-size: 46px; }
-      .focus-scene-dock { max-height: min(46vh, 236px); }
       .fs-ctrl-grid { grid-template-columns: repeat(2, 1fr); }
       .header-theme-art.has-scene { width: 200px; opacity: 0.35; }
     }
     @media (prefers-reduced-motion: reduce) {
-      .ambient-scene-layer img { animation: none; }
-      .focus-overlay.glow-on .focus-card { animation: none; }
+      .ambient-scene-layer img, .focus-overlay.glow-on .focus-dial { animation: none; }
+      .ambient-scene-layer img, .focus-scene-layer img, .focus-dial-progress { transition: none; }
+      .ambient-scene-layer canvas, .focus-scene-layer canvas { display: none; }
     }
+    body:not(.scene-motion) .ambient-scene-layer img { animation: none; }
   </style>
 </head>
 <body>
@@ -3535,26 +3622,43 @@
   </div>
 
   <!-- Immersive Focus Lock-Screen Overlay -->
-  <div class="focus-overlay" id="focusOverlay">
+  <dialog class="focus-overlay" id="focusOverlay" aria-labelledby="focusTaskTitle" oncancel="onFocusLockCancel(event)">
     <div class="focus-scene-layer" aria-hidden="true">
       <img id="focusSceneImg" alt="" />
       <div class="focus-scene-dim" id="focusSceneDim"></div>
       <canvas id="focusSceneCanvas"></canvas>
     </div>
     <div class="focus-topbar">
-      <span class="focus-mode-chip">🔒 沉浸专注锁屏模式 · DEEP WORK</span>
-      <button type="button" class="focus-sound-btn" id="focusSoundBtn" onclick="toggleSoundMuted()">🔊 环境音开</button>
-    </div>
-    <div class="focus-card">
-      <h2 id="focusTaskTitle" style="font-size:21px;line-height:1.35;">任务名称</h2>
-      <div class="focus-timer" id="focusTimerText">25:00</div>
-      <div class="focus-progress-track">
-        <div class="focus-progress-bar" id="focusProgressBar" style="width:0%;"></div>
+      <span class="focus-mode-chip" id="focusModeChip">番茄专注</span>
+      <div class="focus-top-actions">
+        <button type="button" class="focus-sound-btn" id="focusSoundBtn" onclick="toggleSoundMuted()">🔊 环境音开</button>
+        <button type="button" class="focus-sound-btn" id="focusSceneToggle" aria-controls="focusSceneDock" aria-expanded="false" onclick="setFocusSceneDockOpen(document.getElementById('focusSceneDock').hidden)">氛围设置</button>
       </div>
+    </div>
+    <div class="focus-stage">
+    <div class="focus-card">
+      <div class="focus-dial">
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <defs>
+            <linearGradient id="focusDialGradient">
+              <stop stop-color="var(--scene-acc, #c4b5fd)" />
+              <stop offset="1" stop-color="var(--scene-acc2, #f9a8d4)" />
+            </linearGradient>
+          </defs>
+          <circle cx="100" cy="100" r="96" />
+          <circle class="focus-dial-progress" id="focusProgressBar" cx="100" cy="100" r="96" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100" />
+        </svg>
+        <div class="focus-dial-readout">
+          <div class="focus-timer" id="focusTimerText" role="timer">25:00</div>
+          <div class="focus-clock-caption" id="focusClockCaption">剩余时间</div>
+        </div>
+      </div>
+      <h2 id="focusTaskTitle" class="focus-task-title" tabindex="-1" autofocus>当前专注</h2>
       <div class="focus-sublist" id="focusSubtasksBox" style="display:none;"></div>
-      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:4px;">
-        <button type="button" class="duodo-btn" onclick="completeFocusAndTask()">✅ 完成任务并结束</button>
-        <button type="button" onclick="promptAbortFocus()" style="background:rgba(255,255,255,0.12);color:#e2e8f0;border:1px solid rgba(255,255,255,0.2);">提前退出专注</button>
+      <div class="focus-session-actions">
+        <button type="button" class="focus-finish" id="focusFinishBtn" onclick="completeFocusAndTask()">结束并记录</button>
+        <button type="button" id="focusPauseBtn" onclick="togglePauseUnifiedFocus()">暂停</button>
+        <button type="button" id="focusAbortBtn" onclick="promptAbortFocus()">提前退出</button>
       </div>
       <div id="focusAbortBox" style="display:none;background:rgba(15,23,42,0.75);padding:14px;border-radius:14px;text-align:left;gap:10px;">
         <div style="font-size:13px;font-weight:600;color:#fca5a5;">⚠️ 专注尚未结束，请记录中断原因：</div>
@@ -3563,14 +3667,15 @@
           <button type="button" class="chip-btn" onclick="document.getElementById('focusAbortReason').value='需要补充资料'">需要补充资料</button>
           <button type="button" class="chip-btn" onclick="document.getElementById('focusAbortReason').value='休息调整'">休息调整</button>
         </div>
-        <input id="focusAbortReason" placeholder="填写中断原因..." style="width:100%;background:#1e293b;color:#fff;border-color:#475569;" />
+        <input id="focusAbortReason" aria-label="中断原因" placeholder="填写中断原因..." style="width:100%;background:#1e293b;color:#fff;border-color:#475569;" />
         <div style="display:flex;gap:8px;justify-content:flex-end;">
-          <button type="button" onclick="document.getElementById('focusAbortBox').style.display='none'" style="background:transparent;color:#cbd5e1;border-color:#475569;">继续专注</button>
+          <button type="button" onclick="dismissFocusAbort()" style="background:transparent;color:#cbd5e1;border-color:#475569;">继续专注</button>
           <button type="button" onclick="confirmAbortFocus()" style="background:#dc2626;color:#fff;border:none;">确认退出并记录</button>
         </div>
       </div>
     </div>
-    <div class="focus-scene-dock" id="focusSceneDock">
+    </div>
+    <div class="focus-scene-dock" id="focusSceneDock" aria-label="氛围设置" hidden>
       <div class="focus-scene-strip" id="focusSceneStrip"></div>
       <div class="fs-ctrl-grid">
         <div class="fs-ctrl">
@@ -3598,7 +3703,7 @@
         <span style="font-size:10.5px;color:#94a3b8;margin-left:auto;">沉浸参数仅保存于本机</span>
       </div>
     </div>
-  </div>
+  </dialog>
 
   <!-- Account Auth / Profile Modal -->
   <div class="modal-backdrop" id="authModal" onclick="if(event.target===this && !authLockOpen) closeAuthModal()">
@@ -5079,10 +5184,6 @@
         timer: null,
       };
 
-      document.getElementById('focusTaskTitle').textContent = titleText;
-      document.getElementById('focusAbortBox').style.display = 'none';
-      document.getElementById('focusAbortReason').value = '';
-      renderFocusSubtasks();
       updateFocusTimerUI();
 
       if (openLockOverlay) {
@@ -5115,12 +5216,49 @@
 
     function enterFocusLockOverlay() {
       if (!focusState) return;
+      const overlay = document.getElementById('focusOverlay');
+      if (overlay.open) return;
+      overlay.dataset.mode = focusState.mode;
+      document.getElementById('focusModeChip').textContent = focusState.mode === 'stopwatch' ? '正计时专注' : '番茄专注';
       document.getElementById('focusTaskTitle').textContent = focusState.taskTitle;
+      document.getElementById('focusFinishBtn').textContent = focusState.task ? '完成任务并结束' : '结束并记录';
+      document.getElementById('focusAbortReason').value = '';
+      document.getElementById('focusAbortBox').style.display = 'none';
+      setFocusSceneDockOpen(false);
       renderFocusSubtasks();
       updateFocusTimerUI();
-      document.getElementById('focusOverlay').classList.add('open');
+      overlay.classList.add('open');
+      overlay.showModal();
+      overlay.append(document.getElementById('toast'));
       applyFocusSceneDOM();
       startAmbience();
+    }
+
+    function setFocusSceneDockOpen(open) {
+      document.getElementById('focusSceneDock').hidden = !open;
+      document.getElementById('focusSceneToggle').setAttribute('aria-expanded', String(open));
+    }
+
+    function onFocusLockCancel(event) {
+      event.preventDefault();
+      if (!document.getElementById('focusSceneDock').hidden) {
+        setFocusSceneDockOpen(false);
+        document.getElementById('focusSceneToggle').focus();
+      } else if (document.getElementById('focusAbortBox').style.display !== 'none') {
+        dismissFocusAbort();
+      } else {
+        promptAbortFocus();
+      }
+    }
+
+    function closeFocusLockOverlay() {
+      const overlay = document.getElementById('focusOverlay');
+      if (overlay.open) {
+        document.body.append(document.getElementById('toast'));
+        overlay.classList.remove('open');
+        overlay.close();
+      }
+      stopAmbience();
       ensureFxLoop();
     }
 
@@ -5159,10 +5297,12 @@
       const ratio = isSw
         ? ((focusState.elapsedSeconds % 1500) / 1500)
         : (focusState.totalSeconds > 0 ? (focusState.totalSeconds - displaySec) / focusState.totalSeconds : 0);
-      const pct = Math.min(100, Math.max(0, Math.round(ratio * 100)));
-
-      document.getElementById('focusTimerText').textContent = clockTxt;
-      document.getElementById('focusProgressBar').style.width = `${pct}%`;
+      const clock = document.getElementById('focusTimerText');
+      clock.textContent = clockTxt;
+      clock.classList.toggle('long-clock', displaySec >= 3600);
+      document.getElementById('focusProgressBar').setAttribute('stroke-dashoffset', (100 * (1 - Math.min(1, Math.max(0, ratio)))).toFixed(2));
+      document.getElementById('focusClockCaption').textContent = focusState.paused ? '已暂停' : (isSw ? '已专注' : '剩余时间');
+      document.getElementById('focusPauseBtn').textContent = focusState.paused ? '继续' : '暂停';
 
       const fcClk = document.getElementById('fcClockDisplay');
       const fcHint = document.getElementById('fcStatusHint');
@@ -5186,8 +5326,7 @@
       clearInterval(focusState.timer);
       const st = focusState;
       focusState = null;
-      document.getElementById('focusOverlay').classList.remove('open');
-      stopAmbience();
+      closeFocusLockOverlay();
       syncIdleFocusClockUI();
 
       const effDur = st.mode === 'pomodoro' && st.remainingSeconds <= 0
@@ -5218,8 +5357,15 @@
     }
 
     function promptAbortFocus() {
+      if (!document.getElementById('focusSceneDock').hidden) setFocusSceneDockOpen(false);
       const box = document.getElementById('focusAbortBox');
       box.style.display = 'grid';
+      document.getElementById('focusAbortReason').focus();
+    }
+
+    function dismissFocusAbort() {
+      document.getElementById('focusAbortBox').style.display = 'none';
+      document.getElementById('focusAbortBtn').focus();
     }
 
     async function abortInlineFocusPrompt() {
@@ -5241,8 +5387,7 @@
       clearInterval(focusState.timer);
       const st = focusState;
       focusState = null;
-      document.getElementById('focusOverlay').classList.remove('open');
-      stopAmbience();
+      closeFocusLockOverlay();
       syncIdleFocusClockUI();
 
       await apiPost('/api/focus/record', {
@@ -7741,7 +7886,7 @@
       { id: 'portrait_f', name: '樱花佳人', icon: '🌸', fx: 'petals', acc: '#f9a8d4', acc2: '#c4b5fd', audio: 'vinyl' },
     ];
     const SCENE_INTENSITY_LABELS = ['关闭', '微光', '标准', '沉浸'];
-    const SCENE_INTENSITY_OPACITY = [0, 0.2, 0.36, 0.58];
+    const SCENE_INTENSITY_OPACITY = [0, 0.26, 0.48, 0.74];
     const sceneState = {
       site: localStorage.getItem('tm_scene_id') || 'none',
       intensity: Math.max(0, Math.min(3, Number(localStorage.getItem('tm_scene_intensity') ?? 2) || 0)),
@@ -7772,6 +7917,9 @@
       const sc = sceneById(sceneState.site);
       const layerOn = sc.id !== 'none' && sceneState.intensity > 0;
       document.body.classList.toggle('has-scene', layerOn);
+      document.body.classList.toggle('scene-motion', layerOn && sceneState.motion);
+      if (layerOn) document.body.style.setProperty('--site-scene-light', sc.acc);
+      else document.body.style.removeProperty('--site-scene-light');
       const img = document.getElementById('ambientSceneImg');
       if (img) {
         const url = layerOn ? sceneImgUrl(sc.id) : '';
@@ -8108,9 +8256,12 @@
       ctx.globalCompositeOperation = 'source-over';
     }
 
+    const reducedSceneMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
     function fxTargetsActive() {
-      const focusOpen = Boolean(document.getElementById('focusOverlay')?.classList.contains('open'));
-      const ambientOn = document.body.classList.contains('has-scene') && sceneState.intensity > 0 && sceneState.motion && Boolean(sceneById(sceneState.site).fx);
+      const lockOpen = document.getElementById('focusOverlay').open;
+      const focusOpen = lockOpen && !reducedSceneMotion.matches && sceneState.particles && sceneState.density > 0 && Boolean(sceneById(resolvedFocusSceneId()).fx);
+      const ambientOn = !lockOpen && !reducedSceneMotion.matches && document.body.classList.contains('scene-motion') && Boolean(sceneById(sceneState.site).fx);
       return { focusOpen, ambientOn };
     }
 
@@ -8127,6 +8278,13 @@
       const eng = _fxEngine;
       const t = fxTargetsActive();
       if (!t.focusOpen && !t.ambientOn) {
+        for (const key of ['focus', 'ambient']) {
+          if (!eng[`${key}Key`]) continue;
+          const canvas = document.getElementById(`${key}SceneCanvas`);
+          canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+          eng[`${key}Key`] = '';
+          eng[key] = [];
+        }
         eng.running = false;
         eng.raf = 0;
         return;
@@ -8189,6 +8347,7 @@
       _fxEngine.ambientKey = '';
       ensureFxLoop();
     });
+    reducedSceneMotion.addEventListener('change', ensureFxLoop);
 
     // ----- Scene ambience audio (WebAudio, single master mute) -----
     let _amb = null;
@@ -11002,6 +11161,7 @@
 
     document.addEventListener('keydown', ev => {
       if (ev.key !== 'Escape') return;
+      if (document.getElementById('focusOverlay').open) return;
       if (document.getElementById('mediaLightboxModal')?.classList.contains('open')) {
         closeMediaLightbox();
         return;
