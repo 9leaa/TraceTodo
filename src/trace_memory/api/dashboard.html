@@ -3246,7 +3246,7 @@
           <div id="askResult"></div>
         </div>
         <div class="card-box">
-          <h3>🔍 全链路可观测审计日志</h3>
+          <h3>🔍 问答全链路审计</h3>
           <div id="traceList" class="list-stack"></div>
         </div>
       </div>
@@ -6845,7 +6845,7 @@
           askResultEl.innerHTML = `
           <div style="margin-top:10px;" class="meta-row">
             <span class="tag score">${modeText}</span>
-            <span class="tag" style="background:${res.has_sufficient_evidence ? '#dcfce7;color:#166534' : '#fef3c7;color:#92400e'}">${res.has_sufficient_evidence ? '✓ 证据充分' : '⚠️ 证据不足安全拒答'}</span>
+            <span class="tag" style="background:${res.has_sufficient_evidence ? '#dcfce7;color:#166534' : '#fef3c7;color:#92400e'}">${res.planning_status === 'overflow' ? '子问题超出上限' : (res.has_sufficient_evidence ? '✓ 证据充分' : '⚠️ 证据不足安全拒答')}</span>
             <span class="tag">Trace: ${esc(res.trace_id)}</span>
           </div>
           <div class="answer-box">${renderMarkdownHtml(res.answer || '')}</div>
@@ -6856,20 +6856,51 @@
           </div>
         `;
         }
-        loadTraces();
+        loadTraces(res.trace_id);
       });
     }
 
-    async function loadTraces() {
+    function traceStage(label, payload, duration, open = false) {
+      const ms = typeof duration === 'number' ? ` · ${esc(duration)} ms` : '';
+      return `
+        <details ${open ? 'open' : ''} style="margin-top:8px;">
+          <summary style="cursor:pointer;font-size:13px;font-weight:600;">${esc(label)}${ms}</summary>
+          <pre style="white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0 0;font-size:12px;">${esc(JSON.stringify(payload, null, 2))}</pre>
+        </details>`;
+    }
+
+    function renderTraceStages(details, open) {
+      const p = details?.pipeline;
+      if (!p) return `<div style="font-size:12px;overflow-wrap:anywhere;color:var(--muted);">${esc(JSON.stringify(details || {}))}</div>`;
+      const react = p.react || {};
+      const planning = p.planning || {};
+      const retrievals = (p.retrievals || []).map(r =>
+        traceStage(`子问题 ${r.question_id} · ${r.query} · ${r.memories?.length || 0} 张卡 / ${r.notes?.length || 0} 条原话`, r, r.duration_ms)
+      ).join('');
+      const toolStages = (rows, empty, label) => rows.length ? rows.map(r =>
+        traceStage(`${label} ${r.question_id || (r.round ? `第 ${r.round} 轮` : '')} · ${r.name} · ${r.status}`, r, r.duration_ms)
+      ).join('') : `<p style="font-size:12px;color:var(--muted);">${esc(empty)}</p>`;
+      return `
+        ${traceStage('轻量分流', planning, planning.duration_ms, open)}
+        <div style="margin-top:8px;font-size:13px;font-weight:600;">首批检索与工具${typeof p.initial_batch_duration_ms === 'number' ? ` · ${esc(p.initial_batch_duration_ms)} ms` : ''}</div>
+        ${retrievals}
+        ${toolStages(p.initial_tools || [], '无首批工具调用', '首批工具')}
+        ${traceStage('ReAct 结果', {stop_reason:react.stop_reason,result:react.result}, react.duration_ms, open)}
+        ${(react.rounds || []).map(r => traceStage(`ReAct 第 ${r.round} 轮 · ${r.status}`, r, r.duration_ms)).join('')}
+        ${toolStages(react.follow_up_tools || [], '无后续工具调用', '后续工具')}
+      `;
+    }
+
+    async function loadTraces(focusTraceId = '') {
       const data = await apiGet('/api/traces');
       const traces = data.traces || [];
       document.getElementById('traceList').innerHTML = traces.map(t => `
         <div class="mem-card">
           <div class="task-top">
             <strong>[${esc(t.operation)}] ${esc(t.input_summary)}</strong>
-            <span class="tag">${t.duration_ms} ms · ${t.tokens_used} tok</span>
+            <span class="tag">${esc(t.duration_ms)} ms · ${esc(t.tokens_used)} tok</span>
           </div>
-          <div style="font-size:12px;color:var(--muted);">${esc(JSON.stringify(t.details))}</div>
+          ${renderTraceStages(t.details, t.trace_id === focusTraceId)}
         </div>
       `).join('');
     }

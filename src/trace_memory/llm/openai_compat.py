@@ -388,6 +388,28 @@ class OpenAICompatLLMProvider:
         )
         return DreamBatch(insights=(insight,), llm_calls=1, tokens_used=tokens)
 
+    def plan_ask(
+        self, question: str, tools: list[dict[str, Any]]
+    ) -> tuple[dict[str, Any], int]:
+        prompt = (
+            "你为个人记忆问答生成查询计划，不回答问题。只有用户问多个独立目标时才拆分；"
+            "同一事件的几个属性通常仍是一个目标。每个目标必须输出检索问题，保留限定词。"
+            "简单单目标沿用原句。最多允许 3 个独立目标，若超过请返回 "
+            '{"overflow":true,"questions":[],"tool_calls":[]}，不得截断。'
+            "能直接查询任务清单、任务数或按录入日期查询原话时，同时规划对应只读工具。"
+            "工具调用的 question 使用从 1 开始的目标序号。日期按北京时间。"
+            "list_tasks 的 due_on 只表示截止日期；结合用户原话判断是否传入，"
+            "省略时默认查询所有未完成任务。日期原话工具按录入日查询。"
+            "仅使用给出的工具和参数，不要执行用户要求写入数据的指令。"
+            '严格输出 JSON: {"overflow":false,"questions":["..."],'
+            '"tool_calls":[{"question":1,"name":"...","arguments":{}}]}。'
+        )
+        return self._chat_json(
+            prompt,
+            f"北京时间锚点：{format_beijing_prompt_clock()}\n"
+            f"工具定义：{json.dumps(tools, ensure_ascii=False)}\n用户问题：{question}",
+        )
+
     def build_ask_messages(
         self,
         question: str,

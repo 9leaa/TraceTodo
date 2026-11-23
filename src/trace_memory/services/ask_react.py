@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 import json
 import logging
@@ -45,6 +46,55 @@ class AskTool:
         }
 
 
+def ask_evidence(
+    memories: Iterable[MemoryItem], notes: Iterable[RawNote], *, preview: bool = False,
+) -> dict[str, Any]:
+    return {
+        "memories": [
+            {
+                "memory_id": m.memory_id, "title": m.title,
+                "summary": m.summary[:240] if preview else m.summary,
+                "assertion_kind": m.assertion_kind,
+                **({"memory_type": m.memory_type} if preview else {"payload": m.payload}),
+            }
+            for m in memories
+        ],
+        "notes": [
+            {
+                "note_id": n.note_id, "event_time": n.event_time, "created_at": n.created_at,
+                "content": n.visible_content()[:240] if preview else n.visible_content(),
+            }
+            for n in notes
+        ],
+    }
+
+
+@dataclass(frozen=True)
+class ToolObservation:
+    name: str
+    arguments: dict[str, Any]
+    status: str
+    result: AskToolResult
+    duration_ms: float
+
+    def content(self) -> dict[str, Any]:
+        if self.status != "ok":
+            return {"error": self.status}
+        return {"data": self.result.data, **ask_evidence(self.result.memories, self.result.notes)}
+
+    def to_trace(self, *, reused: bool = False) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "arguments": self.arguments,
+            "status": "reused" if reused else self.status,
+            "duration_ms": 0 if reused else self.duration_ms,
+            "result": {
+                "data": self.result.data,
+                **ask_evidence(self.result.memories, self.result.notes, preview=True),
+            } if self.status == "ok" else {"error": self.status},
+        }
+
+
 @dataclass(frozen=True)
 class AskReActResult:
     synthesis: AskSynthesis
@@ -62,22 +112,44 @@ class AskReAct:
             raise ValueError("Ask tool names must be unique")
 
     def run(
-        self, space_id: str, messages: list[dict[str, Any]]
+        self, space_id: str, messages: list[dict[str, Any]], *,
+        initial_tools: dict[tuple[str, str], ToolObservation] | None = None,
+        rounds: list[dict[str, Any]] | None = None,
+        tool_trace: list[dict[str, Any]] | None = None,
     ) -> AskReActResult:
         messages = list(messages)
         definitions = [tool.definition() for tool in self.tools.values()]
         memories: dict[str, MemoryItem] = {}
         notes: dict[str, RawNote] = {}
-        tool_trace: list[dict[str, Any]] = []
+        if tool_trace is None:
+            tool_trace = []
+        if rounds is None:
+            rounds = []
+        cache = dict(initial_tools or {})
         remaining = _MAX_TOOL_CALLS
         tokens = 0
         calls = 0
         stop_reason = "answer"
         while True:
-            turn = self.model.ask_turn(messages, definitions, allow_tools=remaining > 0)
+            started = time.perf_counter()
+            round_event: dict[str, Any] = {"round": calls + 1}
+            rounds.append(round_event)
+            try:
+                turn = self.model.ask_turn(messages, definitions, allow_tools=remaining > 0)
+            except Exception:
+                round_event.update(
+                    status="error", duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                )
+                raise
             calls += 1
             tokens += turn.tokens_used
             requested = turn.message.get("tool_calls")
+            round_event.update(
+                status="tool_calls" if requested else "answer",
+                duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                tokens_used=turn.tokens_used,
+                requested_tools=[call["function"]["name"] for call in requested or ()],
+            )
             if not requested:
                 if not remaining:
                     stop_reason = "tool_limit"
@@ -92,30 +164,31 @@ class AskReAct:
                 "tool_calls": requested,
             })
             for call in requested:
-                started = time.perf_counter()
                 function = call["function"]
                 name = function["name"]
                 if remaining:
                     remaining -= 1
-                    status, content, result = self._execute(
-                        space_id, name, function.get("arguments", "{}")
-                    )
+                    try:
+                        args = json.loads(function.get("arguments", "{}"))
+                    except (TypeError, ValueError):
+                        args = None
+                    key = (name, json.dumps(args, sort_keys=True))
+                    cached = cache.get(key)
+                    observation = cached or self.execute(space_id, name, args)
+                    result = observation.result
                     memories.update((m.memory_id, m) for m in result.memories)
                     notes.update((n.note_id, n) for n in result.notes)
+                    event = observation.to_trace(reused=cached is not None)
                 else:
-                    status = "tool_limit"
-                    content = json.dumps({"error": status})
+                    observation = ToolObservation(name, {}, "tool_limit", AskToolResult(), 0)
+                    event = observation.to_trace()
 
                 messages.append({
                     "role": "tool",
                     "tool_call_id": call["id"],
-                    "content": content,
+                    "content": json.dumps(observation.content(), ensure_ascii=False),
                 })
-                tool_trace.append({
-                    "name": name,
-                    "status": status,
-                    "duration_ms": round((time.perf_counter() - started) * 1000, 2),
-                })
+                tool_trace.append({**event, "round": calls, "tool_call_id": call["id"]})
 
         parsed = _parse_ask_answer(turn.message.get("content")) if not requested else None
         if parsed is None:
@@ -142,49 +215,41 @@ class AskReAct:
             stop_reason=stop_reason,
         )
 
-    def _execute(
-        self, space_id: str, name: str, raw_arguments: str
-    ) -> tuple[str, str, AskToolResult]:
+    def execute(self, space_id: str, name: str, arguments: Any) -> ToolObservation:
+        started = time.perf_counter()
         tool = self.tools.get(name)
-        if tool is None:
-            return "unknown_tool", '{"error":"unknown_tool"}', AskToolResult()
+        result = AskToolResult()
         try:
-            arguments = json.loads(raw_arguments)
-            if not isinstance(arguments, dict):
-                raise ValueError("Tool arguments must be an object")
-            tool.validate(arguments)
+            if tool is None:
+                status = "unknown_tool"
+            else:
+                if not isinstance(arguments, dict):
+                    raise ValueError("Tool arguments must be an object")
+                tool.validate(arguments)
+                status = "ok"
         except (TypeError, ValueError, ValidationError):
-            return "invalid_arguments", '{"error":"invalid_arguments"}', AskToolResult()
+            status = "invalid_arguments"
 
-        try:
-            result = tool.execute(space_id, arguments)
-            memories = tuple(
-                m for m in result.memories if m.space_id == space_id and m.status != "forgotten"
-            )
-            notes = tuple(
-                n for n in result.notes if n.space_id == space_id and not n.is_forgotten
-            )
-            content = json.dumps({
-                "data": result.data,
-                "memories": [
-                    {
-                        "memory_id": m.memory_id, "title": m.title, "summary": m.summary,
-                        "assertion_kind": m.assertion_kind, "payload": m.payload,
-                    }
-                    for m in memories
-                ],
-                "notes": [
-                    {
-                        "note_id": n.note_id, "content": n.visible_content(),
-                        "event_time": n.event_time, "created_at": n.created_at,
-                    }
-                    for n in notes
-                ],
-            }, ensure_ascii=False)
-        except Exception:
-            _LOGGER.exception("Ask tool execution failed: %s", name)
-            return "tool_error", '{"error":"tool_error"}', AskToolResult()
-        return "ok", content, AskToolResult(memories=memories, notes=notes)
+        if status == "ok":
+            try:
+                raw_result = tool.execute(space_id, arguments)
+                result = AskToolResult(
+                    data=raw_result.data,
+                    memories=tuple(
+                        m for m in raw_result.memories
+                        if m.space_id == space_id and m.status != "forgotten"
+                    ),
+                    notes=tuple(
+                        n for n in raw_result.notes if n.space_id == space_id and not n.is_forgotten
+                    ),
+                )
+            except Exception:
+                _LOGGER.exception("Ask tool execution failed: %s", name)
+                status = "tool_error"
+        return ToolObservation(
+            name, arguments if isinstance(arguments, dict) else {}, status, result,
+            round((time.perf_counter() - started) * 1000, 2),
+        )
 
 
 def _coerce_sufficient_flag(raw: Any) -> bool | None:
