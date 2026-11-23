@@ -104,6 +104,10 @@ from trace_memory.services.auth_service import UserAccount
 
 DASHBOARD_HTML_PATH = Path(__file__).with_name("dashboard.html")
 APP_ICON_PNG_PATH = Path(__file__).with_name("app_icon.png")
+SCENES_DIR = Path(__file__).with_name("scenes")
+SCENE_IDS = frozenset(
+    {"starfield", "scifi", "neon", "nature", "aurora", "ocean", "portrait_m", "portrait_f"}
+)
 
 
 def _extract_token(
@@ -1750,6 +1754,18 @@ def create_fastapi_app(container: AppContainer) -> Any:
     async def icon_svg() -> Response:
         return Response(content=PWA_ICON_SVG, media_type="image/svg+xml")
 
+    @app.get("/scenes/{filename}")
+    async def scene_image(filename: str) -> Response:
+        if filename.endswith(".jpg") and filename[:-4] in SCENE_IDS:
+            path = SCENES_DIR / filename
+            if path.is_file():
+                return Response(
+                    content=path.read_bytes(),
+                    media_type="image/jpeg",
+                    headers={"Cache-Control": "public, max-age=86400"},
+                )
+        return JSONResponse(content={"error": "scene not found"}, status_code=404)
+
     @app.get("/sw.js")
     async def service_worker() -> Response:
         return Response(content=PWA_SW_JS, media_type="application/javascript")
@@ -1947,6 +1963,19 @@ def run_web_server(container: AppContainer, host: str = "127.0.0.1", port: int =
                 return
             if parsed.path == "/sw.js":
                 self._write_raw(200, "application/javascript", PWA_SW_JS.encode("utf-8"))
+                return
+            if parsed.path.startswith("/scenes/"):
+                fname = parsed.path[len("/scenes/"):]
+                path = SCENES_DIR / fname
+                if fname.endswith(".jpg") and fname[:-4] in SCENE_IDS and path.is_file():
+                    self._write_raw(
+                        200,
+                        "image/jpeg",
+                        path.read_bytes(),
+                        extra_headers={"Cache-Control": "public, max-age=86400"},
+                    )
+                else:
+                    self._write_json(404, {"error": "scene not found"})
                 return
             if parsed.path == "/mcp":
                 self._write_json(

@@ -72,6 +72,46 @@ THEMES_CATALOG: tuple[dict[str, Any], ...] = (
         "surface": "#13221d",
         "is_dark": True,
     },
+    {
+        "id": "nebula",
+        "name": "星穹紫夜",
+        "subtitle": "银河星云暗色 · 紫罗兰霓虹微光",
+        "primary": "#8b5cf6",
+        "accent": "#ec4899",
+        "bg": "#0d0b1e",
+        "surface": "#171432",
+        "is_dark": True,
+    },
+    {
+        "id": "cyber",
+        "name": "赛博霓虹",
+        "subtitle": "夜城雨雾青品红 · 全息光轨微插画",
+        "primary": "#06b6d4",
+        "accent": "#d946ef",
+        "bg": "#061019",
+        "surface": "#0d1b26",
+        "is_dark": True,
+    },
+    {
+        "id": "polar",
+        "name": "极光夜航",
+        "subtitle": "冰原极光松石暗色 · 雪夜流萤微插画",
+        "primary": "#2dd4bf",
+        "accent": "#818cf8",
+        "bg": "#071318",
+        "surface": "#0e2027",
+        "is_dark": True,
+    },
+    {
+        "id": "sakura",
+        "name": "樱语粉霞",
+        "subtitle": "暮樱粉紫霞光 · 落瓣微插画",
+        "primary": "#db2777",
+        "accent": "#a855f7",
+        "bg": "#fdf2f6",
+        "surface": "#ffffff",
+        "is_dark": False,
+    },
 )
 
 VALID_THEME_IDS: frozenset[str] = frozenset(t["id"] for t in THEMES_CATALOG)
@@ -99,6 +139,11 @@ class PreferencesService:
             "SELECT * FROM space_preferences WHERE space_id = ?",
             (sp,),
         )
+        payload = self._preferences_from_row(sp, row)
+        payload["themes_catalog"] = list(THEMES_CATALOG)
+        return payload
+
+    def _preferences_from_row(self, sp: str, row: Any) -> dict[str, Any]:
         modules = dict(DEFAULT_ENABLED_MODULES)
         theme_id = "classic"
         pomodoro_minutes = 25
@@ -133,54 +178,59 @@ class PreferencesService:
             "pomodoro_minutes": pomodoro_minutes,
             "extra": extra,
             "updated_at": updated_at,
-            "themes_catalog": list(THEMES_CATALOG),
         }
 
     def update_preferences(self, space_id: str, patch: dict[str, Any]) -> dict[str, Any]:
         sp = (space_id or "default").strip() or "default"
-        current = self.get_preferences(sp)
 
-        theme_id = current["theme_id"]
-        if "theme_id" in patch and patch["theme_id"] is not None:
-            cand = str(patch["theme_id"]).strip()
-            if cand not in VALID_THEME_IDS:
-                raise ValidationError(f"不支持的主题标识: {cand}")
-            theme_id = cand
-
-        modules = dict(current["enabled_modules"])
-        raw_mods = patch.get("enabled_modules")
-        if raw_mods is not None:
-            if not isinstance(raw_mods, dict):
-                raise ValidationError("enabled_modules 必须为对象")
-            for k, v in raw_mods.items():
-                if k in DEFAULT_ENABLED_MODULES:
-                    modules[k] = bool(v)
-
-        # Support single-key toggle shorthand: {"module_key": "journal", "enabled": false}
-        mod_key = str(patch.get("module_key") or "").strip()
-        if mod_key:
-            if mod_key not in DEFAULT_ENABLED_MODULES:
-                raise ValidationError(f"不支持的功能模块开关: {mod_key}")
-            modules[mod_key] = bool(patch.get("enabled", True))
-
-        pomodoro_minutes = int(current["pomodoro_minutes"])
-        if "pomodoro_minutes" in patch and patch["pomodoro_minutes"] is not None:
-            try:
-                pm = int(patch["pomodoro_minutes"])
-            except (TypeError, ValueError) as exc:
-                raise ValidationError("pomodoro_minutes 必须为整数") from exc
-            if pm < 1 or pm > 180:
-                raise ValidationError("番茄钟时长须在 1~180 分钟之间")
-            pomodoro_minutes = pm
-
-        extra = dict(current["extra"])
-        if isinstance(patch.get("extra"), dict):
-            for k, v in patch["extra"].items():
-                if isinstance(k, str) and len(k) <= 48:
-                    extra[k] = v
-
-        now = beijing_now_iso()
+        # Read inside the write lock: concurrent patches must not resurrect stale fields.
         with self.db.transaction() as conn:
+            row = conn.execute(
+                "SELECT * FROM space_preferences WHERE space_id = ?",
+                (sp,),
+            ).fetchone()
+            current = self._preferences_from_row(sp, row)
+
+            theme_id = current["theme_id"]
+            if "theme_id" in patch and patch["theme_id"] is not None:
+                cand = str(patch["theme_id"]).strip()
+                if cand not in VALID_THEME_IDS:
+                    raise ValidationError(f"不支持的主题标识: {cand}")
+                theme_id = cand
+
+            modules = dict(current["enabled_modules"])
+            raw_mods = patch.get("enabled_modules")
+            if raw_mods is not None:
+                if not isinstance(raw_mods, dict):
+                    raise ValidationError("enabled_modules 必须为对象")
+                for k, v in raw_mods.items():
+                    if k in DEFAULT_ENABLED_MODULES:
+                        modules[k] = bool(v)
+
+            # Support single-key toggle shorthand: {"module_key": "journal", "enabled": false}
+            mod_key = str(patch.get("module_key") or "").strip()
+            if mod_key:
+                if mod_key not in DEFAULT_ENABLED_MODULES:
+                    raise ValidationError(f"不支持的功能模块开关: {mod_key}")
+                modules[mod_key] = bool(patch.get("enabled", True))
+
+            pomodoro_minutes = int(current["pomodoro_minutes"])
+            if "pomodoro_minutes" in patch and patch["pomodoro_minutes"] is not None:
+                try:
+                    pm = int(patch["pomodoro_minutes"])
+                except (TypeError, ValueError) as exc:
+                    raise ValidationError("pomodoro_minutes 必须为整数") from exc
+                if pm < 1 or pm > 180:
+                    raise ValidationError("番茄钟时长须在 1~180 分钟之间")
+                pomodoro_minutes = pm
+
+            extra = dict(current["extra"])
+            if isinstance(patch.get("extra"), dict):
+                for k, v in patch["extra"].items():
+                    if isinstance(k, str) and len(k) <= 48:
+                        extra[k] = v
+
+            now = beijing_now_iso()
             conn.execute(
                 """
                 INSERT INTO space_preferences (
