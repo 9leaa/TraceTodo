@@ -198,6 +198,8 @@ class TestFrontendPerfAndFloatingAsk(unittest.TestCase):
             "toggleCalIdleBand(",
             "cal-fold-band-pill",
             "is-idle-fold",
+            "hasGutterOverlap",
+            "cal-unsched-x",
             # Existing element contracts must remain intact
             'id="todoOverviewSection"',
             'id="taskKpis"',
@@ -210,6 +212,7 @@ class TestFrontendPerfAndFloatingAsk(unittest.TestCase):
             self.assertIn(marker, html, f"Missing expected marker in dashboard.html: {marker}")
 
         self.assertNotIn("if (!confirm(", html)
+        self.assertNotIn('<div class="rail-tip-box">', html)
 
 
 if __name__ == "__main__":
