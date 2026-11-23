@@ -496,12 +496,19 @@ class MediaAttachmentService:
             return False
         if str(any_row["space_id"]) != space_id:
             raise PermissionDeniedError("无权删除其他空间的图片附件")
+        bound_note_id = str(any_row["note_id"] or "").strip()
         self._unlink_row_files(any_row)
         with self.db.transaction() as conn:
             conn.execute(
                 "DELETE FROM media_attachments WHERE media_id = ? AND space_id = ?",
                 (media_id, space_id),
             )
+        if bound_note_id:
+            from trace_memory.storage.repositories import NoteRepository
+
+            note = NoteRepository(self.db).get(space_id, bound_note_id)
+            if note is not None:
+                self.refresh_note_fts_with_media(space_id, note)
         if self.sync_tracker is not None:
             self.sync_tracker.bump(space_id, reason="media_deleted")
         return True
