@@ -508,7 +508,12 @@ class ApiDispatcher:
                 return 200, self.container.admin_service.get_overview(user)
 
             if method == "GET" and path == "/api/admin/users":
-                return 200, {"users": self.container.admin_service.list_users(user)}
+                q_str = qp.get("q", [""])[0].strip()
+                lim = _safe_int(qp.get("limit", ["50"])[0], name="limit", default=50, min_val=1, max_val=200)
+                off = _safe_int(qp.get("offset", ["0"])[0], name="offset", default=0, min_val=0, max_val=100000)
+                return 200, self.container.admin_service.list_users_page(
+                    user, q=q_str, limit=int(lim or 50), offset=int(off or 0)
+                )
 
             if method == "POST" and path == "/api/admin/users/create":
                 created = self.container.admin_service.create_user(
@@ -680,9 +685,10 @@ class ApiDispatcher:
 
             if method == "GET" and path == "/api/focus/overview":
                 lim = _safe_int(qp.get("limit", ["50"])[0], name="limit", default=50, min_val=1, max_val=200)
+                off = _safe_int(qp.get("offset", ["0"])[0], name="offset", default=0, min_val=0, max_val=100000)
                 date_q = qp.get("date", [""])[0].strip()
                 return 200, self.container.focus_service.get_overview(
-                    space_id=space_id, limit=int(lim or 50), focus_date=date_q
+                    space_id=space_id, limit=int(lim or 50), offset=int(off or 0), focus_date=date_q
                 )
 
             if method == "POST" and path == "/api/focus/record":
@@ -754,6 +760,7 @@ class ApiDispatcher:
 
             if method == "GET" and path == "/api/memos/list":
                 lim = _safe_int(qp.get("limit", ["80"])[0], name="limit", default=80, min_val=1, max_val=200)
+                off = _safe_int(qp.get("offset", ["0"])[0], name="offset", default=0, min_val=0, max_val=100000)
                 q_str = qp.get("q", [""])[0].strip()
                 tag_str = qp.get("tag", [""])[0].strip()
                 pin_only = qp.get("pinned_only", ["false"])[0].strip().lower() in ("true", "1", "yes")
@@ -763,6 +770,7 @@ class ApiDispatcher:
                     tag=tag_str,
                     pinned_only=pin_only,
                     limit=int(lim or 80),
+                    offset=int(off or 0),
                 )
 
             if method == "POST" and path == "/api/memos/save":
@@ -786,10 +794,12 @@ class ApiDispatcher:
             if method == "GET" and path == "/api/journal/overview":
                 j_date = qp.get("date", [""])[0].strip()
                 j_lim = _safe_int(qp.get("limit", ["30"])[0], name="limit", default=30, min_val=1, max_val=120)
+                j_off = _safe_int(qp.get("offset", ["0"])[0], name="offset", default=0, min_val=0, max_val=100000)
                 return 200, self.container.memo_journal_service.get_journal_overview(
                     space_id=space_id,
                     date_str=j_date,
                     limit=int(j_lim or 30),
+                    offset=int(j_off or 0),
                 )
 
             if method == "POST" and path == "/api/journal/save":
