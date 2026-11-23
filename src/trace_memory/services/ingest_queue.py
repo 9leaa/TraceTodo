@@ -11,12 +11,14 @@ Design goals:
 from __future__ import annotations
 
 from collections import deque
+from contextlib import contextmanager
 import inspect
 import json
 import random
+import re
 import threading
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 from trace_memory.domain.notes import beijing_now_iso, new_id
 from trace_memory.storage.database import Database
@@ -40,6 +42,30 @@ def _is_transient_llm_error(exc: Exception) -> bool:
         "service unavailable",
     )
     return any(m in msg for m in transient_markers)
+
+
+# Reference / completion / cancellation / state-mutation cues requiring pre-extraction barrier
+# so existing_memories in the LLM prompt already include prior in-flight items from the same space.
+_SERIAL_BARRIER_SIGNAL_RE = re.compile(
+    r"(?:"
+    r"这个|那个|这件事|那件事|这项|那项|上面|刚才|上一条|前一条|继续做|"
+    r"顺延|改期|改到|推迟到?|延后到?|提前到|改成|改为|换成|重开|恢复待办|"
+    r"搬到|改住|不再|戒掉|不喝了|不喜欢了|"
+    r"取消|作废|不用做了|不做了|算了不做|"
+    r"(?:标记|标为|设为|改为).{0,6}(?:完成|取消|已完|待办)|"
+    r"(?:已|已经|刚刚|终于)[^，,。！？!?\n]{0,18}(?:完成|搞定|做完|办完|写完|修好|买好|提交|交了|处理好|弄好|解决)|"
+    r"(?:完成|搞定|做完|办完|写完|修好|买好|打印好|发送好|提交好|处理好|弄好)(?:了|啦|了呀|了呢)[。.!！\s]*$"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def requires_serial_barrier(text: str) -> bool:
+    """Return True when `text` references or mutates prior tasks/facts and should wait before extraction."""
+    clean = str(text or "").strip()
+    if not clean:
+        return False
+    return bool(_SERIAL_BARRIER_SIGNAL_RE.search(clean))
 
 
 class IngestJobRepository:
@@ -68,25 +94,43 @@ class IngestJobRepository:
         note_id: str,
         actor_id: str = "user",
         idempotency_key: str = "",
+        content_hint: str = "",
+        requires_barrier: bool | None = None,
     ) -> dict[str, Any]:
         job_id = new_id("job")
         now = beijing_now_iso()
         with self.db.transaction() as conn:
-            conn.execute(
+            if requires_barrier is None:
+                eff_text = content_hint
+                if not eff_text:
+                    nrow = conn.execute(
+                        "SELECT content FROM raw_notes WHERE space_id = ? AND note_id = ?",
+                        (space_id, note_id),
+                    ).fetchone()
+                    if nrow is not None:
+                        eff_text = str(nrow["content"] or "")
+                barrier_flag = 1 if requires_serial_barrier(eff_text) else 0
+            else:
+                barrier_flag = 1 if requires_barrier else 0
+
+            cur = conn.execute(
                 """
                 INSERT INTO ingest_jobs
-                    (job_id, space_id, note_id, actor_id, idempotency_key, status, attempts,
+                    (job_id, space_id, note_id, actor_id, idempotency_key, requires_barrier, status, attempts,
                      error_message, result_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'queued', 0, '', '{}', ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, '', '{}', ?, ?)
                 """,
-                (job_id, space_id, note_id, actor_id, idempotency_key, now, now),
+                (job_id, space_id, note_id, actor_id, idempotency_key, barrier_flag, now, now),
             )
+            seq_id = int(cur.lastrowid or 0)
         return {
+            "seq_id": seq_id,
             "job_id": job_id,
             "space_id": space_id,
             "note_id": note_id,
             "actor_id": actor_id,
             "idempotency_key": idempotency_key,
+            "requires_barrier": bool(barrier_flag),
             "status": "queued",
             "attempts": 0,
             "error_message": "",
@@ -95,7 +139,7 @@ class IngestJobRepository:
         }
 
     def get_job(self, job_id: str) -> dict[str, Any] | None:
-        row = self.db.query_one("SELECT * FROM ingest_jobs WHERE job_id = ?", (job_id,))
+        row = self.db.query_one("SELECT rowid AS seq_id, * FROM ingest_jobs WHERE job_id = ?", (job_id,))
         if row is None:
             return None
         return self._row_to_dict(row)
@@ -117,35 +161,56 @@ class IngestJobRepository:
 
     def claim_next_fair_job(
         self,
-        active_spaces: set[str],
+        active_spaces: set[str] | dict[str, int],
         last_scheduled: dict[str, float],
+        max_parallel_per_space: int = 4,
     ) -> dict[str, Any] | None:
-        """Atomically claim the oldest queued job for the least-recently-served idle space."""
+        """Atomically claim the next fair job, allowing same-space parallel extraction when independent."""
         now = beijing_now_iso()
+        cap = max(1, int(max_parallel_per_space))
+
+        def _active_count(sp: str) -> int:
+            if isinstance(active_spaces, dict):
+                return int(active_spaces.get(sp, 0))
+            return cap if sp in active_spaces else 0
+
         with self.db.transaction() as conn:
-            space_rows = conn.execute(
-                "SELECT DISTINCT space_id FROM ingest_jobs WHERE status = 'queued'"
-            ).fetchall()
-            eligible = [
-                str(r["space_id"])
-                for r in space_rows
-                if str(r["space_id"]) not in active_spaces
-            ]
-            if not eligible:
-                return None
-            # Fair Round-Robin: pick the space waiting the longest since its last scheduled turn
-            chosen_space = min(eligible, key=lambda sp: last_scheduled.get(sp, 0.0))
-            row = conn.execute(
+            head_rows = conn.execute(
                 """
-                SELECT * FROM ingest_jobs
-                WHERE status = 'queued' AND space_id = ?
-                ORDER BY created_at ASC, rowid ASC
-                LIMIT 1
-                """,
-                (chosen_space,),
-            ).fetchone()
-            if row is None:
+                SELECT rowid AS seq_id, *
+                FROM ingest_jobs
+                WHERE rowid IN (
+                    SELECT MIN(rowid)
+                    FROM ingest_jobs
+                    WHERE status = 'queued'
+                    GROUP BY space_id
+                )
+                """
+            ).fetchall()
+            eligible_rows = []
+            for r in head_rows:
+                sp = str(r["space_id"])
+                in_flight = _active_count(sp)
+                if in_flight >= cap:
+                    continue
+                if int(r["requires_barrier"] or 0) != 0 and in_flight > 0:
+                    # Dependent / completion utterance must wait until earlier in-flight jobs commit
+                    continue
+                eligible_rows.append(r)
+
+            if not eligible_rows:
                 return None
+
+            # Fair Round-Robin: idle spaces (in_flight == 0) always beat already-active spaces;
+            # ties break by longest wait since last scheduled turn, then global arrival order.
+            row = min(
+                eligible_rows,
+                key=lambda r: (
+                    _active_count(str(r["space_id"])) > 0,
+                    last_scheduled.get(str(r["space_id"]), 0.0),
+                    int(r["seq_id"]),
+                ),
+            )
             cur = conn.execute(
                 """
                 UPDATE ingest_jobs
@@ -161,6 +226,22 @@ class IngestJobRepository:
             claimed["attempts"] = int(claimed["attempts"]) + 1
             claimed["updated_at"] = now
             return claimed
+
+    def increment_attempt(self, job_id: str, error_message: str) -> int:
+        now = beijing_now_iso()
+        with self.db.transaction() as conn:
+            conn.execute(
+                """
+                UPDATE ingest_jobs
+                SET attempts = attempts + 1, error_message = ?, updated_at = ?
+                WHERE job_id = ?
+                """,
+                (error_message[:300], now, job_id),
+            )
+            row = conn.execute(
+                "SELECT attempts FROM ingest_jobs WHERE job_id = ?", (job_id,)
+            ).fetchone()
+            return int(row["attempts"]) if row else 1
 
     def mark_completed(self, job_id: str, result: dict[str, Any]) -> None:
         now = beijing_now_iso()
@@ -299,12 +380,15 @@ class IngestJobRepository:
             result_data = json.loads(row["result_json"] or "{}")
         except Exception:
             result_data = {}
+        keys = set(row.keys()) if hasattr(row, "keys") else set()
         return {
+            "seq_id": int(row["seq_id"]) if "seq_id" in keys else 0,
             "job_id": str(row["job_id"]),
             "space_id": str(row["space_id"]),
             "note_id": str(row["note_id"]),
             "actor_id": str(row["actor_id"]),
             "idempotency_key": str(row["idempotency_key"]),
+            "requires_barrier": bool(int(row["requires_barrier"] or 0)) if "requires_barrier" in keys else False,
             "status": str(row["status"]),
             "attempts": int(row["attempts"]),
             "error_message": str(row["error_message"]),
@@ -315,13 +399,14 @@ class IngestJobRepository:
 
 
 class IngestWorkerPool:
-    """Bounded background worker pool with Per-Space serialization, Fair Round-Robin, and LLM throttling."""
+    """Bounded worker pool with Reference-Aware Same-Space Parallelism, Sequence Commit Barrier, and Fair Round-Robin."""
 
     def __init__(
         self,
         job_repo: IngestJobRepository,
         processor: Callable[..., Any],
         worker_count: int = 8,
+        max_parallel_per_space: int = 4,
         llm_max_concurrency: int = 12,
         max_retries: int = 3,
         retry_base_delay_seconds: float = 0.35,
@@ -330,25 +415,34 @@ class IngestWorkerPool:
         self.job_repo = job_repo
         self.processor = processor
         self.worker_count = max(1, int(worker_count))
+        self.max_parallel_per_space = max(1, int(max_parallel_per_space))
         self.max_retries = max(1, int(max_retries))
         self.retry_base_delay_seconds = max(0.01, float(retry_base_delay_seconds))
         self.llm_semaphore = threading.Semaphore(max(1, int(llm_max_concurrency)))
         self.on_job_settled = on_job_settled
         try:
-            self._supports_defer_embeddings = "defer_embeddings" in inspect.signature(processor).parameters
+            proc_params = inspect.signature(processor).parameters
+            self._supports_defer_embeddings = "defer_embeddings" in proc_params
+            self._supports_commit_barrier = "commit_barrier" in proc_params
         except (TypeError, ValueError):
             self._supports_defer_embeddings = False
+            self._supports_commit_barrier = False
 
         self._sched_lock = threading.Lock()
         self._cond = threading.Condition(self._sched_lock)
         self._stop_event = threading.Event()
-        self._active_spaces: set[str] = set()
+        self._active_space_counts: dict[str, int] = {}
+        self._uncommitted_seqs: dict[str, set[int]] = {}
         self._last_scheduled: dict[str, float] = {}
         self._threads: list[threading.Thread] = []
         self._vec_queue: deque[tuple[str, Callable[[], None]]] = deque()
         self._pending_vector_counts: dict[str, int] = {}
         self._vec_threads: list[threading.Thread] = []
         self._running = False
+
+    @property
+    def _active_spaces(self) -> set[str]:
+        return set(self._active_space_counts.keys())
 
     @property
     def is_running(self) -> bool:
@@ -445,7 +539,7 @@ class IngestWorkerPool:
             if st["pending"] == 0:
                 with self._sched_lock:
                     if (
-                        space_id not in self._active_spaces
+                        self._active_space_counts.get(space_id, 0) == 0
                         and self._pending_vector_counts.get(space_id, 0) == 0
                     ):
                         return True
@@ -461,6 +555,17 @@ class IngestWorkerPool:
             time.sleep(0.015)
         return self.job_repo.get_job(job_id)
 
+    @contextmanager
+    def _commit_barrier(self, space_id: str, seq_id: int) -> Iterator[None]:
+        """Wait until all earlier in-flight jobs (`other_seq < seq_id`) in `space_id` have settled."""
+        with self._sched_lock:
+            while not self._stop_event.is_set():
+                uncommitted = self._uncommitted_seqs.get(space_id)
+                if not uncommitted or min(uncommitted) >= seq_id:
+                    break
+                self._cond.wait(timeout=0.2)
+        yield
+
     def _worker_loop(self) -> None:
         try:
             while not self._stop_event.is_set():
@@ -470,13 +575,17 @@ class IngestWorkerPool:
                         break
                     try:
                         job = self.job_repo.claim_next_fair_job(
-                            self._active_spaces, self._last_scheduled
+                            self._active_space_counts,
+                            self._last_scheduled,
+                            max_parallel_per_space=min(self.worker_count, self.max_parallel_per_space),
                         )
                     except Exception:
                         job = None
                     if job is not None:
                         sp = job["space_id"]
-                        self._active_spaces.add(sp)
+                        seq_id = int(job.get("seq_id") or 0)
+                        self._active_space_counts[sp] = self._active_space_counts.get(sp, 0) + 1
+                        self._uncommitted_seqs.setdefault(sp, set()).add(seq_id)
                         self._last_scheduled[sp] = time.monotonic()
                     else:
                         self._cond.wait(timeout=0.4)
@@ -486,11 +595,21 @@ class IngestWorkerPool:
                     continue
 
                 sp = job["space_id"]
+                seq_id = int(job.get("seq_id") or 0)
                 try:
                     self._execute_job(job)
                 finally:
                     with self._sched_lock:
-                        self._active_spaces.discard(sp)
+                        seqs = self._uncommitted_seqs.get(sp)
+                        if seqs is not None:
+                            seqs.discard(seq_id)
+                            if not seqs:
+                                self._uncommitted_seqs.pop(sp, None)
+                        rem_active = self._active_space_counts.get(sp, 0) - 1
+                        if rem_active <= 0:
+                            self._active_space_counts.pop(sp, None)
+                        else:
+                            self._active_space_counts[sp] = rem_active
                         self._cond.notify_all()
         finally:
             self.job_repo.db.close_thread_connection()
@@ -499,70 +618,78 @@ class IngestWorkerPool:
         job_id = job["job_id"]
         space_id = job["space_id"]
         note_id = job["note_id"]
+        seq_id = int(job.get("seq_id") or 0)
         attempts = int(job.get("attempts", 1))
         idem = str(job.get("idempotency_key", "") or "")
 
-        try:
-            call_kwargs: dict[str, Any] = {
-                "space_id": space_id,
-                "note_id": note_id,
-                "idempotency_key": idem,
-                "count_note_in_quota": False,
-                "llm_semaphore": self.llm_semaphore,
-                "raise_on_transient_llm_error": (attempts < self.max_retries),
-            }
-            if self._supports_defer_embeddings:
-                call_kwargs["defer_embeddings"] = True
-            res = self.processor(**call_kwargs)
-            deferred_vec = getattr(res, "deferred_vector_sync", None)
-            if callable(deferred_vec):
-                self._enqueue_deferred_vector(space_id, deferred_vec)
+        while True:
+            try:
+                call_kwargs: dict[str, Any] = {
+                    "space_id": space_id,
+                    "note_id": note_id,
+                    "idempotency_key": idem,
+                    "count_note_in_quota": False,
+                    "llm_semaphore": self.llm_semaphore,
+                    "raise_on_transient_llm_error": (attempts < self.max_retries),
+                }
+                if self._supports_defer_embeddings:
+                    call_kwargs["defer_embeddings"] = True
+                if self._supports_commit_barrier:
+                    call_kwargs["commit_barrier"] = lambda: self._commit_barrier(space_id, seq_id)
+                res = self.processor(**call_kwargs)
+                deferred_vec = getattr(res, "deferred_vector_sync", None)
+                if callable(deferred_vec):
+                    self._enqueue_deferred_vector(space_id, deferred_vec)
 
-            status = getattr(res, "extraction_status", "completed")
-            if status == "cancelled_forgotten":
-                self.job_repo.mark_cancelled(job_id, getattr(res, "error_message", "note_forgotten"))
-                settled_status = "cancelled"
-            elif status == "degraded_error":
-                err_msg = getattr(res, "error_message", "")
-                self.job_repo.mark_completed(
-                    job_id,
-                    {
-                        "extraction_status": status,
-                        "changes_count": len(getattr(res, "changes", ())),
-                        "error_message": err_msg,
-                        "trace_id": getattr(res, "trace_id", ""),
-                    },
-                )
-                settled_status = "completed"
-            else:
-                self.job_repo.mark_completed(
-                    job_id,
-                    {
-                        "extraction_status": status,
-                        "changes_count": len(getattr(res, "changes", ())),
-                        "trace_id": getattr(res, "trace_id", ""),
-                    },
-                )
-                settled_status = "completed"
-            if self.on_job_settled is not None:
-                try:
-                    self.on_job_settled(space_id, settled_status)
-                except Exception:
-                    pass
-        except Exception as exc:
-            if attempts < self.max_retries and _is_transient_llm_error(exc):
-                backoff = min(
-                    8.0,
-                    self.retry_base_delay_seconds * (2 ** max(0, attempts - 1)),
-                ) + random.uniform(0.0, 0.15)
-                self._stop_event.wait(timeout=backoff)
-                if not self._stop_event.is_set():
-                    self.job_repo.requeue_for_retry(job_id, f"transient_retry_{attempts}: {exc}")
-                    self.notify()
+                status = getattr(res, "extraction_status", "completed")
+                if status == "cancelled_forgotten":
+                    self.job_repo.mark_cancelled(job_id, getattr(res, "error_message", "note_forgotten"))
+                    settled_status = "cancelled"
+                elif status == "degraded_error":
+                    err_msg = getattr(res, "error_message", "")
+                    self.job_repo.mark_completed(
+                        job_id,
+                        {
+                            "extraction_status": status,
+                            "changes_count": len(getattr(res, "changes", ())),
+                            "error_message": err_msg,
+                            "trace_id": getattr(res, "trace_id", ""),
+                        },
+                    )
+                    settled_status = "completed"
+                else:
+                    self.job_repo.mark_completed(
+                        job_id,
+                        {
+                            "extraction_status": status,
+                            "changes_count": len(getattr(res, "changes", ())),
+                            "trace_id": getattr(res, "trace_id", ""),
+                        },
+                    )
+                    settled_status = "completed"
+                if self.on_job_settled is not None:
+                    try:
+                        self.on_job_settled(space_id, settled_status)
+                    except Exception:
+                        pass
                 return
-            self.job_repo.mark_failed(job_id, str(exc))
-            if self.on_job_settled is not None:
-                try:
-                    self.on_job_settled(space_id, "failed")
-                except Exception:
-                    pass
+            except Exception as exc:
+                if attempts < self.max_retries and _is_transient_llm_error(exc):
+                    backoff = min(
+                        8.0,
+                        self.retry_base_delay_seconds * (2 ** max(0, attempts - 1)),
+                    ) + random.uniform(0.0, 0.15)
+                    self._stop_event.wait(timeout=backoff)
+                    if self._stop_event.is_set():
+                        return
+                    attempts = self.job_repo.increment_attempt(
+                        job_id, f"transient_retry_{attempts}: {exc}"
+                    )
+                    continue
+                self.job_repo.mark_failed(job_id, str(exc))
+                if self.on_job_settled is not None:
+                    try:
+                        self.on_job_settled(space_id, "failed")
+                    except Exception:
+                        pass
+                return

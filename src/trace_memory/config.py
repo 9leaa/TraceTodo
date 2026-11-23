@@ -98,6 +98,7 @@ class TraceMemoryConfig:
 
     # Concurrency & Async Ingest Queue settings
     ingest_worker_count: int = 8
+    ingest_space_concurrency: int = 4
     llm_max_concurrency: int = 12
     ingest_max_retries: int = 3
     api_threadpool_tokens: int = 64
@@ -179,6 +180,7 @@ class TraceMemoryConfig:
             space_media_quota_mb=max(5, int(_get("TRACE_MEMORY_SPACE_MEDIA_QUOTA_MB", "50"))),
             trust_proxy_headers=_as_bool(env.get("TRACE_MEMORY_TRUST_PROXY_HEADERS"), False),
             ingest_worker_count=max(1, int(_get("TRACE_MEMORY_INGEST_WORKERS", "8"))),
+            ingest_space_concurrency=max(1, int(_get("TRACE_MEMORY_INGEST_SPACE_CONCURRENCY", "4"))),
             llm_max_concurrency=max(1, int(_get("TRACE_MEMORY_LLM_MAX_CONCURRENCY", "12"))),
             ingest_max_retries=max(1, int(_get("TRACE_MEMORY_INGEST_MAX_RETRIES", "3"))),
             api_threadpool_tokens=max(8, int(_get("TRACE_MEMORY_API_THREADS", "64"))),
