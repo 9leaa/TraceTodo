@@ -208,6 +208,24 @@ class TestPhase2VoiceAndImageMemory(unittest.TestCase):
         )
         self.assertEqual(code_poly, 400)
 
+    def test_dashboard_image_picker_avoids_wildcard_accept_display_none_and_sync_freeze(self) -> None:
+        html = (REPO_ROOT / "src" / "trace_memory" / "api" / "dashboard.html").read_text(encoding="utf-8")
+        # Wildcard accept="image/*" and style="display:none;" on sharedImageFileInput hang native pickers
+        self.assertNotIn('id="sharedImageFileInput" accept="image/*"', html)
+        self.assertNotIn('accept="image/*"', html)
+        self.assertIn('id="sharedImageFileInput" class="sr-only-file-input"', html)
+        for expected in (
+            ".sr-only-file-input {",
+            'accept=".jpg,.jpeg,.png,.webp,.gif,.bmp"',
+            'oncancel="onImagePickerCancel()"',
+            "canvasToJpegDataUrlAsync",
+            "canvas.toBlob(",
+            "decodeImageForCanvas",
+            "if (inputEl) {\n        try { inputEl.value = ''; }",
+            "if (_imagePickerActive || _imageUploadInFlight) return true;",
+        ):
+            self.assertIn(expected, html, f"Missing image-picker freeze fix marker: {expected}")
+
 
 if __name__ == "__main__":
     unittest.main()
