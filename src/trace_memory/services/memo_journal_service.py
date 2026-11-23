@@ -162,12 +162,15 @@ class MemoAndJournalService:
         tag: str = "",
         pinned_only: bool = False,
         limit: int = 80,
+        offset: int = 0,
     ) -> dict[str, Any]:
         sp = (space_id or "default").strip() or "default"
         clean_q = (q or "").strip()
         clean_tag = (tag or "").strip().lstrip("#")
+        lim = max(1, min(200, int(limit or 80)))
+        off = max(0, int(offset or 0))
 
-        # Gather all non-journal, non-synthetic active notes for tag facets & optional search
+        # Gather all non-journal, non-synthetic active notes for tag facets, search & accurate pagination
         all_rows = self.db.query_all(
             """
             SELECT * FROM raw_notes
@@ -175,7 +178,6 @@ class MemoAndJournalService:
                AND note_kind IN ('memo', 'note')
                AND content NOT LIKE '[Task %'
              ORDER BY pinned DESC, updated_at DESC
-             LIMIT 250
             """,
             (sp,),
         )
@@ -187,7 +189,7 @@ class MemoAndJournalService:
                 tag_counter[t] += 1
 
         if clean_q:
-            bm25_hits = self.note_repo.search_bm25(sp, clean_q, limit=limit * 2)
+            bm25_hits = self.note_repo.search_bm25(sp, clean_q, limit=max(lim * 2, 100))
             hit_ids = {n.note_id for n, _ in bm25_hits}
             q_lower = clean_q.lower()
             candidates = [
@@ -206,16 +208,20 @@ class MemoAndJournalService:
         if pinned_only:
             candidates = [n for n in candidates if n.pinned]
 
-        candidates.sort(key=lambda n: (0 if n.pinned else 1, "" if not n.updated_at else n.updated_at), reverse=False)
         # Ensure pinned first, then newest updated_at descending
         pinned_part = sorted([n for n in candidates if n.pinned], key=lambda x: x.updated_at, reverse=True)
         unpinned_part = sorted([n for n in candidates if not n.pinned], key=lambda x: x.updated_at, reverse=True)
-        ordered = (pinned_part + unpinned_part)[: max(1, min(200, int(limit or 80)))]
+        full_ordered = pinned_part + unpinned_part
+        total_cnt = len(full_ordered)
+        ordered = full_ordered[off : off + lim]
 
         return {
             "space_id": sp,
             "memos": self._enrich_notes(sp, ordered),
-            "total": len(pinned_part) + len(unpinned_part),
+            "total": total_cnt,
+            "limit": lim,
+            "offset": off,
+            "has_more": (off + len(ordered)) < total_cnt,
             "pinned_count": len(pinned_part),
             # Unfiltered facet counts so filter pills (全部 / 置顶) don't shrink to the filtered subset
             "all_count": len(all_memo_notes),
@@ -429,8 +435,11 @@ class MemoAndJournalService:
         space_id: str,
         date_str: str = "",
         limit: int = 30,
+        offset: int = 0,
     ) -> dict[str, Any]:
         sp = (space_id or "default").strip() or "default"
+        lim = max(1, min(120, int(limit or 30)))
+        off = max(0, int(offset or 0))
         target_d = _parse_beijing_ymd(date_str)
         target_ymd = target_d.isoformat()
         lunar_d = solar_to_lunar(target_d)
@@ -447,14 +456,23 @@ class MemoAndJournalService:
         )
         cur_entry = self._enrich_notes(sp, [_row_to_note(cur_row)])[0] if cur_row else None
 
+        cnt_row = self.db.query_one(
+            """
+            SELECT COUNT(*) AS cnt FROM raw_notes
+             WHERE space_id = ? AND is_forgotten = 0 AND note_kind = 'journal'
+            """,
+            (sp,),
+        )
+        total_cnt = int(cnt_row["cnt"] or 0) if cnt_row else 0
+
         recent_rows = self.db.query_all(
             """
             SELECT * FROM raw_notes
              WHERE space_id = ? AND is_forgotten = 0 AND note_kind = 'journal'
              ORDER BY journal_date DESC, updated_at DESC
-             LIMIT ?
+             LIMIT ? OFFSET ?
             """,
-            (sp, max(1, min(120, int(limit or 30)))),
+            (sp, lim, off),
         )
         timeline = self._enrich_notes(sp, [_row_to_note(r) for r in recent_rows])
 
@@ -466,6 +484,10 @@ class MemoAndJournalService:
             "current_entry": cur_entry,
             "day_footprint": self._collect_day_footprint(sp, target_ymd),
             "timeline": timeline,
+            "timeline_total": total_cnt,
+            "timeline_limit": lim,
+            "timeline_offset": off,
+            "timeline_has_more": (off + len(timeline)) < total_cnt,
             "mood_catalog": list(MOOD_CATALOG),
         }
 

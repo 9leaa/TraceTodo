@@ -672,10 +672,7 @@ class AdminService:
             "recent_traces": recent_traces,
         }
 
-    def list_users(self, actor: UserAccount | None) -> list[dict[str, Any]]:
-        self.require_admin(actor)
-        today = today_utc_date()
-        rows = self.db.query_all("SELECT * FROM users ORDER BY created_at ASC")
+    def _enrich_user_rows(self, rows: list[Any], today: str) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         for r in rows:
             u = AuthService._row_to_user(r)
@@ -699,6 +696,56 @@ class AdminService:
             }
             out.append(item)
         return out
+
+    def list_users(self, actor: UserAccount | None) -> list[dict[str, Any]]:
+        self.require_admin(actor)
+        today = today_utc_date()
+        rows = self.db.query_all("SELECT * FROM users ORDER BY created_at ASC")
+        return self._enrich_user_rows(rows, today)
+
+    def list_users_page(
+        self,
+        actor: UserAccount | None,
+        *,
+        q: str = "",
+        limit: int = 20,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        self.require_admin(actor)
+        today = today_utc_date()
+        lim = max(1, min(200, int(limit or 20)))
+        off = max(0, int(offset or 0))
+        clean_q = (q or "").strip()
+
+        where_sql = ""
+        params: list[Any] = []
+        if clean_q:
+            escaped = clean_q.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            pat = f"%{escaped}%"
+            where_sql = (
+                "WHERE (LOWER(username) LIKE ? ESCAPE '\\' "
+                "OR LOWER(display_name) LIKE ? ESCAPE '\\' "
+                "OR LOWER(space_id) LIKE ? ESCAPE '\\')"
+            )
+            params.extend([pat, pat, pat])
+
+        cnt_row = self.db.query_one(
+            f"SELECT COUNT(*) AS cnt FROM users {where_sql}",
+            tuple(params),
+        )
+        total = int(cnt_row["cnt"] or 0) if cnt_row else 0
+        rows = self.db.query_all(
+            f"SELECT * FROM users {where_sql} ORDER BY created_at ASC LIMIT ? OFFSET ?",
+            tuple(params) + (lim, off),
+        )
+        out = self._enrich_user_rows(rows, today)
+        return {
+            "users": out,
+            "total": total,
+            "limit": lim,
+            "offset": off,
+            "has_more": (off + len(out)) < total,
+        }
 
     def create_user(
         self,

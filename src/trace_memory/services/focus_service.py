@@ -243,36 +243,52 @@ class FocusService:
         space_id: str,
         *,
         limit: int = 50,
+        offset: int = 0,
         focus_date: str = "",
         now: datetime | None = None,
     ) -> dict[str, Any]:
         sp = (space_id or "default").strip() or "default"
         lim = max(1, min(200, int(limit or 50)))
+        off = max(0, int(offset or 0))
         clean_date = (focus_date or "").strip()[:10]
         if clean_date:
+            cnt_row = self.db.query_one(
+                "SELECT COUNT(*) AS cnt FROM focus_sessions WHERE space_id = ? AND focus_date = ?",
+                (sp, clean_date),
+            )
             rows = self.db.query_all(
                 """
                 SELECT * FROM focus_sessions
                 WHERE space_id = ? AND focus_date = ?
                 ORDER BY ended_at DESC
-                LIMIT ?
+                LIMIT ? OFFSET ?
                 """,
-                (sp, clean_date, lim),
+                (sp, clean_date, lim, off),
             )
         else:
+            cnt_row = self.db.query_one(
+                "SELECT COUNT(*) AS cnt FROM focus_sessions WHERE space_id = ?",
+                (sp,),
+            )
             rows = self.db.query_all(
                 """
                 SELECT * FROM focus_sessions
                 WHERE space_id = ?
                 ORDER BY ended_at DESC
-                LIMIT ?
+                LIMIT ? OFFSET ?
                 """,
-                (sp, lim),
+                (sp, lim, off),
             )
+        total_cnt = int(cnt_row["cnt"] or 0) if cnt_row else 0
+        sessions = [_row_to_focus_session(r) for r in rows]
         return {
             "space_id": sp,
             "stats": self.get_stats(sp, now=now),
-            "sessions": [_row_to_focus_session(r) for r in rows],
+            "sessions": sessions,
+            "total": total_cnt,
+            "limit": lim,
+            "offset": off,
+            "has_more": (off + len(sessions)) < total_cnt,
         }
 
     def insert_session_row(

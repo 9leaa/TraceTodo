@@ -396,6 +396,34 @@
       margin-top: 16px;
     }
     .memory-pagination:not([aria-busy="true"]) button:disabled { cursor: default; }
+    .list-load-more-bar:not([hidden]) {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+    .list-load-more-bar .load-more-stat {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .quad-fold-btn {
+      width: 100%;
+      margin-top: 4px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 9px;
+      border: 1px dashed var(--border);
+      background: var(--surface-alt);
+      color: var(--primary);
+      cursor: pointer;
+    }
+    .quad-fold-btn:hover {
+      background: var(--primary-soft);
+      border-color: var(--primary);
+    }
     @media (max-width: 768px) {
       .left-rail {
         position: fixed;
@@ -2193,6 +2221,7 @@
 
         <div id="matrixContainer" class="matrix-grid"></div>
         <div id="listContainer" class="list-stack" style="display:none;"></div>
+        <div id="taskListLoadMoreBar" class="list-load-more-bar" hidden></div>
       </section>
 
       <!-- TAB 2: CALENDAR VIEW (Zero-Duplication Week Timeline + Month Panorama) -->
@@ -2253,6 +2282,7 @@
         <!-- Subview 3: Countdown & Anniversary Big-Number Card Wall -->
         <div id="calCountdownContainer" style="display:none;margin-bottom:16px;">
           <div class="cd-wall-grid" id="countdownWallGrid"></div>
+          <div id="countdownLoadMoreBar" class="list-load-more-bar" hidden></div>
         </div>
 
         <div class="two-col" id="calBottomSplit">
@@ -2342,6 +2372,7 @@
                 <button type="button" class="ghost-dark" onclick="loadFocusCenter()">🔄 刷新记录</button>
               </div>
               <div id="focusTimelineList" class="list-stack"></div>
+              <div id="focusLoadMoreBar" class="list-load-more-bar" hidden></div>
             </div>
           </div>
         </div>
@@ -2401,6 +2432,7 @@
           </div>
 
           <div id="notesStreamList" class="memo-masonry"></div>
+          <div id="memoLoadMoreBar" class="list-load-more-bar" hidden></div>
         </div>
 
         <!-- SUBVIEW B: ONE-PAGE-PER-DAY MOOD JOURNAL + AI DAILY SUMMARY -->
@@ -2443,6 +2475,7 @@
           <div class="card-box">
             <h3 style="margin:0 0 10px;">🕰️ 历史日记流（按北京时间一日一页）</h3>
             <div id="journalHistoryList" class="list-stack"></div>
+            <div id="journalLoadMoreBar" class="list-load-more-bar" hidden></div>
           </div>
         </div>
       </section>
@@ -2702,8 +2735,22 @@
       </div>
 
       <div class="card-box" style="margin-bottom:16px;">
-        <h3>👥 用户列表与配额状态</h3>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <h3 style="margin:0;">👥 用户列表与配额状态</h3>
+            <span class="pill" id="adminUsersTotalBadge">0 人</span>
+          </div>
+          <div class="btn-group">
+            <input id="adminUsersSearchInput" placeholder="搜索用户名 / 昵称 / space_id..." style="width:220px;" onkeydown="if(event.key==='Enter') loadAdminUsers(1)" />
+            <button type="button" onclick="loadAdminUsers(1)">🔍 搜索</button>
+          </div>
+        </div>
         <div id="adminUsersList" class="list-stack"></div>
+        <nav id="adminUsersPagination" class="memory-pagination" aria-label="用户列表分页" hidden>
+          <button type="button" id="adminUsersPrevBtn" onclick="loadAdminUsers(_adminUserPage - 1)">上一页</button>
+          <span id="adminUsersPageLabel" aria-live="polite"></span>
+          <button type="button" id="adminUsersNextBtn" onclick="loadAdminUsers(_adminUserPage + 1)">下一页</button>
+        </nav>
       </div>
 
       <div class="two-col">
@@ -3384,6 +3431,41 @@
       if (name === 'admin') loadAdminConsole().catch(handleErr);
     }
 
+    function renderLoadMoreBar(elId, shownCount, totalCount, hasMore, pageSize, itemLabel, onClickCall) {
+      const bar = document.getElementById(elId);
+      if (!bar) return;
+      if (hasMore) {
+        bar.hidden = false;
+        bar.innerHTML = `
+          <span class="load-more-stat">已展示 ${shownCount} / ${totalCount} ${itemLabel}</span>
+          <button type="button" onclick="${onClickCall}">加载更多</button>
+        `;
+      } else if (totalCount > pageSize && shownCount > 0) {
+        bar.hidden = false;
+        bar.innerHTML = `<span class="load-more-stat">已展示全部 ${totalCount} ${itemLabel}</span>`;
+      } else {
+        bar.hidden = true;
+        bar.innerHTML = '';
+      }
+    }
+
+    const TASK_QUAD_INITIAL = 10;
+    const TASK_LIST_PAGE_SIZE = 20;
+    let _expandedQuadrants = {};
+    let _taskListVisibleCount = TASK_LIST_PAGE_SIZE;
+    let _lastMatrixData = null;
+    let _lastTaskQueryKey = '';
+
+    function toggleExpandQuadrant(qKey) {
+      _expandedQuadrants[qKey] = !_expandedQuadrants[qKey];
+      renderTaskViewsFromCache();
+    }
+
+    function loadMoreTasksList() {
+      _taskListVisibleCount += TASK_LIST_PAGE_SIZE;
+      renderTaskViewsFromCache();
+    }
+
     function setTaskView(mode) {
       currentTaskView = mode;
       const ovBtn = document.getElementById('viewBtnOverview');
@@ -3398,6 +3480,12 @@
       const subHdr = document.getElementById('todoSubHeading');
       if (subHdr) {
         subHdr.textContent = mode === 'list' ? '☰ 多维优先级排序列表' : '田 艾森豪威尔四象限看板';
+      }
+      if (_lastMatrixData) {
+        renderTaskViewsFromCache();
+      } else {
+        const listBar = document.getElementById('taskListLoadMoreBar');
+        if (listBar && mode !== 'list') listBar.hidden = true;
       }
     }
 
@@ -3559,12 +3647,67 @@
       `;
     }
 
+    function renderTaskViewsFromCache() {
+      const data = _lastMatrixData;
+      if (!data) return;
+      const sorted = data.sorted_tasks || [];
+      const qOrder = ['Q1_do_first', 'Q2_schedule', 'Q3_delegate', 'Q4_eliminate'];
+      document.getElementById('matrixContainer').innerHTML = qOrder.map(qKey => {
+        const qObj = (data.quadrants || {})[qKey] || { label: qKey, count: 0, tasks: [] };
+        const allQTasks = qObj.tasks || [];
+        const isExpanded = Boolean(_expandedQuadrants[qKey]);
+        const visibleTasks = isExpanded ? allQTasks : allQTasks.slice(0, TASK_QUAD_INITIAL);
+        const cards = visibleTasks.length
+          ? visibleTasks.map(renderTaskCard).join('')
+          : `<div style="color:var(--muted);font-size:13px;padding:12px 4px;">暂无该象限事项</div>`;
+        const restCount = allQTasks.length - visibleTasks.length;
+        const foldBtn = allQTasks.length > TASK_QUAD_INITIAL
+          ? `<button type="button" class="quad-fold-btn" onclick="toggleExpandQuadrant('${qKey}')">${isExpanded ? `收起至前 ${TASK_QUAD_INITIAL} 项 ▲` : `展开其余 ${restCount} 项（共 ${allQTasks.length} 项） ▼`}</button>`
+          : '';
+        return `
+          <div class="quad-box quad-${qKey}">
+            <div class="quad-header">
+              <span>${esc(qObj.label)}</span>
+              <span class="badge badge-${qKey}">${qObj.count} 项待办</span>
+            </div>
+            ${cards}
+            ${foldBtn}
+          </div>
+        `;
+      }).join('');
+
+      const shownList = sorted.slice(0, _taskListVisibleCount);
+      document.getElementById('listContainer').innerHTML = shownList.length
+        ? shownList.map(renderTaskCard).join('')
+        : `<div class="card-box" style="color:var(--muted);">暂无符合条件的待办事项</div>`;
+      if (currentTaskView === 'list') {
+        renderLoadMoreBar(
+          'taskListLoadMoreBar',
+          shownList.length,
+          sorted.length,
+          shownList.length < sorted.length,
+          TASK_LIST_PAGE_SIZE,
+          '项任务',
+          'loadMoreTasksList()'
+        );
+      } else {
+        const listBar = document.getElementById('taskListLoadMoreBar');
+        if (listBar) listBar.hidden = true;
+      }
+    }
+
     async function loadTasks() {
       const sortBy = document.getElementById('taskSortSelect').value;
       const incDone = document.getElementById('includeDoneCheck').checked;
+      const queryKey = `${sortBy}:${incDone}`;
+      if (queryKey !== _lastTaskQueryKey) {
+        _lastTaskQueryKey = queryKey;
+        _taskListVisibleCount = TASK_LIST_PAGE_SIZE;
+      }
       const data = await apiGet(`/api/tasks/matrix?sort_by=${sortBy}&include_done=${incDone}`);
       const c = data.summary_counts || {};
       const sorted = data.sorted_tasks || [];
+      _lastMatrixData = data;
       lastLoadedTasks = sorted;
       for (const item of sorted) {
         cachedTasksById[item.memory_id] = item;
@@ -3627,27 +3770,7 @@
         tipEl.title = cleanTip;
       }
 
-
-      const qOrder = ['Q1_do_first', 'Q2_schedule', 'Q3_delegate', 'Q4_eliminate'];
-      document.getElementById('matrixContainer').innerHTML = qOrder.map(qKey => {
-        const qObj = (data.quadrants || {})[qKey] || { label: qKey, count: 0, tasks: [] };
-        const cards = qObj.tasks.length
-          ? qObj.tasks.map(renderTaskCard).join('')
-          : `<div style="color:var(--muted);font-size:13px;padding:12px 4px;">暂无该象限事项</div>`;
-        return `
-          <div class="quad-box quad-${qKey}">
-            <div class="quad-header">
-              <span>${esc(qObj.label)}</span>
-              <span class="badge badge-${qKey}">${qObj.count} 项待办</span>
-            </div>
-            ${cards}
-          </div>
-        `;
-      }).join('');
-
-      document.getElementById('listContainer').innerHTML = sorted.length
-        ? sorted.map(renderTaskCard).join('')
-        : `<div class="card-box" style="color:var(--muted);">暂无符合条件的待办事项</div>`;
+      renderTaskViewsFromCache();
       renderCountdownCapsule(sorted);
       if (document.getElementById('panel-calendar')?.classList.contains('active')) {
         renderCalendarPanel();
@@ -4490,25 +4613,20 @@
       await Promise.all([loadTasks(), loadFocusCenter()]);
     }
 
-    async function loadFocusCenter() {
-      refreshFocusTaskSelector();
-      const data = await apiGet('/api/focus/overview?limit=60');
-      if (!data || data.error) return;
-      const s = data.stats || {};
-      const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-      setTxt('fStatTodayPomo', String(s.today_pomodoros ?? 0));
-      setTxt('fStatTotalPomo', String(s.total_pomodoros ?? 0));
-      setTxt('fStatTodayDur', formatDurationHuman(s.today_seconds ?? 0));
-      setTxt('fStatTotalDur', formatDurationHuman(s.total_seconds ?? 0));
+    const FOCUS_PAGE_SIZE = 20;
+    let _focusLoadedSessions = [];
+    let _focusTotalSessions = 0;
+    let _focusHasMore = false;
 
-      const sessions = data.sessions || [];
+    function renderFocusTimeline() {
       const listEl = document.getElementById('focusTimelineList');
       if (!listEl) return;
-      if (!sessions.length) {
+      if (!_focusLoadedSessions.length) {
         listEl.innerHTML = `<div style="color:var(--muted);font-size:13px;padding:18px 4px;text-align:center;">暂无专注记录，在左侧开启第一轮番茄钟或正计时吧 🍅</div>`;
+        renderLoadMoreBar('focusLoadMoreBar', 0, 0, false, FOCUS_PAGE_SIZE, '条记录', 'loadMoreFocusSessions()');
         return;
       }
-      listEl.innerHTML = sessions.map(item => {
+      listEl.innerHTML = _focusLoadedSessions.map(item => {
         const isAborted = item.status === 'aborted';
         const isSw = item.mode === 'stopwatch';
         const startHHMM = (item.started_at || '').slice(11, 16);
@@ -4534,6 +4652,49 @@
           </div>
         `;
       }).join('');
+      renderLoadMoreBar(
+        'focusLoadMoreBar',
+        _focusLoadedSessions.length,
+        _focusTotalSessions,
+        _focusHasMore,
+        FOCUS_PAGE_SIZE,
+        '条记录',
+        'loadMoreFocusSessions()'
+      );
+    }
+
+    function loadMoreFocusSessions() {
+      loadFocusCenter({ append: true });
+    }
+
+    async function loadFocusCenter(opts = {}) {
+      const append = Boolean(opts && opts.append);
+      if (!append) refreshFocusTaskSelector();
+      const offset = append ? _focusLoadedSessions.length : 0;
+      const data = await apiGet(`/api/focus/overview?limit=${FOCUS_PAGE_SIZE}&offset=${offset}`);
+      if (!data || data.error) return;
+      const s = data.stats || {};
+      const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      setTxt('fStatTodayPomo', String(s.today_pomodoros ?? 0));
+      setTxt('fStatTotalPomo', String(s.total_pomodoros ?? 0));
+      setTxt('fStatTodayDur', formatDurationHuman(s.today_seconds ?? 0));
+      setTxt('fStatTotalDur', formatDurationHuman(s.total_seconds ?? 0));
+
+      const incoming = data.sessions || [];
+      if (!append) {
+        _focusLoadedSessions = incoming;
+      } else {
+        const seen = new Set(_focusLoadedSessions.map(x => x.session_id));
+        for (const item of incoming) {
+          if (!seen.has(item.session_id)) {
+            _focusLoadedSessions.push(item);
+            seen.add(item.session_id);
+          }
+        }
+      }
+      _focusTotalSessions = Number(data.total ?? _focusLoadedSessions.length);
+      _focusHasMore = typeof data.has_more === 'boolean' ? data.has_more : _focusLoadedSessions.length < _focusTotalSessions;
+      renderFocusTimeline();
     }
 
     async function deleteFocusRecord(sessionId) {
@@ -6562,12 +6723,92 @@
       }
     }
 
+    const ADMIN_USER_PAGE_SIZE = 20;
+    let _adminUserPage = 1;
+    let _adminUserTotalPages = 0;
+
+    function updateAdminUsersPagination(loading, totalUsers = 0) {
+      const pag = document.getElementById('adminUsersPagination');
+      const prevBtn = document.getElementById('adminUsersPrevBtn');
+      const nextBtn = document.getElementById('adminUsersNextBtn');
+      const lbl = document.getElementById('adminUsersPageLabel');
+      const badge = document.getElementById('adminUsersTotalBadge');
+      if (badge && !loading) badge.textContent = `${totalUsers} 人`;
+      if (pag) {
+        pag.setAttribute('aria-busy', String(loading));
+        pag.hidden = _adminUserTotalPages <= 1;
+      }
+      if (prevBtn) prevBtn.disabled = loading || _adminUserPage <= 1;
+      if (nextBtn) nextBtn.disabled = loading || _adminUserPage >= _adminUserTotalPages;
+      if (lbl) lbl.textContent = _adminUserTotalPages > 1 ? `${_adminUserPage} / ${_adminUserTotalPages}` : '';
+    }
+
+    async function loadAdminUsers(page = _adminUserPage) {
+      const targetPage = Math.max(1, Number(page) || 1);
+      const q = (document.getElementById('adminUsersSearchInput')?.value || '').trim();
+      const params = new URLSearchParams({
+        limit: String(ADMIN_USER_PAGE_SIZE),
+        offset: String((targetPage - 1) * ADMIN_USER_PAGE_SIZE),
+      });
+      if (q) params.set('q', q);
+
+      updateAdminUsersPagination(true);
+      try {
+        const usersRes = await apiGet(`/api/admin/users?${params.toString()}`);
+        if (usersRes.error) {
+          showToast(`加载用户列表失败: ${usersRes.error}`, 'error');
+          updateAdminUsersPagination(false, 0);
+          return usersRes;
+        }
+        const total = Number(usersRes.total ?? (usersRes.users || []).length);
+        _adminUserTotalPages = total ? Math.ceil(total / ADMIN_USER_PAGE_SIZE) : 0;
+        _adminUserPage = _adminUserTotalPages ? Math.min(targetPage, _adminUserTotalPages) : 1;
+        if (targetPage > _adminUserPage && _adminUserTotalPages >= 1) {
+          return loadAdminUsers(_adminUserPage);
+        }
+        const users = usersRes.users || [];
+        document.getElementById('adminUsersList').innerHTML = users.map(item => {
+          const tu = item.today_usage || {};
+          const cnt = item.counts || {};
+          const isDis = item.status === 'disabled';
+          return `
+            <div class="mem-card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+              <div style="display:grid;gap:4px;">
+                <div>
+                  <strong>${esc(item.username)}</strong>
+                  <span style="color:var(--muted);">(${esc(item.display_name)})</span>
+                  <span class="tag">${esc(item.role)}</span>
+                  <span class="tag" style="background:${isDis ? '#fee2e2;color:#b91c1c' : '#dcfce7;color:#166534'}">${isDis ? '已禁用' : '正常'}</span>
+                  <code style="font-size:11.5px;">${esc(item.space_id)}</code>
+                </div>
+                <div style="font-size:12px;color:var(--muted);">
+                  今日：录入 ${tu.notes_count ?? 0}/${item.daily_note_limit} · AI ${tu.llm_calls ?? 0}/${item.daily_llm_limit} · Token ${tu.tokens_used ?? 0}/${item.daily_token_limit} · 🛡️拦截 ${tu.blocked_noise_count ?? 0}
+                  ｜ 累计：原文 ${cnt.notes_total ?? 0} · 记忆 ${cnt.memories_total ?? 0} · 待办 ${cnt.open_tasks ?? 0}
+                </div>
+              </div>
+              <div class="card-actions">
+                <button type="button" onclick="adminToggleUserStatus('${item.user_id}', '${isDis ? 'active' : 'disabled'}')">${isDis ? '✅ 启用' : '🚫 停用'}</button>
+                <button type="button" onclick="adminToggleUserRole('${item.user_id}', '${item.role === 'admin' ? 'user' : 'admin'}')">${item.role === 'admin' ? '降为普通用户' : '设为管理员'}</button>
+                <button type="button" onclick="adminAdjustQuota('${item.user_id}', ${item.daily_note_limit}, ${item.daily_llm_limit})">📊 调额</button>
+                <button type="button" data-uid="${esc(item.user_id)}" data-uname="${esc(item.username)}" onclick="adminResetUserPwEl(this)">🔑 重置密码</button>
+              </div>
+            </div>
+          `;
+        }).join('') || `<div style="color:var(--muted);">${q ? '未找到匹配的账号' : '暂无注册用户'}</div>`;
+        updateAdminUsersPagination(false, total);
+        return usersRes;
+      } catch (err) {
+        updateAdminUsersPagination(false, 0);
+        return { error: err?.message || String(err) };
+      }
+    }
+
     // ---------------- Admin Console ----------------
     async function loadAdminConsole(btn) {
       return withBtnBusy(btn, '⏳ 加载中', async () => {
-        const [ov, usersRes] = await Promise.all([
+        const [ov] = await Promise.all([
           apiGet('/api/admin/overview'),
-          apiGet('/api/admin/users'),
+          loadAdminUsers(_adminUserPage),
         ]);
         if (ov.error) return showToast(`后台加载失败: ${ov.error}`, 'error');
 
@@ -6601,36 +6842,6 @@
             <span>录入 ${d.notes_count} · 🛡️拦截 ${d.blocked_noise_count} · LLM ${d.llm_calls} · ${d.tokens_used} tok</span>
           </div>
         `).join('') || '<div style="color:var(--muted);font-size:12.5px;">暂无历史数据</div>';
-
-        const users = usersRes.users || [];
-        document.getElementById('adminUsersList').innerHTML = users.map(item => {
-          const tu = item.today_usage || {};
-          const cnt = item.counts || {};
-          const isDis = item.status === 'disabled';
-          return `
-            <div class="mem-card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-              <div style="display:grid;gap:4px;">
-                <div>
-                  <strong>${esc(item.username)}</strong>
-                  <span style="color:var(--muted);">(${esc(item.display_name)})</span>
-                  <span class="tag">${esc(item.role)}</span>
-                  <span class="tag" style="background:${isDis ? '#fee2e2;color:#b91c1c' : '#dcfce7;color:#166534'}">${isDis ? '已禁用' : '正常'}</span>
-                  <code style="font-size:11.5px;">${esc(item.space_id)}</code>
-                </div>
-                <div style="font-size:12px;color:var(--muted);">
-                  今日：录入 ${tu.notes_count ?? 0}/${item.daily_note_limit} · AI ${tu.llm_calls ?? 0}/${item.daily_llm_limit} · Token ${tu.tokens_used ?? 0}/${item.daily_token_limit} · 🛡️拦截 ${tu.blocked_noise_count ?? 0}
-                  ｜ 累计：原文 ${cnt.notes_total ?? 0} · 记忆 ${cnt.memories_total ?? 0} · 待办 ${cnt.open_tasks ?? 0}
-                </div>
-              </div>
-              <div class="card-actions">
-                <button type="button" onclick="adminToggleUserStatus('${item.user_id}', '${isDis ? 'active' : 'disabled'}')">${isDis ? '✅ 启用' : '🚫 停用'}</button>
-                <button type="button" onclick="adminToggleUserRole('${item.user_id}', '${item.role === 'admin' ? 'user' : 'admin'}')">${item.role === 'admin' ? '降为普通用户' : '设为管理员'}</button>
-                <button type="button" onclick="adminAdjustQuota('${item.user_id}', ${item.daily_note_limit}, ${item.daily_llm_limit})">📊 调额</button>
-                <button type="button" data-uid="${esc(item.user_id)}" data-uname="${esc(item.username)}" onclick="adminResetUserPwEl(this)">🔑 重置密码</button>
-              </div>
-            </div>
-          `;
-        }).join('') || '<div style="color:var(--muted);">暂无注册用户</div>';
 
         document.getElementById('adminAuditList').innerHTML = (ov.audit_logs || []).map(a => `
           <div class="mem-card" style="padding:8px 10px;font-size:12px;">
@@ -7148,6 +7359,14 @@
       });
     }
 
+    const COUNTDOWN_PAGE_SIZE = 12;
+    let _countdownVisibleCount = COUNTDOWN_PAGE_SIZE;
+
+    function loadMoreCountdowns() {
+      _countdownVisibleCount += COUNTDOWN_PAGE_SIZE;
+      paintCountdownWall();
+    }
+
     function paintCountdownWall() {
       const grid = document.getElementById('countdownWallGrid');
       if (!grid) return;
@@ -7163,10 +7382,12 @@
             <button type="button" class="duodo-btn" onclick="openCountdownEditorModal(null)">+ 创建第一张卡片</button>
           </div>
         `;
+        renderLoadMoreBar('countdownLoadMoreBar', 0, 0, false, COUNTDOWN_PAGE_SIZE, '张倒数日', 'loadMoreCountdowns()');
         return;
       }
       const repeatMap = { none: '单次', yearly: '每年重复', monthly: '每月重复' };
-      grid.innerHTML = items.map(it => `
+      const shown = items.slice(0, _countdownVisibleCount);
+      grid.innerHTML = shown.map(it => `
         <div class="cd-big-card" onclick="openCountdownEditorModal('${esc(it.countdown_id)}')">
           <div class="cd-card-banner cd-banner-${esc(it.color_theme || 'sky')}">
             <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(it.icon)} ${esc(it.header_banner)}</span>
@@ -7182,6 +7403,15 @@
           </div>
         </div>
       `).join('');
+      renderLoadMoreBar(
+        'countdownLoadMoreBar',
+        shown.length,
+        items.length,
+        shown.length < items.length,
+        COUNTDOWN_PAGE_SIZE,
+        '张倒数日',
+        'loadMoreCountdowns()'
+      );
     }
 
     // ---------------- Phase 3: Calendar Week Timeline & Month Panorama ----------------
@@ -7935,9 +8165,16 @@
       }
     }
 
-    async function loadMemosView() {
+    const MEMO_PAGE_SIZE = 24;
+    let _memoLoadedItems = [];
+    let _memoTotal = 0;
+    let _memoHasMore = false;
+
+    async function loadMemosView(opts = {}) {
+      const append = Boolean(opts && opts.append);
       const q = (document.getElementById('notesSearchInput')?.value || '').trim();
-      const params = new URLSearchParams({ limit: '80' });
+      const offset = append ? _memoLoadedItems.length : 0;
+      const params = new URLSearchParams({ limit: String(MEMO_PAGE_SIZE), offset: String(offset) });
       if (q) params.set('q', q);
       if (_memoSelectedTag) params.set('tag', _memoSelectedTag);
       if (_memoPinnedOnly) params.set('pinned_only', 'true');
@@ -7948,6 +8185,7 @@
       if (res.error) {
         box.className = 'memo-list-stack';
         box.innerHTML = `<div class="card-box memo-empty-card" style="color:#dc2626;">加载备忘录失败: ${esc(res.error)}</div>`;
+        renderLoadMoreBar('memoLoadMoreBar', 0, 0, false, MEMO_PAGE_SIZE, '条备忘录', 'loadMemosView({ append: true })');
         return;
       }
 
@@ -7965,14 +8203,28 @@
         tagBar.innerHTML = tHtml;
       }
 
-      const memos = res.memos || [];
-      _cachedMemosById = {};
-      memos.forEach(m => { _cachedMemosById[m.note_id] = m; });
+      const incoming = res.memos || [];
+      if (!append) {
+        _memoLoadedItems = incoming;
+      } else {
+        const seen = new Set(_memoLoadedItems.map(m => m.note_id));
+        for (const item of incoming) {
+          if (!seen.has(item.note_id)) {
+            _memoLoadedItems.push(item);
+            seen.add(item.note_id);
+          }
+        }
+      }
+      _memoTotal = Number(res.total ?? _memoLoadedItems.length);
+      _memoHasMore = typeof res.has_more === 'boolean' ? res.has_more : _memoLoadedItems.length < _memoTotal;
 
-      box.className = memos.length
+      _cachedMemosById = {};
+      _memoLoadedItems.forEach(m => { _cachedMemosById[m.note_id] = m; });
+
+      box.className = _memoLoadedItems.length
         ? (_memoLayout === 'masonry' ? 'memo-masonry' : 'memo-list-stack')
         : 'memo-list-stack';
-      box.innerHTML = memos.length ? memos.map(n => {
+      box.innerHTML = _memoLoadedItems.length ? _memoLoadedItems.map(n => {
         const tagsPills = (n.tags || []).map(t => `<span class="tag" style="cursor:pointer;" data-tag="${esc(t)}" onclick="filterMemosByTag(this.dataset.tag)">#${esc(t)}</span>`).join('');
         return `
           <div class="memo-card ${n.pinned ? 'is-pinned' : ''}">
@@ -7995,6 +8247,15 @@
           </div>
         `;
       }).join('') : `<div class="card-box memo-empty-card" style="color:var(--muted);">暂无匹配的备忘录，在上方写下第一条 Markdown 备忘或拖拽粘贴一张图片吧。</div>`;
+      renderLoadMoreBar(
+        'memoLoadMoreBar',
+        _memoLoadedItems.length,
+        _memoTotal,
+        _memoHasMore,
+        MEMO_PAGE_SIZE,
+        '条备忘录',
+        'loadMemosView({ append: true })'
+      );
     }
 
     function startEditMemo(noteId) {
@@ -8091,14 +8352,79 @@
       if (files.length) uploadCompressedImages(files, 'journal');
     }
 
-    async function loadJournalView() {
+    const JOURNAL_PAGE_SIZE = 15;
+    let _journalTimelineItems = [];
+    let _journalTimelineTotal = 0;
+    let _journalTimelineHasMore = false;
+
+    function renderJournalTimeline() {
+      const histBox = document.getElementById('journalHistoryList');
+      if (histBox) {
+        histBox.innerHTML = _journalTimelineItems.length ? _journalTimelineItems.map(entry => {
+          const mm = entry.mood_meta || { icon: '📖', label: '日记' };
+          return `
+            <div class="memo-card" style="${entry.journal_date === _journalDate ? 'border-color:var(--primary);' : ''}">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+                <div style="display:flex;align-items:center;gap:8px;cursor:pointer;" onclick="_journalDate='${esc(entry.journal_date)}';loadJournalView()">
+                  <strong style="font-size:14.5px;color:var(--heading);">📅 ${esc(entry.journal_date)} (${esc(entry.weekday_label || '')})</strong>
+                  <span class="tag">${esc(mm.icon)} ${esc(mm.label)}</span>
+                  <span style="font-size:11.5px;color:var(--muted);">${esc(entry.lunar_label || '')}</span>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <button type="button" style="font-size:11.5px;padding:3px 9px;" onclick="_journalDate='${esc(entry.journal_date)}';loadJournalView()">编辑此页</button>
+                  <button type="button" style="color:#b91c1c;font-size:11.5px;padding:3px 9px;" onclick="forgetNoteFromStream('${esc(entry.note_id)}')">🗑️ 遗忘</button>
+                </div>
+              </div>
+              <div style="font-size:13.5px;">${renderSimpleMarkdown(entry.content)}</div>
+              ${Array.isArray(entry.media) && entry.media.length ? renderMediaGridHtml(entry.media) : ''}
+            </div>
+          `;
+        }).join('') : `<div style="color:var(--muted);font-size:13px;padding:12px 4px;">还没有日记记录，点击右上角「✨ AI 今日小结」开启第一篇一日一页日记吧。</div>`;
+      }
+      renderLoadMoreBar(
+        'journalLoadMoreBar',
+        _journalTimelineItems.length,
+        _journalTimelineTotal,
+        _journalTimelineHasMore,
+        JOURNAL_PAGE_SIZE,
+        '篇日记',
+        'loadJournalView({ append: true })'
+      );
+    }
+
+    async function loadJournalView(opts = {}) {
+      const append = Boolean(opts && opts.append);
       const dateInp = document.getElementById('journalDateInput');
       if (dateInp) dateInp.value = _journalDate;
-      const res = await apiGet(`/api/journal/overview?date=${encodeURIComponent(_journalDate)}&limit=30`);
+      const offset = append ? _journalTimelineItems.length : 0;
+      const res = await apiGet(`/api/journal/overview?date=${encodeURIComponent(_journalDate)}&limit=${JOURNAL_PAGE_SIZE}&offset=${offset}`);
       if (res.error) {
         showToast(`加载日记失败: ${res.error}`, 'error');
         return;
       }
+
+      const incoming = res.timeline || [];
+      if (!append) {
+        _journalTimelineItems = incoming;
+      } else {
+        const seen = new Set(_journalTimelineItems.map(x => x.note_id));
+        for (const item of incoming) {
+          if (!seen.has(item.note_id)) {
+            _journalTimelineItems.push(item);
+            seen.add(item.note_id);
+          }
+        }
+      }
+      _journalTimelineTotal = Number(res.timeline_total ?? _journalTimelineItems.length);
+      _journalTimelineHasMore = typeof res.timeline_has_more === 'boolean'
+        ? res.timeline_has_more
+        : _journalTimelineItems.length < _journalTimelineTotal;
+
+      if (append) {
+        renderJournalTimeline();
+        return;
+      }
+
       _journalOverviewCache = res;
       document.getElementById('journalLunarLabel').textContent = `${res.lunar_label || ''} · ${res.weekday_label || ''}`;
 
@@ -8139,30 +8465,7 @@
         ${cur ? `<span class="tag" style="background:#dcfce7;color:#166534;">📖 已存档 v${cur.revision}</span>` : `<span class="tag">✍️ 待书写</span>`}
       `;
 
-      const timeline = res.timeline || [];
-      const histBox = document.getElementById('journalHistoryList');
-      if (histBox) {
-        histBox.innerHTML = timeline.length ? timeline.map(entry => {
-          const mm = entry.mood_meta || { icon: '📖', label: '日记' };
-          return `
-            <div class="memo-card" style="${entry.journal_date === _journalDate ? 'border-color:var(--primary);' : ''}">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-                <div style="display:flex;align-items:center;gap:8px;cursor:pointer;" onclick="_journalDate='${esc(entry.journal_date)}';loadJournalView()">
-                  <strong style="font-size:14.5px;color:var(--heading);">📅 ${esc(entry.journal_date)} (${esc(entry.weekday_label || '')})</strong>
-                  <span class="tag">${esc(mm.icon)} ${esc(mm.label)}</span>
-                  <span style="font-size:11.5px;color:var(--muted);">${esc(entry.lunar_label || '')}</span>
-                </div>
-                <div style="display:flex;gap:6px;align-items:center;">
-                  <button type="button" style="font-size:11.5px;padding:3px 9px;" onclick="_journalDate='${esc(entry.journal_date)}';loadJournalView()">编辑此页</button>
-                  <button type="button" style="color:#b91c1c;font-size:11.5px;padding:3px 9px;" onclick="forgetNoteFromStream('${esc(entry.note_id)}')">🗑️ 遗忘</button>
-                </div>
-              </div>
-              <div style="font-size:13.5px;">${renderSimpleMarkdown(entry.content)}</div>
-              ${Array.isArray(entry.media) && entry.media.length ? renderMediaGridHtml(entry.media) : ''}
-            </div>
-          `;
-        }).join('') : `<div style="color:var(--muted);font-size:13px;padding:12px 4px;">还没有日记记录，点击右上角「✨ AI 今日小结」开启第一篇一日一页日记吧。</div>`;
-      }
+      renderJournalTimeline();
     }
 
     async function generateJournalAiSummary(btn, triggerDream = false) {
