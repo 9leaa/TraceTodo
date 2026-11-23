@@ -904,7 +904,16 @@ struct AuthSessionResponse: Codable {
     }
 }
 
+struct NoteBriefRef: Codable {
+    let noteId: String
+
+    enum CodingKeys: String, CodingKey {
+        case noteId = "note_id"
+    }
+}
+
 struct NoteRecordResponse: Codable {
+    let note: NoteBriefRef?
     let extractionStatus: String?
     let filtered: Bool?
     let filterReason: String?
@@ -912,11 +921,28 @@ struct NoteRecordResponse: Codable {
     let jobId: String?
 
     enum CodingKeys: String, CodingKey {
+        case note
         case extractionStatus = "extraction_status"
         case filtered
         case filterReason = "filter_reason"
         case errorMessage = "error_message"
         case jobId = "job_id"
+    }
+}
+
+struct RecentIngestJobModel: Codable {
+    let jobId: String
+    let noteId: String
+    let status: String
+    let errorMessage: String?
+    let changesCount: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case jobId = "job_id"
+        case noteId = "note_id"
+        case status
+        case errorMessage = "error_message"
+        case changesCount = "changes_count"
     }
 }
 
@@ -926,6 +952,8 @@ struct IngestStatusResponse: Codable {
     let processing: Int
     let pending: Int
     let lastCompletedAt: String?
+    let syncVersion: Int?
+    let recentJobs: [RecentIngestJobModel]?
 
     enum CodingKeys: String, CodingKey {
         case spaceId = "space_id"
@@ -933,6 +961,8 @@ struct IngestStatusResponse: Codable {
         case processing
         case pending
         case lastCompletedAt = "last_completed_at"
+        case syncVersion = "sync_version"
+        case recentJobs = "recent_jobs"
     }
 }
 
@@ -942,8 +972,10 @@ struct SyncStateResponse: Codable {
     let lastReason: String?
     let updatedAt: String?
     let pendingIngest: Int?
+    let lastCompletedAt: String?
     let serverTime: String?
     let beijingDate: String?
+    let recentJobs: [RecentIngestJobModel]?
 
     enum CodingKeys: String, CodingKey {
         case spaceId = "space_id"
@@ -951,9 +983,44 @@ struct SyncStateResponse: Codable {
         case lastReason = "last_reason"
         case updatedAt = "updated_at"
         case pendingIngest = "pending_ingest"
+        case lastCompletedAt = "last_completed_at"
         case serverTime = "server_time"
         case beijingDate = "beijing_date"
+        case recentJobs = "recent_jobs"
     }
+}
+
+struct BootstrapHealthModel: Codable {
+    let status: String?
+    let llmProvider: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case llmProvider = "llm_provider"
+    }
+}
+
+struct BootstrapResponse: Codable {
+    let health: BootstrapHealthModel?
+    let auth: AuthStatusResponse?
+    let preferences: SpacePreferencesResponse?
+    let syncState: SyncStateResponse?
+
+    enum CodingKeys: String, CodingKey {
+        case health
+        case auth
+        case preferences
+        case syncState = "sync_state"
+    }
+}
+
+struct OptimisticIngestItem: Identifiable, Equatable {
+    let id: String
+    let text: String
+    var noteId: String?
+    var jobId: String?
+    var ackReceived: Bool
+    let createdAt: Date
 }
 
 struct TaskStatusRefreshResponse: Codable {

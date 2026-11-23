@@ -73,7 +73,9 @@ class ChangeService:
             if any_note.is_forgotten:
                 raise ValidationError("Cannot cite a forgotten note as evidence")
 
-    def apply(self, proposal: ChangeProposal) -> ChangeResult:
+    def apply(
+        self, proposal: ChangeProposal, *, defer_active_vector_sync: bool = False
+    ) -> ChangeResult:
         # 1. Idempotency check (C08)
         if proposal.idempotency_key:
             cached = self.trace_repo.get_idempotent_result(
@@ -97,9 +99,13 @@ class ChangeService:
         proposal_id = new_id("prop")
 
         if proposal.action == "create":
-            result = self._handle_create(proposal_id, proposal)
+            result = self._handle_create(
+                proposal_id, proposal, defer_active_vector_sync=defer_active_vector_sync
+            )
         else:
-            result = self._handle_existing(proposal_id, proposal)
+            result = self._handle_existing(
+                proposal_id, proposal, defer_active_vector_sync=defer_active_vector_sync
+            )
 
         if proposal.idempotency_key:
             self.trace_repo.save_idempotent_result(
@@ -114,7 +120,13 @@ class ChangeService:
             self.sync_tracker.bump(proposal.space_id, reason=proposal.action)
         return result
 
-    def _handle_create(self, proposal_id: str, proposal: ChangeProposal) -> ChangeResult:
+    def _handle_create(
+        self,
+        proposal_id: str,
+        proposal: ChangeProposal,
+        *,
+        defer_active_vector_sync: bool = False,
+    ) -> ChangeResult:
         mem_id = new_id("mem")
         title = proposal.title.strip() or proposal.summary[:28].strip() or "Untitled Memory"
         permalink = proposal.permalink.strip("/") or slugify_permalink(
@@ -162,7 +174,8 @@ class ChangeService:
                 [(r.relation_type, r.target, r.context) for r in proposal.relations],
             )
         self.relation_repo.resolve_pending_inbound(saved)
-        self.vector_lifecycle.sync_memory(saved)
+        if not (defer_active_vector_sync and saved.status == "active"):
+            self.vector_lifecycle.sync_memory(saved)
 
         return ChangeResult(
             proposal_id=proposal_id,
@@ -171,7 +184,13 @@ class ChangeService:
             message="Memory created",
         )
 
-    def _handle_existing(self, proposal_id: str, proposal: ChangeProposal) -> ChangeResult:
+    def _handle_existing(
+        self,
+        proposal_id: str,
+        proposal: ChangeProposal,
+        *,
+        defer_active_vector_sync: bool = False,
+    ) -> ChangeResult:
         # C09: Distinguish cross-space unauthorized access from missing ID without leaking content
         raw_any = self.memory_repo.get_any_space(proposal.target_memory_id)
         if raw_any is not None and raw_any.space_id != proposal.space_id:
@@ -577,7 +596,8 @@ class ChangeService:
                     actor_id=proposal.actor_id,
                     origin=proposal.origin,
                 )
-                self.vector_lifecycle.sync_memory(saved)
+                if not (defer_active_vector_sync and saved.status == "active"):
+                    self.vector_lifecycle.sync_memory(saved)
                 return ChangeResult(
                     proposal_id=proposal_id,
                     status="skipped_older_event",
@@ -637,7 +657,8 @@ class ChangeService:
                     actor_id=proposal.actor_id,
                     origin=proposal.origin,
                 )
-                self.vector_lifecycle.sync_memory(saved)
+                if not (defer_active_vector_sync and saved.status == "active"):
+                    self.vector_lifecycle.sync_memory(saved)
                 return ChangeResult(
                     proposal_id=proposal_id,
                     status="skipped_older_event",
@@ -687,7 +708,8 @@ class ChangeService:
                 [(r.relation_type, r.target, r.context) for r in proposal.relations],
             )
         self.relation_repo.resolve_pending_inbound(saved)
-        self.vector_lifecycle.sync_memory(saved)
+        if not (defer_active_vector_sync and saved.status == "active"):
+            self.vector_lifecycle.sync_memory(saved)
         return ChangeResult(
             proposal_id=proposal_id,
             status="applied",

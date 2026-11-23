@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 import uuid
 
 from trace_memory.domain.memories import MemoryItem
@@ -418,3 +418,81 @@ class VectorLifecycleService:
                 "permalink": memory.permalink,
             },
         )
+
+    def sync_batch(
+        self,
+        notes: list[RawNote] | tuple[RawNote, ...] = (),
+        memories: list[MemoryItem] | tuple[MemoryItem, ...] = (),
+        *,
+        note_guard: Callable[[RawNote], bool] | None = None,
+        memory_guard: Callable[[MemoryItem], bool] | None = None,
+    ) -> int:
+        """Batch-embed active notes & memories in minimal HTTP calls while honoring forget/status guards."""
+        pending_items: list[tuple[str, Any, str]] = []
+
+        dedup_notes: dict[str, RawNote] = {}
+        for n in notes:
+            dedup_notes[n.note_id] = n
+        for note in dedup_notes.values():
+            visible = note.visible_content()
+            if note.is_forgotten or not visible.replace("[REDACTED]", "").strip():
+                self.vector_store.delete(NOTES_COLLECTION, note.note_id)
+            else:
+                pending_items.append(("note", note, visible))
+
+        dedup_mems: dict[str, MemoryItem] = {}
+        for m in memories:
+            dedup_mems[m.memory_id] = m
+        for mem in dedup_mems.values():
+            if mem.status != "active":
+                self.vector_store.delete(MEMORIES_COLLECTION, mem.memory_id)
+            else:
+                pending_items.append(("memory", mem, mem.searchable_text()))
+
+        if not pending_items:
+            return 0
+
+        texts = [entry[2] for entry in pending_items]
+        embed_many_fn = getattr(self.embedder, "embed_many", None)
+        if callable(embed_many_fn):
+            vectors = embed_many_fn(texts)
+        else:
+            vectors = [self.embedder.embed(t) for t in texts]
+
+        embedded_count = 0
+        for (kind, obj, _), vec in zip(pending_items, vectors):
+            if kind == "note":
+                n_obj: RawNote = obj
+                if note_guard is not None and not note_guard(n_obj):
+                    continue
+                self.vector_store.upsert(
+                    collection=NOTES_COLLECTION,
+                    doc_id=n_obj.note_id,
+                    space_id=n_obj.space_id,
+                    vector=vec,
+                    metadata={
+                        "revision": n_obj.revision,
+                        "is_forgotten": False,
+                        "event_time": n_obj.event_time,
+                    },
+                )
+                embedded_count += 1
+            else:
+                m_obj: MemoryItem = obj
+                if memory_guard is not None and not memory_guard(m_obj):
+                    continue
+                self.vector_store.upsert(
+                    collection=MEMORIES_COLLECTION,
+                    doc_id=m_obj.memory_id,
+                    space_id=m_obj.space_id,
+                    vector=vec,
+                    metadata={
+                        "memory_type": m_obj.memory_type,
+                        "status": m_obj.status,
+                        "version": m_obj.version,
+                        "assertion_kind": m_obj.assertion_kind,
+                        "permalink": m_obj.permalink,
+                    },
+                )
+                embedded_count += 1
+        return embedded_count

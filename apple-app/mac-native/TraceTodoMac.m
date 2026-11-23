@@ -273,21 +273,35 @@
     NSString *text = [self.quickInput.stringValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if (text.length == 0) return;
     self.quickInput.stringValue = @"";
-    self.popoverHeaderLabel.stringValue = @"⏳ 正在通过 Qwen3.8-flash 抽取四象限...";
+    self.popoverHeaderLabel.stringValue = [NSString stringWithFormat:@"✨ AI 解析中：%@", text];
 
     NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"%@/api/notes/record", self.serverBaseURL]];
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
     req.HTTPMethod = @"POST";
     [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    NSDictionary *body = @{@"content": text, @"space_id": self.spaceId};
+    NSDictionary *body = @{@"content": text, @"space_id": self.spaceId, @"async_mode": @YES};
     req.HTTPBody = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
 
     [[[NSURLSession sharedSession] dataTaskWithRequest:req
                                      completionHandler:^(NSData *d, NSURLResponse *r, NSError *e) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self refreshStatusFromAPI];
-            [self.webView reload];
-        });
+        if (e || !d) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self refreshStatusFromAPI];
+            });
+            return;
+        }
+        NSDictionary *ack = [NSJSONSerialization JSONObjectWithData:d options:0 error:nil];
+        NSString *jobId = ([ack isKindOfClass:[NSDictionary class]] && [ack[@"job_id"] isKindOfClass:[NSString class]]) ? ack[@"job_id"] : @"";
+        NSString *waitURLStr = [NSString stringWithFormat:@"%@/api/notes/ingest-status?space_id=%@&job_id=%@&wait_ms=8000",
+                                self.serverBaseURL, self.spaceId, jobId];
+        NSURL *waitURL = [NSURL URLWithString:waitURLStr];
+        [[[NSURLSession sharedSession] dataTaskWithURL:waitURL
+                                     completionHandler:^(NSData *wd, NSURLResponse *wr, NSError *we) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self refreshStatusFromAPI];
+                [self.webView evaluateJavaScript:@"if (typeof refreshAfterIngestChange === 'function') { refreshAfterIngestChange(); } else if (typeof loadTasks === 'function') { loadTasks(); }" completionHandler:nil];
+            });
+        }] resume];
     }] resume];
 }
 

@@ -10,6 +10,8 @@ Design goals:
 
 from __future__ import annotations
 
+from collections import deque
+import inspect
 import json
 import random
 import threading
@@ -323,6 +325,7 @@ class IngestWorkerPool:
         llm_max_concurrency: int = 12,
         max_retries: int = 3,
         retry_base_delay_seconds: float = 0.35,
+        on_job_settled: Callable[[str, str], None] | None = None,
     ) -> None:
         self.job_repo = job_repo
         self.processor = processor
@@ -330,6 +333,11 @@ class IngestWorkerPool:
         self.max_retries = max(1, int(max_retries))
         self.retry_base_delay_seconds = max(0.01, float(retry_base_delay_seconds))
         self.llm_semaphore = threading.Semaphore(max(1, int(llm_max_concurrency)))
+        self.on_job_settled = on_job_settled
+        try:
+            self._supports_defer_embeddings = "defer_embeddings" in inspect.signature(processor).parameters
+        except (TypeError, ValueError):
+            self._supports_defer_embeddings = False
 
         self._sched_lock = threading.Lock()
         self._cond = threading.Condition(self._sched_lock)
@@ -337,6 +345,9 @@ class IngestWorkerPool:
         self._active_spaces: set[str] = set()
         self._last_scheduled: dict[str, float] = {}
         self._threads: list[threading.Thread] = []
+        self._vec_queue: deque[tuple[str, Callable[[], None]]] = deque()
+        self._pending_vector_counts: dict[str, int] = {}
+        self._vec_threads: list[threading.Thread] = []
         self._running = False
 
     @property
@@ -359,8 +370,19 @@ class IngestWorkerPool:
                 )
                 for i in range(self.worker_count)
             ]
+            vec_worker_cnt = max(1, min(4, self.worker_count))
+            self._vec_threads = [
+                threading.Thread(
+                    target=self._vector_worker_loop,
+                    name=f"tm-vec-worker-{i}",
+                    daemon=True,
+                )
+                for i in range(vec_worker_cnt)
+            ]
             for t in self._threads:
                 t.start()
+            for vt in self._vec_threads:
+                vt.start()
 
     def stop(self, timeout: float = 5.0) -> None:
         with self._sched_lock:
@@ -368,8 +390,9 @@ class IngestWorkerPool:
                 return
             self._running = False
             self._stop_event.set()
-            threads = list(self._threads)
+            threads = list(self._threads) + list(self._vec_threads)
             self._threads.clear()
+            self._vec_threads.clear()
             self._cond.notify_all()
         deadline = time.monotonic() + timeout
         for t in threads:
@@ -380,15 +403,53 @@ class IngestWorkerPool:
         with self._sched_lock:
             self._cond.notify_all()
 
+    def _enqueue_deferred_vector(self, space_id: str, fn: Callable[[], None]) -> None:
+        with self._sched_lock:
+            self._pending_vector_counts[space_id] = self._pending_vector_counts.get(space_id, 0) + 1
+            self._vec_queue.append((space_id, fn))
+            self._cond.notify_all()
+
+    def _vector_worker_loop(self) -> None:
+        try:
+            while True:
+                item: tuple[str, Callable[[], None]] | None = None
+                with self._sched_lock:
+                    while not self._vec_queue and not self._stop_event.is_set():
+                        self._cond.wait(timeout=0.5)
+                    if self._vec_queue:
+                        item = self._vec_queue.popleft()
+                    elif self._stop_event.is_set():
+                        break
+                if item is None:
+                    continue
+                sp, fn = item
+                try:
+                    fn()
+                except Exception:
+                    pass
+                finally:
+                    with self._sched_lock:
+                        rem = self._pending_vector_counts.get(sp, 0) - 1
+                        if rem <= 0:
+                            self._pending_vector_counts.pop(sp, None)
+                        else:
+                            self._pending_vector_counts[sp] = rem
+                        self._cond.notify_all()
+        finally:
+            self.job_repo.db.close_thread_connection()
+
     def wait_for_space_idle(self, space_id: str, timeout: float = 10.0) -> bool:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             st = self.job_repo.get_space_status(space_id)
             if st["pending"] == 0:
                 with self._sched_lock:
-                    if space_id not in self._active_spaces:
+                    if (
+                        space_id not in self._active_spaces
+                        and self._pending_vector_counts.get(space_id, 0) == 0
+                    ):
                         return True
-            time.sleep(0.02)
+            time.sleep(0.015)
         return False
 
     def wait_for_job(self, job_id: str, timeout: float = 10.0) -> dict[str, Any] | None:
@@ -397,7 +458,7 @@ class IngestWorkerPool:
             job = self.job_repo.get_job(job_id)
             if job is not None and job["status"] in ("completed", "failed", "cancelled"):
                 return job
-            time.sleep(0.02)
+            time.sleep(0.015)
         return self.job_repo.get_job(job_id)
 
     def _worker_loop(self) -> None:
@@ -432,7 +493,7 @@ class IngestWorkerPool:
                         self._active_spaces.discard(sp)
                         self._cond.notify_all()
         finally:
-            self.job_repo.db.close()
+            self.job_repo.db.close_thread_connection()
 
     def _execute_job(self, job: dict[str, Any]) -> None:
         job_id = job["job_id"]
@@ -442,17 +503,25 @@ class IngestWorkerPool:
         idem = str(job.get("idempotency_key", "") or "")
 
         try:
-            res = self.processor(
-                space_id=space_id,
-                note_id=note_id,
-                idempotency_key=idem,
-                count_note_in_quota=False,
-                llm_semaphore=self.llm_semaphore,
-                raise_on_transient_llm_error=(attempts < self.max_retries),
-            )
+            call_kwargs: dict[str, Any] = {
+                "space_id": space_id,
+                "note_id": note_id,
+                "idempotency_key": idem,
+                "count_note_in_quota": False,
+                "llm_semaphore": self.llm_semaphore,
+                "raise_on_transient_llm_error": (attempts < self.max_retries),
+            }
+            if self._supports_defer_embeddings:
+                call_kwargs["defer_embeddings"] = True
+            res = self.processor(**call_kwargs)
+            deferred_vec = getattr(res, "deferred_vector_sync", None)
+            if callable(deferred_vec):
+                self._enqueue_deferred_vector(space_id, deferred_vec)
+
             status = getattr(res, "extraction_status", "completed")
             if status == "cancelled_forgotten":
                 self.job_repo.mark_cancelled(job_id, getattr(res, "error_message", "note_forgotten"))
+                settled_status = "cancelled"
             elif status == "degraded_error":
                 err_msg = getattr(res, "error_message", "")
                 self.job_repo.mark_completed(
@@ -464,6 +533,7 @@ class IngestWorkerPool:
                         "trace_id": getattr(res, "trace_id", ""),
                     },
                 )
+                settled_status = "completed"
             else:
                 self.job_repo.mark_completed(
                     job_id,
@@ -473,6 +543,12 @@ class IngestWorkerPool:
                         "trace_id": getattr(res, "trace_id", ""),
                     },
                 )
+                settled_status = "completed"
+            if self.on_job_settled is not None:
+                try:
+                    self.on_job_settled(space_id, settled_status)
+                except Exception:
+                    pass
         except Exception as exc:
             if attempts < self.max_retries and _is_transient_llm_error(exc):
                 backoff = min(
@@ -485,3 +561,8 @@ class IngestWorkerPool:
                     self.notify()
                 return
             self.job_repo.mark_failed(job_id, str(exc))
+            if self.on_job_settled is not None:
+                try:
+                    self.on_job_settled(space_id, "failed")
+                except Exception:
+                    pass

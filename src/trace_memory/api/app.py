@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import math
 from pathlib import Path
+import time
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -471,11 +472,15 @@ class ApiDispatcher:
             },
         }
 
-    def _build_sync_state_payload(self, space_id: str) -> dict[str, Any]:
+    def _build_sync_state_payload(
+        self, space_id: str, *, include_recent_jobs: bool = False
+    ) -> dict[str, Any]:
         st = self.container.sync_tracker.get_state(space_id)
         ing = self.container.job_repo.get_space_status(space_id)
         st["pending_ingest"] = int(ing.get("pending", 0))
         st["last_completed_at"] = str(ing.get("last_completed_at", ""))
+        if include_recent_jobs:
+            st["recent_jobs"] = ing.get("recent_jobs", [])
         return st
 
     def dispatch(
@@ -1111,8 +1116,62 @@ class ApiDispatcher:
                 return 200, out_dict
 
             if method == "GET" and path == "/api/notes/ingest-status":
-                status_obj = self.container.job_repo.get_space_status(space_id)
+                wait_ms = int(
+                    _safe_int(
+                        qp.get("wait_ms", ["0"])[0],
+                        name="wait_ms",
+                        default=0,
+                        min_val=0,
+                        max_val=12000,
+                    )
+                    or 0
+                )
+                since_ver = int(
+                    _safe_int(
+                        qp.get("since_version", ["-1"])[0],
+                        name="since_version",
+                        default=-1,
+                        min_val=-1,
+                    )
+                    or -1
+                )
                 job_id = qp.get("job_id", [""])[0].strip()
+                status_obj = self.container.job_repo.get_space_status(space_id)
+                sync_st = self.container.sync_tracker.get_state(space_id)
+                cur_ver = int(sync_st.get("sync_version", 0))
+
+                if wait_ms > 0:
+                    deadline = time.monotonic() + (wait_ms / 1000.0)
+                    init_completed_at = str(status_obj.get("last_completed_at", ""))
+                    while True:
+                        already_done = False
+                        if job_id:
+                            j_probe = self.container.job_repo.get_job(job_id)
+                            if j_probe is not None and j_probe["space_id"] == space_id:
+                                already_done = j_probe["status"] in ("completed", "failed", "cancelled")
+                        elif since_ver >= 0 and cur_ver > since_ver and int(status_obj.get("pending", 0)) == 0:
+                            already_done = True
+                        elif int(status_obj.get("pending", 0)) == 0 and since_ver < 0:
+                            already_done = True
+                        elif (
+                            not job_id
+                            and str(status_obj.get("last_completed_at", "")) != init_completed_at
+                        ):
+                            already_done = True
+
+                        rem = deadline - time.monotonic()
+                        if already_done or rem <= 0.005:
+                            break
+                        if int(status_obj.get("pending", 0)) <= 0 and since_ver < 0:
+                            break
+                        wait_base = since_ver if (since_ver >= 0 and cur_ver <= since_ver) else cur_ver
+                        sync_st = self.container.sync_tracker.wait_for_update(
+                            space_id, wait_base, timeout_seconds=rem
+                        )
+                        cur_ver = int(sync_st.get("sync_version", 0))
+                        status_obj = self.container.job_repo.get_space_status(space_id)
+
+                status_obj["sync_version"] = int(sync_st.get("sync_version", 0))
                 if job_id:
                     job_obj = self.container.job_repo.get_job(job_id)
                     if job_obj is not None and job_obj["space_id"] == space_id:
@@ -1964,7 +2023,9 @@ def create_fastapi_app(container: AppContainer) -> Any:
 
         async def _event_gen():
             nonlocal known_ver
-            init_st = await asyncio.to_thread(container.sync_tracker.get_state, space_id)
+            init_st = await asyncio.to_thread(
+                dispatcher._build_sync_state_payload, space_id, include_recent_jobs=True
+            )
             known_ver = max(known_ver, int(init_st["sync_version"]))
             yield f"event: sync_state\ndata: {json.dumps(init_st, ensure_ascii=False)}\n\n"
             while True:
@@ -1977,8 +2038,11 @@ def create_fastapi_app(container: AppContainer) -> Any:
                     break
                 cur_ver = int(st["sync_version"])
                 if cur_ver > known_ver:
-                    known_ver = cur_ver
-                    yield f"event: space_updated\ndata: {json.dumps(st, ensure_ascii=False)}\n\n"
+                    full_st = await asyncio.to_thread(
+                        dispatcher._build_sync_state_payload, space_id, include_recent_jobs=True
+                    )
+                    known_ver = max(cur_ver, int(full_st["sync_version"]))
+                    yield f"event: space_updated\ndata: {json.dumps(full_st, ensure_ascii=False)}\n\n"
                 else:
                     yield ": keepalive\n\n"
 
@@ -2126,6 +2190,52 @@ def run_web_server(container: AppContainer, host: str = "127.0.0.1", port: int =
                         "Cache-Control": "private, max-age=3600" if code_m == 200 else "no-store",
                     },
                 )
+                return
+
+            if parsed.path == "/api/sync/stream":
+                qp_s = parse_qs(parsed.query, keep_blank_values=True)
+                hdrs_s = {k: v for k, v in self.headers.items()}
+                eff_tok = _extract_token(qp_s, hdrs_s)
+                try:
+                    _, sp_s, _ = dispatcher._resolve_auth_and_space("/api/sync/stream", qp_s, {}, eff_tok)
+                except UnauthorizedError as exc:
+                    self._write_json(401, {"error": str(exc), "code": "AUTH_REQUIRED"})
+                    return
+                except PermissionDeniedError as exc:
+                    self._write_json(403, {"error": str(exc)})
+                    return
+                try:
+                    known_v = int((qp_s.get("since") or ["0"])[0])
+                except ValueError:
+                    known_v = 0
+                self.send_response(HTTPStatus.OK)
+                self._send_cors()
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "keep-alive")
+                self.send_header("X-Accel-Buffering", "no")
+                self.end_headers()
+                try:
+                    init_payload = dispatcher._build_sync_state_payload(sp_s, include_recent_jobs=True)
+                    known_v = max(known_v, int(init_payload["sync_version"]))
+                    self.wfile.write(
+                        f"event: sync_state\ndata: {json.dumps(init_payload, ensure_ascii=False)}\n\n".encode("utf-8")
+                    )
+                    self.wfile.flush()
+                    while not container.ingest_worker._stop_event.is_set():
+                        st_s = container.sync_tracker.wait_for_update(sp_s, known_v, 15.0)
+                        cur_v = int(st_s["sync_version"])
+                        if cur_v > known_v:
+                            full_s = dispatcher._build_sync_state_payload(sp_s, include_recent_jobs=True)
+                            known_v = max(cur_v, int(full_s["sync_version"]))
+                            self.wfile.write(
+                                f"event: space_updated\ndata: {json.dumps(full_s, ensure_ascii=False)}\n\n".encode("utf-8")
+                            )
+                        else:
+                            self.wfile.write(b": keepalive\n\n")
+                        self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    return
                 return
 
             qp = parse_qs(parsed.query, keep_blank_values=True)

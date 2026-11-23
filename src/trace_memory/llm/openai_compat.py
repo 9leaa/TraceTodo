@@ -8,12 +8,16 @@ falling back cleanly or surfacing explicit errors on misconfiguration.
 from __future__ import annotations
 
 from datetime import datetime
+import http.client
 import json
 import math
 import re
 import socket
+import ssl
+import threading
 from typing import Any
 import urllib.error
+from urllib.parse import urlsplit
 import urllib.request
 
 from trace_memory.domain.memories import MemoryItem, parse_iso_datetime
@@ -49,6 +53,118 @@ def _normalize_beijing_iso(value: str, fallback: str = "") -> str:
     return to_beijing(parsed).replace(microsecond=0).isoformat()
 
 
+class _KeepAliveConnectionPool:
+    """Thread-safe stdlib HTTP/1.1 Keep-Alive connection pool eliminating per-call TLS handshakes."""
+
+    def __init__(self, max_idle_per_origin: int = 16) -> None:
+        self._max_idle = max(1, int(max_idle_per_origin))
+        self._lock = threading.Lock()
+        self._idle: dict[tuple[str, str, int], list[http.client.HTTPConnection]] = {}
+        self._ssl_ctx = ssl.create_default_context()
+
+    def _checkout(
+        self, scheme: str, host: str, port: int, timeout: float
+    ) -> tuple[http.client.HTTPConnection, bool]:
+        key = (scheme, host, port)
+        with self._lock:
+            bucket = self._idle.get(key)
+            while bucket:
+                conn = bucket.pop()
+                if getattr(conn, "sock", None) is not None:
+                    conn.timeout = timeout
+                    try:
+                        conn.sock.settimeout(timeout)
+                    except OSError:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        continue
+                    return conn, True
+        if scheme == "https":
+            return (
+                http.client.HTTPSConnection(host, port, timeout=timeout, context=self._ssl_ctx),
+                False,
+            )
+        return http.client.HTTPConnection(host, port, timeout=timeout), False
+
+    def _checkin(self, scheme: str, host: str, port: int, conn: http.client.HTTPConnection) -> None:
+        if getattr(conn, "sock", None) is None:
+            return
+        key = (scheme, host, port)
+        with self._lock:
+            bucket = self._idle.setdefault(key, [])
+            if len(bucket) < self._max_idle:
+                bucket.append(conn)
+                return
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    def post_bytes(
+        self,
+        url: str,
+        body: bytes,
+        headers: dict[str, str],
+        timeout_seconds: float,
+    ) -> tuple[int, bytes]:
+        parts = urlsplit(url)
+        scheme = (parts.scheme or "https").lower()
+        host = parts.hostname or ""
+        if scheme not in ("http", "https") or not host:
+            raise urllib.error.URLError(f"Unsupported URL: {url}")
+        port = parts.port or (443 if scheme == "https" else 80)
+        target_path = parts.path or "/"
+        if parts.query:
+            target_path = f"{target_path}?{parts.query}"
+
+        req_headers = {
+            **headers,
+            "Connection": "keep-alive",
+            "Content-Length": str(len(body)),
+        }
+
+        # If a pooled socket was closed while idle, transparently retry once on a fresh socket
+        for stale_retry in range(2):
+            conn, reused = self._checkout(scheme, host, port, timeout_seconds)
+            try:
+                conn.request("POST", target_path, body=body, headers=req_headers)
+                resp = conn.getresponse()
+                raw = resp.read()
+                status = int(resp.status)
+                if not resp.will_close:
+                    self._checkin(scheme, host, port, conn)
+                else:
+                    conn.close()
+                return status, raw
+            except (
+                http.client.RemoteDisconnected,
+                http.client.CannotSendRequest,
+                http.client.ResponseNotReady,
+                BrokenPipeError,
+                ConnectionResetError,
+                EOFError,
+            ):
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                if reused and stale_retry == 0:
+                    continue
+                raise
+            except Exception:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                raise
+        raise ConnectionResetError("Keep-alive connection reset")
+
+
+_HTTP_POOL = _KeepAliveConnectionPool()
+
+
 def _post_json_with_retry(
     url: str,
     api_key: str,
@@ -60,16 +176,28 @@ def _post_json_with_retry(
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
     }
+    use_proxy = bool(urllib.request.getproxies())
     last_err: Exception | None = None
     # At most 1 retry strictly on socket timeout (mirroring Suixinji's LLM boundary rule)
     for attempt in range(2):
-        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
-                parsed = json.loads(resp.read().decode("utf-8"))
+            if use_proxy:
+                req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+                with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
+                    raw_bytes = resp.read()
+            else:
+                status_code, raw_bytes = _HTTP_POOL.post_bytes(
+                    url, body, headers, timeout_seconds=timeout_seconds
+                )
+                if status_code < 200 or status_code >= 300:
+                    detail = raw_bytes.decode("utf-8", errors="replace")[:500]
+                    raise TraceMemoryError(f"LLM API HTTP {status_code}: {detail}")
+            parsed = json.loads(raw_bytes.decode("utf-8"))
             if not isinstance(parsed, dict):
                 raise TraceMemoryError("LLM API returned non-object JSON payload")
             return parsed
+        except TraceMemoryError:
+            raise
         except socket.timeout as exc:
             last_err = exc
             if attempt == 0:
@@ -92,6 +220,12 @@ def _post_json_with_retry(
                 last_err = exc
                 continue
             raise TraceMemoryError(f"LLM API request failed: {exc}") from exc
+        except (
+            http.client.HTTPException,
+            ConnectionError,
+            ssl.SSLError,
+        ) as exc:
+            raise TraceMemoryError(f"LLM API request failed: {exc}") from exc
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise TraceMemoryError(f"LLM API response parse error: {exc}") from exc
     raise TraceMemoryError(f"LLM API timed out: {last_err}")
@@ -99,6 +233,9 @@ def _post_json_with_retry(
 
 class OpenAICompatEmbedder:
     """Calls `/embeddings` endpoint on OpenAI / DashScope / SiliconFlow compatible servers."""
+
+    # DashScope text-embedding-v3 enforces <= 10 inputs per batch request
+    MAX_BATCH_SIZE = 10
 
     def __init__(
         self,
@@ -115,6 +252,18 @@ class OpenAICompatEmbedder:
         self.timeout_seconds = timeout_seconds
         self._fallback = SemanticHashEmbedder(dimension=dimension)
 
+    def _normalize_vector(self, raw_embedding: Any) -> list[float]:
+        try:
+            raw_vec = [float(v) for v in raw_embedding]
+        except (TypeError, ValueError) as exc:
+            raise TraceMemoryError(f"Embedding API schema error: {exc}") from exc
+        if len(raw_vec) > self.dimension:
+            raw_vec = raw_vec[: self.dimension]
+        norm = math.sqrt(sum(v * v for v in raw_vec))
+        if norm > 1e-12:
+            raw_vec = [round(v / norm, 6) for v in raw_vec]
+        return raw_vec
+
     def embed(self, text: str) -> list[float]:
         if not self.api_key or not str(text or "").strip():
             return self._fallback.embed(text)
@@ -125,15 +274,53 @@ class OpenAICompatEmbedder:
             timeout_seconds=self.timeout_seconds,
         )
         try:
-            raw_vec = [float(v) for v in data["data"][0]["embedding"]]
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            first_emb = data["data"][0]["embedding"]
+        except (KeyError, IndexError, TypeError) as exc:
             raise TraceMemoryError(f"Embedding API schema error: {exc}") from exc
-        if len(raw_vec) > self.dimension:
-            raw_vec = raw_vec[: self.dimension]
-        norm = math.sqrt(sum(v * v for v in raw_vec))
-        if norm > 1e-12:
-            raw_vec = [round(v / norm, 6) for v in raw_vec]
-        return raw_vec
+        return self._normalize_vector(first_emb)
+
+    def embed_many(self, texts: list[str]) -> list[list[float]]:
+        """Batch-embed multiple texts in minimal `/embeddings` round-trips (<= 10 per call)."""
+        if not texts:
+            return []
+        if not self.api_key:
+            return [self._fallback.embed(t) for t in texts]
+
+        out: list[list[float] | None] = [None] * len(texts)
+        non_empty_indices: list[int] = []
+        for idx, t in enumerate(texts):
+            if not str(t or "").strip():
+                out[idx] = self._fallback.embed(t)
+            else:
+                non_empty_indices.append(idx)
+
+        if len(non_empty_indices) == 1:
+            only_idx = non_empty_indices[0]
+            out[only_idx] = self.embed(texts[only_idx])
+            return [v for v in out if v is not None]
+
+        for start in range(0, len(non_empty_indices), self.MAX_BATCH_SIZE):
+            batch_indices = non_empty_indices[start : start + self.MAX_BATCH_SIZE]
+            batch_inputs = [texts[i] for i in batch_indices]
+            data = _post_json_with_retry(
+                f"{self.base_url}/embeddings",
+                self.api_key,
+                {"model": self.model, "input": batch_inputs},
+                timeout_seconds=self.timeout_seconds,
+            )
+            raw_items = data.get("data")
+            if not isinstance(raw_items, list) or len(raw_items) != len(batch_indices):
+                raise TraceMemoryError("Embedding API batch schema mismatch")
+            ordered = sorted(
+                enumerate(raw_items),
+                key=lambda pair: int(pair[1].get("index", pair[0])) if isinstance(pair[1], dict) else pair[0],
+            )
+            for pos, (_, item) in enumerate(ordered):
+                if not isinstance(item, dict) or "embedding" not in item:
+                    raise TraceMemoryError("Embedding API item missing embedding vector")
+                out[batch_indices[pos]] = self._normalize_vector(item["embedding"])
+
+        return [v if v is not None else self._fallback.embed("") for v in out]
 
 
 class OpenAICompatLLMProvider:
