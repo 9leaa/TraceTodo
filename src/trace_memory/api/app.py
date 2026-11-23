@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 try:
     from fastapi import FastAPI, Request, Response
     from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.middleware.gzip import GZipMiddleware
     from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
     _HAS_FASTAPI = True
@@ -26,6 +27,7 @@ except ImportError:  # pragma: no cover
     Request = Any  # type: ignore[misc,assignment]
     Response = Any  # type: ignore[misc,assignment]
     CORSMiddleware = Any  # type: ignore[misc,assignment]
+    GZipMiddleware = Any  # type: ignore[misc,assignment]
     HTMLResponse = Any  # type: ignore[misc,assignment]
     JSONResponse = Any  # type: ignore[misc,assignment]
     StreamingResponse = Any  # type: ignore[misc,assignment]
@@ -108,6 +110,59 @@ SCENES_DIR = Path(__file__).with_name("scenes")
 SCENE_IDS = frozenset(
     {"starfield", "scifi", "neon", "nature", "aurora", "ocean", "portrait_m", "portrait_f"}
 )
+
+_DASHBOARD_CACHE: dict[str, Any] = {
+    "key": None,
+    "bytes": b"",
+    "etag": "",
+}
+
+_GZIP_SKIP_PREFIXES = ("/api/sync/stream", "/api/media/file", "/scenes/")
+_GZIP_SKIP_EXACT = frozenset({"/icon.png", "/apple-touch-icon.png", "/favicon.ico"})
+
+
+def _load_dashboard_html_cached() -> tuple[bytes, str]:
+    """Return `(utf8_bytes, weak_etag)` for `DASHBOARD_HTML_PATH`, cached by `(path, mtime_ns, size)`."""
+    st = DASHBOARD_HTML_PATH.stat()
+    cache_key = (str(DASHBOARD_HTML_PATH), st.st_mtime_ns, st.st_size)
+    if _DASHBOARD_CACHE["key"] == cache_key:
+        return _DASHBOARD_CACHE["bytes"], _DASHBOARD_CACHE["etag"]
+    raw_bytes = DASHBOARD_HTML_PATH.read_bytes()
+    digest = hashlib.sha256(raw_bytes).hexdigest()[:16]
+    etag = f'W/"{digest}"'
+    _DASHBOARD_CACHE["key"] = cache_key
+    _DASHBOARD_CACHE["bytes"] = raw_bytes
+    _DASHBOARD_CACHE["etag"] = etag
+    return raw_bytes, etag
+
+
+def _normalize_etag_token(token: str) -> str:
+    t = token.strip()
+    if t.startswith(("W/", "w/")):
+        t = t[2:].strip()
+    if len(t) >= 2 and t[0] == '"' and t[-1] == '"':
+        t = t[1:-1]
+    if t.endswith("-gzip"):
+        t = t[:-5]
+    return t
+
+
+def _etag_matches(if_none_match: str | None, etag: str) -> bool:
+    """Return True when an `If-None-Match` header matches `etag` (weak comparison per RFC 9110)."""
+    if not if_none_match:
+        return False
+    raw = if_none_match.strip()
+    if not raw:
+        return False
+    if raw == "*":
+        return True
+    target = _normalize_etag_token(etag)
+    if not target:
+        return False
+    for candidate in raw.split(","):
+        if _normalize_etag_token(candidate) == target:
+            return True
+    return False
 
 
 def _extract_token(
@@ -225,6 +280,7 @@ class ApiDispatcher:
             "/api/auth/status",
             "/api/auth/login",
             "/api/auth/register",
+            "/api/bootstrap",
         }
     )
 
@@ -372,6 +428,56 @@ class ApiDispatcher:
         except NotFoundError as exc:
             return 404, "application/json; charset=utf-8", json.dumps({"error": str(exc)}).encode("utf-8")
 
+    def _build_health_payload(self, settings: dict[str, Any] | None = None) -> dict[str, Any]:
+        cfg_settings = settings if settings is not None else self.container.settings_store.get_all()
+        return {
+            "status": "ok",
+            "default_space": self.container.config.default_space,
+            "vector_backend": self.container.vector_store.backend_name,
+            "llm_provider": self.container.llm.provider_name,
+            "vision_model": self.container.config.vision_model,
+            "auth_required": bool(self.container.config.auth_required),
+            "allow_registration": bool(cfg_settings["allow_registration"]),
+            "has_users": self.container.auth_service.has_users(),
+            "noise_filter_enabled": bool(cfg_settings["noise_filter_enabled"]),
+            "timezone": "Asia/Shanghai (UTC+8)",
+            "server_time": beijing_now_iso(),
+            "async_ingest_ready": self.container.ingest_worker.is_running,
+            "daily_scheduler_ready": self.container.daily_scheduler.is_running,
+        }
+
+    def _build_auth_status_payload(
+        self,
+        user: UserAccount | None,
+        settings: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        cfg_settings = settings if settings is not None else self.container.settings_store.get_all()
+        quota = (
+            self.container.quota_service.get_usage(f"space:{user.space_id}")
+            if user is not None
+            else None
+        )
+        return {
+            "auth_required": bool(self.container.config.auth_required),
+            "allow_registration": bool(cfg_settings["allow_registration"]),
+            "has_users": self.container.auth_service.has_users(),
+            "authenticated": user is not None,
+            "user": user.to_dict() if user is not None else None,
+            "quota": quota,
+            "defense": {
+                "noise_filter_enabled": bool(cfg_settings["noise_filter_enabled"]),
+                "max_note_chars": int(cfg_settings["max_note_chars"]),
+                "rate_limit_per_minute": int(cfg_settings["rate_limit_per_minute"]),
+            },
+        }
+
+    def _build_sync_state_payload(self, space_id: str) -> dict[str, Any]:
+        st = self.container.sync_tracker.get_state(space_id)
+        ing = self.container.job_repo.get_space_status(space_id)
+        st["pending_ingest"] = int(ing.get("pending", 0))
+        st["last_completed_at"] = str(ing.get("last_completed_at", ""))
+        return st
+
     def dispatch(
         self,
         method: str,
@@ -389,23 +495,26 @@ class ApiDispatcher:
         try:
             user, space_id, share_info = self._resolve_auth_and_space(path, qp, payload, eff_token)
 
-            if method == "GET" and path == "/api/health":
+            if method == "GET" and path == "/api/bootstrap":
                 settings = self.container.settings_store.get_all()
+                can_read_space = (user is not None) or (not self.container.config.auth_required)
                 return 200, {
-                    "status": "ok",
-                    "default_space": self.container.config.default_space,
-                    "vector_backend": self.container.vector_store.backend_name,
-                    "llm_provider": self.container.llm.provider_name,
-                    "vision_model": self.container.config.vision_model,
-                    "auth_required": bool(self.container.config.auth_required),
-                    "allow_registration": bool(settings["allow_registration"]),
-                    "has_users": self.container.auth_service.has_users(),
-                    "noise_filter_enabled": bool(settings["noise_filter_enabled"]),
-                    "timezone": "Asia/Shanghai (UTC+8)",
-                    "server_time": beijing_now_iso(),
-                    "async_ingest_ready": self.container.ingest_worker.is_running,
-                    "daily_scheduler_ready": self.container.daily_scheduler.is_running,
+                    "health": self._build_health_payload(settings=settings),
+                    "auth": self._build_auth_status_payload(user, settings=settings),
+                    "preferences": (
+                        self.container.preferences_service.get_preferences(space_id)
+                        if can_read_space
+                        else None
+                    ),
+                    "sync_state": (
+                        self._build_sync_state_payload(space_id)
+                        if can_read_space
+                        else None
+                    ),
                 }
+
+            if method == "GET" and path == "/api/health":
+                return 200, self._build_health_payload()
 
             if method == "GET" and path == "/api/preferences":
                 return 200, self.container.preferences_service.get_preferences(space_id)
@@ -416,32 +525,10 @@ class ApiDispatcher:
                 return 200, updated_prefs
 
             if method == "GET" and path == "/api/sync/state":
-                st = self.container.sync_tracker.get_state(space_id)
-                ing = self.container.job_repo.get_space_status(space_id)
-                st["pending_ingest"] = int(ing.get("pending", 0))
-                st["last_completed_at"] = str(ing.get("last_completed_at", ""))
-                return 200, st
+                return 200, self._build_sync_state_payload(space_id)
 
             if method == "GET" and path == "/api/auth/status":
-                settings = self.container.settings_store.get_all()
-                quota = (
-                    self.container.quota_service.get_usage(f"space:{user.space_id}")
-                    if user is not None
-                    else None
-                )
-                return 200, {
-                    "auth_required": bool(self.container.config.auth_required),
-                    "allow_registration": bool(settings["allow_registration"]),
-                    "has_users": self.container.auth_service.has_users(),
-                    "authenticated": user is not None,
-                    "user": user.to_dict() if user is not None else None,
-                    "quota": quota,
-                    "defense": {
-                        "noise_filter_enabled": bool(settings["noise_filter_enabled"]),
-                        "max_note_chars": int(settings["max_note_chars"]),
-                        "rate_limit_per_minute": int(settings["rate_limit_per_minute"]),
-                    },
-                }
+                return 200, self._build_auth_status_payload(user)
 
             if method == "POST" and path == "/api/auth/register":
                 out = self.container.auth_service.register(
@@ -1721,8 +1808,27 @@ def create_fastapi_app(container: AppContainer) -> Any:
             container.daily_scheduler.stop()
             container.ingest_worker.stop()
 
+    class _SelectiveGZipMiddleware:
+        """GZip compress HTML/JSON >= 1 KB while skipping SSE streams and binary images."""
+
+        def __init__(self, app_inner: Any) -> None:
+            self.app_inner = app_inner
+            try:
+                self.gzip_app = GZipMiddleware(app_inner, minimum_size=1000, compresslevel=6)
+            except TypeError:  # pragma: no cover - older Starlette without compresslevel
+                self.gzip_app = GZipMiddleware(app_inner, minimum_size=1000)
+
+        async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+            if scope.get("type") == "http":
+                req_path = scope.get("path", "")
+                if req_path in _GZIP_SKIP_EXACT or req_path.startswith(_GZIP_SKIP_PREFIXES):
+                    await self.app_inner(scope, receive, send)
+                    return
+            await self.gzip_app(scope, receive, send)
+
     dispatcher = ApiDispatcher(container)
     app = FastAPI(title="Trace-Memory Console & API", version="0.1.0", lifespan=_lifespan)
+    app.add_middleware(_SelectiveGZipMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -1731,11 +1837,20 @@ def create_fastapi_app(container: AppContainer) -> Any:
     )
 
     @app.get("/", response_class=HTMLResponse)
+    @app.get("/index.html", response_class=HTMLResponse)
     @app.get("/console", response_class=HTMLResponse)
-    async def index() -> HTMLResponse:
-        return HTMLResponse(
-            DASHBOARD_HTML_PATH.read_text(encoding="utf-8"),
-            headers={"Cache-Control": "no-cache"},
+    async def index(request: Request) -> Response:
+        html_bytes, etag = _load_dashboard_html_cached()
+        resp_headers = {
+            "Cache-Control": "no-cache",
+            "ETag": etag,
+        }
+        if _etag_matches(request.headers.get("if-none-match"), etag):
+            return Response(status_code=304, headers=resp_headers)
+        return Response(
+            content=html_bytes,
+            media_type="text/html; charset=utf-8",
+            headers=resp_headers,
         )
 
     @app.get("/manifest.webmanifest")
@@ -1942,11 +2057,19 @@ def run_web_server(container: AppContainer, host: str = "127.0.0.1", port: int =
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             if parsed.path in ("/", "/index.html", "/console"):
+                html_bytes, etag = _load_dashboard_html_cached()
+                if _etag_matches(self.headers.get("If-None-Match"), etag):
+                    self.send_response(HTTPStatus.NOT_MODIFIED)
+                    self._send_cors()
+                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("ETag", etag)
+                    self.end_headers()
+                    return
                 self._write_raw(
                     200,
                     "text/html; charset=utf-8",
-                    DASHBOARD_HTML_PATH.read_bytes(),
-                    extra_headers={"Cache-Control": "no-cache"},
+                    html_bytes,
+                    extra_headers={"Cache-Control": "no-cache", "ETag": etag},
                 )
                 return
             if parsed.path == "/manifest.webmanifest":

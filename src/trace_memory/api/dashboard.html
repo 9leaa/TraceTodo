@@ -11,6 +11,19 @@
   <link rel="icon" type="image/png" href="/icon.png" />
   <link rel="apple-touch-icon" href="/icon.png" />
   <title>TraceTodo · 融合记忆与四象限待办中心</title>
+  <script>
+    (function () {
+      try {
+        var savedTheme = localStorage.getItem('tm_theme_id');
+        if (savedTheme) {
+          document.documentElement.setAttribute('data-theme', savedTheme);
+          var darkBgs = { deep_forest: '#0b1512', nebula: '#0d0b1e', cyber: '#061019', polar: '#071318' };
+          var metaEl = document.querySelector('meta[name="theme-color"]');
+          if (metaEl && darkBgs[savedTheme]) metaEl.setAttribute('content', darkBgs[savedTheme]);
+        }
+      } catch (e) {}
+    })();
+  </script>
   <style>
     :root {
       --header-h: 60px;
@@ -516,7 +529,7 @@
       .tabs { flex-direction: row; justify-content: space-around; }
       .tab-btn { font-size: 10.5px; padding: 4px; gap: 2px; flex: 1; min-width: 0; }
       .tab-btn .tab-ico { width: 26px; height: 26px; font-size: 14px; }
-      .toast { bottom: calc(76px + env(safe-area-inset-bottom)); right: 12px; left: 12px; text-align: center; }
+      .toast { top: calc(var(--header-h, 60px) + 8px); max-width: calc(100vw - 24px); }
     }
 
     /* Vibrant 2x2 Summary Hero Cards */
@@ -536,37 +549,86 @@
     }
     .kpi-grid {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 16px;
-      margin-bottom: 18px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 10px;
     }
-    @media (max-width: 640px) { .kpi-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 960px) { .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 520px) { .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }
     .hero-kpi {
       border-radius: 12px;
-      padding: 18px 22px;
+      padding: 11px 14px;
       color: #fff;
       position: relative;
       overflow: hidden;
-      min-height: 110px;
+      min-height: 76px;
       display: flex;
       flex-direction: column;
       justify-content: center;
-      gap: 6px;
+      gap: 3px;
     }
-    .hero-kpi.coral  { background: linear-gradient(135deg, #ff7e67 0%, #ff4b8b 100%); box-shadow: 0 10px 24px rgba(255,86,120,0.28); }
-    .hero-kpi.indigo { background: linear-gradient(135deg, #5f52f6 0%, #2592e8 100%); box-shadow: 0 10px 24px rgba(64,110,240,0.28); }
-    .hero-kpi.teal   { background: linear-gradient(135deg, #0ecfa8 0%, #16a6df 100%); box-shadow: 0 10px 24px rgba(16,185,176,0.28); }
-    .hero-kpi.violet { background: linear-gradient(135deg, #ec46c7 0%, #7a5af8 100%); box-shadow: 0 10px 24px rgba(168,75,246,0.28); }
-    .hero-kpi .label { font-size: 11.5px; font-weight: 600; letter-spacing: 0.8px; opacity: 0.9; }
-    .hero-kpi .val { font-size: 29px; font-weight: 700; line-height: 1.15; }
-    .hero-kpi .sub { font-size: 11.5px; opacity: 0.9; display: flex; gap: 14px; }
+    .hero-kpi.coral  { background: linear-gradient(135deg, #ff7e67 0%, #ff4b8b 100%); box-shadow: 0 6px 16px rgba(255,86,120,0.22); }
+    .hero-kpi.indigo { background: linear-gradient(135deg, #5f52f6 0%, #2592e8 100%); box-shadow: 0 6px 16px rgba(64,110,240,0.22); }
+    .hero-kpi.teal   { background: linear-gradient(135deg, #0ecfa8 0%, #16a6df 100%); box-shadow: 0 6px 16px rgba(16,185,176,0.22); }
+    .hero-kpi.violet { background: linear-gradient(135deg, #ec46c7 0%, #7a5af8 100%); box-shadow: 0 6px 16px rgba(168,75,246,0.22); }
+    .hero-kpi .label { font-size: 11px; font-weight: 600; letter-spacing: 0.5px; opacity: 0.92; }
+    .hero-kpi .val { font-size: 22px; font-weight: 700; line-height: 1.15; }
+    .hero-kpi .sub { font-size: 11px; opacity: 0.92; display: flex; gap: 8px; flex-wrap: wrap; }
     .hero-kpi .watermark {
       position: absolute;
-      right: 14px;
-      bottom: -8px;
-      font-size: 68px;
-      opacity: 0.16;
+      right: 10px;
+      bottom: -6px;
+      font-size: 48px;
+      opacity: 0.15;
       pointer-events: none;
+    }
+
+    /* Collapsible Todo Insights & AI Load Diagnostics Drawer */
+    .todo-insights-fold {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .todo-insights-summary {
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 14px;
+      font-size: 12.5px;
+      cursor: pointer;
+      user-select: none;
+      background: var(--surface-alt);
+      transition: background 0.15s ease;
+    }
+    .todo-insights-summary::-webkit-details-marker { display: none; }
+    .todo-insights-summary:hover { background: var(--primary-soft); }
+    .todo-insights-digest {
+      color: var(--muted);
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .todo-insights-chevron {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--primary);
+      flex-shrink: 0;
+    }
+    .todo-insights-body {
+      padding: 12px 14px 14px;
+      border-top: 1px solid var(--border);
+    }
+    .scope-cnt {
+      display: inline-block;
+      margin-left: 3px;
+      font-size: 10.5px;
+      opacity: 0.85;
+      font-variant-numeric: tabular-nums;
     }
 
     /* Middle Analytics Cards */
@@ -991,20 +1053,252 @@
 
     .toast {
       position: fixed;
-      bottom: 24px;
-      right: 24px;
-      background: #0f172a;
+      top: calc(var(--header-h, 60px) + 12px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(8px);
       color: #fff;
-      padding: 10px 16px;
-      border-radius: 10px;
+      padding: 9px 16px;
+      border-radius: 999px;
       font-size: 13px;
       display: none;
-      z-index: 250;
-      box-shadow: 0 10px 25px rgba(15,23,42,0.28);
-      max-width: min(520px, calc(100vw - 48px));
+      align-items: center;
+      gap: 10px;
+      z-index: 260;
+      box-shadow: 0 10px 28px rgba(15, 23, 42, 0.26);
+      max-width: min(560px, calc(100vw - 32px));
       overflow-wrap: anywhere;
     }
-    .toast.toast-error { background: #b91c1c; }
+    .toast.toast-error { background: rgba(185, 28, 28, 0.96); }
+    .toast-action-btn {
+      border: 1px solid rgba(255, 255, 255, 0.42);
+      background: rgba(255, 255, 255, 0.16);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      flex-shrink: 0;
+      white-space: nowrap;
+      transition: background 0.15s ease;
+    }
+    .toast-action-btn:hover { background: rgba(255, 255, 255, 0.28); }
+
+    /* Shimmer Skeletons for Zero-CLS Initial Render */
+    @keyframes tmShimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    .tm-skeleton-line {
+      height: 13px;
+      border-radius: 7px;
+      background: linear-gradient(90deg, var(--surface-alt) 25%, var(--border) 50%, var(--surface-alt) 75%);
+      background-size: 200% 100%;
+      animation: tmShimmer 1.35s ease-in-out infinite;
+    }
+    .tm-skeleton-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      display: grid;
+      gap: 9px;
+    }
+
+    /* Custom Themed Confirm Modal */
+    .confirm-dialog-box {
+      max-width: 420px;
+      border-radius: 18px;
+      padding: 20px 22px;
+      border: 1px solid var(--border);
+      box-shadow: 0 24px 56px rgba(15, 23, 42, 0.26);
+    }
+    .confirm-danger-btn {
+      background: #dc2626;
+      color: #fff;
+      border-color: #dc2626;
+      font-weight: 600;
+    }
+    .confirm-danger-btn:hover { background: #b91c1c; border-color: #b91c1c; }
+
+    /* Floating Evidence Q&A Button & Copilot Drawer */
+    .ask-fab-btn {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 54;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      height: 46px;
+      padding: 0 16px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      background: var(--tl-header-grad, linear-gradient(135deg, #4b91f7 0%, #2563eb 100%));
+      color: #fff;
+      font-size: 13.5px;
+      font-weight: 700;
+      box-shadow: 0 10px 26px rgba(37, 99, 235, 0.34), 0 2px 6px rgba(15, 23, 42, 0.14);
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+    }
+    .ask-fab-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 14px 30px rgba(37, 99, 235, 0.42), 0 4px 10px rgba(15, 23, 42, 0.18);
+    }
+    .ask-fab-btn.active {
+      box-shadow: 0 0 0 3px var(--primary-soft), 0 10px 24px rgba(37, 99, 235, 0.32);
+    }
+    .ask-fab-btn[hidden] { display: none !important; }
+    .ask-fab-ico { font-size: 16px; line-height: 1; }
+    .ask-fab-kbd {
+      font-family: inherit;
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.2);
+      color: rgba(255, 255, 255, 0.95);
+    }
+    .ask-float-panel {
+      position: fixed;
+      right: 22px;
+      bottom: 78px;
+      width: min(410px, calc(100vw - 28px));
+      height: min(545px, calc(100vh - 110px));
+      z-index: 55;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: 0 22px 54px rgba(15, 23, 42, 0.22);
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .ask-float-panel.open { display: flex; }
+    .ask-float-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-alt);
+      flex-shrink: 0;
+    }
+    .ask-float-hdr-btn {
+      padding: 4px 8px;
+      font-size: 11.5px;
+      border-radius: 8px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .ask-float-hdr-btn:hover {
+      background: var(--surface);
+      border-color: var(--border);
+      color: var(--heading);
+    }
+    .ask-float-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .ask-float-empty {
+      margin: auto 0;
+      text-align: center;
+      display: grid;
+      gap: 10px;
+      padding: 12px 6px;
+    }
+    .ask-starter-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .ask-starter-chip {
+      text-align: left;
+      padding: 8px 11px;
+      border-radius: 11px;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      color: var(--text);
+      font-size: 12.5px;
+      cursor: pointer;
+      transition: border-color 0.14s ease, background 0.14s ease;
+    }
+    .ask-starter-chip:hover {
+      border-color: var(--primary);
+      background: var(--primary-soft);
+    }
+    .ask-turn-q {
+      align-self: flex-end;
+      max-width: 86%;
+      background: var(--primary);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 14px 14px 4px 14px;
+      font-size: 13px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+    .ask-turn-a {
+      align-self: stretch;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.6;
+      display: grid;
+      gap: 7px;
+      overflow-wrap: anywhere;
+    }
+    .ask-turn-a .answer-box {
+      margin-top: 0;
+      padding: 0;
+      border: none;
+      background: transparent;
+      font-size: 13px;
+    }
+    .ask-float-footer {
+      display: flex;
+      gap: 8px;
+      padding: 10px 12px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+    .ask-float-footer input {
+      flex: 1;
+      min-width: 0;
+      font-size: 13px;
+      padding: 8px 11px;
+      border-radius: 10px;
+    }
+    @media (max-width: 768px) {
+      .ask-fab-btn {
+        right: 14px;
+        bottom: calc(68px + env(safe-area-inset-bottom));
+        height: 42px;
+        padding: 0 13px;
+        font-size: 12.5px;
+      }
+      .ask-fab-kbd { display: none; }
+      .ask-float-panel {
+        right: 10px;
+        left: 10px;
+        width: auto;
+        bottom: calc(116px + env(safe-area-inset-bottom));
+        height: min(68vh, 480px);
+      }
+    }
 
     .auth-sheet {
       width: 100%;
@@ -2847,25 +3141,43 @@
         <div id="todoOverviewSection">
           <div class="kpi-grid" id="taskKpis"></div>
 
-          <div class="analytics-row">
-            <div class="analytic-card">
-              <h4>TOP FOCUS · 优先聚焦</h4>
-              <div id="topFocusList"></div>
-            </div>
-            <div class="analytic-card">
-              <h4>TASK INSIGHTS · 分布洞察</h4>
-              <div id="taskInsightsBody"></div>
-            </div>
-          </div>
+          <details class="todo-insights-fold" id="todoInsightsFoldWrap" ontoggle="onTodoInsightsToggle(this)">
+            <summary class="todo-insights-summary">
+              <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
+                <span style="font-weight:700;color:var(--heading);white-space:nowrap;">📊 优先聚焦与 AI 负载诊断</span>
+                <span class="todo-insights-digest" id="todoInsightsDigest">展开查看高优聚焦清单、象限分布环图与记忆诊断建议</span>
+              </div>
+              <span class="todo-insights-chevron" id="todoInsightsChevron">展开 ▾</span>
+            </summary>
+            <div class="todo-insights-body">
+              <div class="analytics-row">
+                <div class="analytic-card">
+                  <h4>TOP FOCUS · 优先聚焦</h4>
+                  <div id="topFocusList"></div>
+                </div>
+                <div class="analytic-card">
+                  <h4>TASK INSIGHTS · 分布洞察</h4>
+                  <div id="taskInsightsBody"></div>
+                </div>
+              </div>
 
-          <div class="diag-box">
-            <h3>🧭 艾森豪威尔四象限 · 记忆驱动负载诊断与优先建议</h3>
-            <ul class="diag-list" id="diagList"></ul>
-          </div>
+              <div class="diag-box" style="margin-bottom:0;">
+                <h3>🧭 艾森豪威尔四象限 · 记忆驱动负载诊断与优先建议</h3>
+                <ul class="diag-list" id="diagList"></ul>
+              </div>
+            </div>
+          </details>
         </div>
 
         <div class="toolbar">
-          <div style="font-size:13px;font-weight:600;color:var(--muted);" id="todoSubHeading">田 艾森豪威尔四象限看板</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <div style="font-size:13px;font-weight:600;color:var(--muted);" id="todoSubHeading">田 艾森豪威尔四象限看板</div>
+            <div class="seg-pill-bar" id="todoQuickScopeBar" role="group" aria-label="待办快捷筛选">
+              <button type="button" class="seg-pill-btn active" data-scope="all" onclick="setTaskQuickScope('all')">全部待办</button>
+              <button type="button" class="seg-pill-btn" data-scope="today" onclick="setTaskQuickScope('today')">☀️ 今日聚焦<span class="scope-cnt" id="scopeCntToday"></span></button>
+              <button type="button" class="seg-pill-btn" data-scope="overdue" onclick="setTaskQuickScope('overdue')">⏰ 逾期未完<span class="scope-cnt" id="scopeCntOverdue"></span></button>
+            </div>
+          </div>
           <div class="btn-group">
             <label style="font-size:12px;color:var(--muted);">排序依据:</label>
             <select id="taskSortSelect" onchange="loadTasks()">
@@ -4022,6 +4334,45 @@
     </div>
   </div>
 
+  <!-- Custom Non-Blocking Confirm Dialog -->
+  <div class="modal-backdrop" id="confirmDialogModal" style="z-index: 240;" onclick="if(event.target===this) resolveConfirmModal(false)">
+    <div class="modal confirm-dialog-box" role="alertdialog" aria-modal="true" aria-labelledby="confirmDialogTitle" aria-describedby="confirmDialogMsg">
+      <strong id="confirmDialogTitle" style="font-size:15.5px;color:var(--heading);">⚠️ 请确认操作</strong>
+      <div id="confirmDialogMsg" style="font-size:13.5px;color:var(--text);line-height:1.6;"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px;">
+        <button type="button" id="confirmDialogCancelBtn" onclick="resolveConfirmModal(false)">取消</button>
+        <button type="button" id="confirmDialogOkBtn" class="confirm-danger-btn" onclick="resolveConfirmModal(true)">确认执行</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Evidence Q&A Button & Copilot Drawer -->
+  <button type="button" id="askFabBtn" class="ask-fab-btn" onclick="toggleAskFloatPanel()" title="随手问记忆 (⌘K / Ctrl+K)" aria-expanded="false" aria-controls="askFloatPanel">
+    <span class="ask-fab-ico" aria-hidden="true">💬</span>
+    <span class="ask-fab-label">问记忆</span>
+    <kbd class="ask-fab-kbd">⌘K</kbd>
+  </button>
+
+  <aside id="askFloatPanel" class="ask-float-panel" role="dialog" aria-label="随手问记忆助手" aria-hidden="true">
+    <div class="ask-float-header">
+      <div style="display:flex;align-items:center;gap:7px;">
+        <span style="font-size:16px;">💬</span>
+        <strong style="font-size:14px;color:var(--heading);">随手问记忆</strong>
+        <span class="tag" style="font-size:10.5px;">证据溯源</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:4px;">
+        <button type="button" class="ask-float-hdr-btn" onclick="clearAskFloatHistory()" title="清空当前会话">清空</button>
+        <button type="button" class="ask-float-hdr-btn" onclick="openFullAskFromFloat()" title="打开完整证据问答与检索链路">↗ 完整视图</button>
+        <button type="button" class="ask-float-hdr-btn" onclick="closeAskFloatPanel()" aria-label="关闭悬浮问答">✕</button>
+      </div>
+    </div>
+    <div id="askFloatHistory" class="ask-float-body"></div>
+    <form class="ask-float-footer" onsubmit="event.preventDefault(); submitAskFloat()">
+      <input id="askFloatInput" type="text" placeholder="问任何关于你的待办、偏好或过往记录…" autocomplete="off" />
+      <button type="submit" id="askFloatSendBtn" class="duodo-btn">发送</button>
+    </form>
+  </aside>
+
   <div class="toast" id="toast"></div>
 
   <script>
@@ -4065,14 +4416,65 @@
       return h;
     }
 
-    function showToast(msg, kind = '') {
+    function showToast(msg, kind = '', opts = null) {
       const el = document.getElementById('toast');
-      el.textContent = msg;
+      if (!el) return;
       el.classList.toggle('toast-error', kind === 'error');
-      el.style.display = 'block';
       clearTimeout(window._toastTimer);
-      // Errors stay visible longer so users actually notice failed writes
-      window._toastTimer = setTimeout(() => { el.style.display = 'none'; }, kind === 'error' ? 6000 : 3600);
+      if (opts && opts.actionLabel && typeof opts.onAction === 'function') {
+        el.innerHTML = '';
+        const span = document.createElement('span');
+        span.textContent = msg;
+        const actBtn = document.createElement('button');
+        actBtn.type = 'button';
+        actBtn.className = 'toast-action-btn';
+        actBtn.textContent = opts.actionLabel;
+        actBtn.onclick = () => {
+          clearTimeout(window._toastTimer);
+          el.style.display = 'none';
+          opts.onAction();
+        };
+        el.append(span, actBtn);
+      } else {
+        el.textContent = msg;
+      }
+      el.style.display = 'inline-flex';
+      const dur = Number(opts?.durationMs) || (opts?.actionLabel ? 5200 : (kind === 'error' ? 6000 : 3600));
+      window._toastTimer = setTimeout(() => { el.style.display = 'none'; }, dur);
+    }
+
+    let _confirmResolver = null;
+    function askConfirmModal(message, opts = {}) {
+      if (_confirmResolver) {
+        const prev = _confirmResolver;
+        _confirmResolver = null;
+        prev(false);
+      }
+      const modal = document.getElementById('confirmDialogModal');
+      const titleEl = document.getElementById('confirmDialogTitle');
+      const msgEl = document.getElementById('confirmDialogMsg');
+      const okBtn = document.getElementById('confirmDialogOkBtn');
+      const cancelBtn = document.getElementById('confirmDialogCancelBtn');
+      if (!modal || !msgEl || !okBtn) return Promise.resolve(true);
+      if (titleEl) titleEl.textContent = opts.title || '⚠️ 请确认操作';
+      msgEl.textContent = message;
+      okBtn.textContent = opts.confirmText || '确认执行';
+      okBtn.classList.toggle('confirm-danger-btn', opts.danger !== false);
+      okBtn.classList.toggle('duodo-btn', opts.danger === false);
+      if (cancelBtn) cancelBtn.textContent = opts.cancelText || '取消';
+      modal.classList.add('open');
+      setTimeout(() => (opts.danger !== false ? cancelBtn : okBtn)?.focus(), 20);
+      return new Promise(resolve => {
+        _confirmResolver = resolve;
+      });
+    }
+
+    function resolveConfirmModal(accepted) {
+      const modal = document.getElementById('confirmDialogModal');
+      if (modal) modal.classList.remove('open');
+      const resolver = _confirmResolver;
+      _confirmResolver = null;
+      if (resolver) resolver(Boolean(accepted));
     }
 
     async function parseApiResponse(res) {
@@ -4163,6 +4565,7 @@
           sb.classList.toggle('active', sb.getAttribute('data-tab') === name);
         });
       }
+      if (typeof syncAskFabVisibility === 'function') syncAskFabVisibility();
       if (!opts?.preserveScroll) window.scrollTo(0, 0);
 
       const handleErr = (err) => showToast(`加载失败: ${err?.message || err}`, 'error');
@@ -4201,6 +4604,60 @@
     let _taskListVisibleCount = TASK_LIST_PAGE_SIZE;
     let _lastMatrixData = null;
     let _lastTaskQueryKey = '';
+    let _taskQuickScope = 'all';
+
+    (function initTodoInsightsFoldState() {
+      try {
+        const fold = document.getElementById('todoInsightsFoldWrap');
+        const chev = document.getElementById('todoInsightsChevron');
+        if (fold && localStorage.getItem('tm_todo_insights_open') === '1') {
+          fold.open = true;
+          if (chev) chev.textContent = '收起 ▴';
+        }
+      } catch (e) {}
+    })();
+
+    function onTodoInsightsToggle(detailsEl) {
+      if (!detailsEl) return;
+      const chev = document.getElementById('todoInsightsChevron');
+      if (chev) chev.textContent = detailsEl.open ? '收起 ▴' : '展开 ▾';
+      try {
+        localStorage.setItem('tm_todo_insights_open', detailsEl.open ? '1' : '0');
+      } catch (e) {}
+    }
+
+    function _currentTodayBeijingYmd() {
+      if (_lastBeijingDate) return _lastBeijingDate;
+      try {
+        return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date());
+      } catch (e) {
+        return fmtLocalYMD(new Date());
+      }
+    }
+
+    function matchesTaskQuickScope(t, scopeMode = _taskQuickScope) {
+      if (!scopeMode || scopeMode === 'all') return true;
+      const p = t?.payload || {};
+      if (p.task_status === 'done' || p.task_status === 'cancelled') return false;
+      const todayYmd = _currentTodayBeijingYmd();
+      const dueYmd = p.due_at ? (parseIsoYmdHhmm(p.due_at)?.ymd || String(p.due_at).slice(0, 10)) : '';
+      const startYmd = p.start_at ? (parseIsoYmdHhmm(p.start_at)?.ymd || String(p.start_at).slice(0, 10)) : '';
+      const isOverdue = Boolean(p.is_overdue || (dueYmd && dueYmd < todayYmd));
+      if (scopeMode === 'overdue') return isOverdue;
+      if (scopeMode === 'today') {
+        return isOverdue || dueYmd === todayYmd || startYmd === todayYmd || p.quadrant === 'Q1_do_first';
+      }
+      return true;
+    }
+
+    function setTaskQuickScope(scopeMode) {
+      _taskQuickScope = scopeMode || 'all';
+      _taskListVisibleCount = TASK_LIST_PAGE_SIZE;
+      document.querySelectorAll('#todoQuickScopeBar .seg-pill-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.scope === _taskQuickScope);
+      });
+      renderTaskViewsFromCache();
+    }
 
     function toggleExpandQuadrant(qKey) {
       _expandedQuadrants[qKey] = !_expandedQuadrants[qKey];
@@ -4397,24 +4854,35 @@
       const data = _lastMatrixData;
       if (!data) return;
       const sorted = data.sorted_tasks || [];
+      const todayCnt = sorted.filter(t => matchesTaskQuickScope(t, 'today')).length;
+      const overdueCnt = sorted.filter(t => matchesTaskQuickScope(t, 'overdue')).length;
+      const todayBadge = document.getElementById('scopeCntToday');
+      const overdueBadge = document.getElementById('scopeCntOverdue');
+      if (todayBadge) todayBadge.textContent = todayCnt > 0 ? `(${todayCnt})` : '';
+      if (overdueBadge) overdueBadge.textContent = overdueCnt > 0 ? `(${overdueCnt})` : '';
+
       const qOrder = ['Q1_do_first', 'Q2_schedule', 'Q3_delegate', 'Q4_eliminate'];
       document.getElementById('matrixContainer').innerHTML = qOrder.map(qKey => {
         const qObj = (data.quadrants || {})[qKey] || { label: qKey, count: 0, tasks: [] };
-        const allQTasks = qObj.tasks || [];
+        const rawQTasks = qObj.tasks || [];
+        const allQTasks = _taskQuickScope === 'all'
+          ? rawQTasks
+          : rawQTasks.filter(t => matchesTaskQuickScope(t, _taskQuickScope));
         const isExpanded = Boolean(_expandedQuadrants[qKey]);
         const visibleTasks = isExpanded ? allQTasks : allQTasks.slice(0, TASK_QUAD_INITIAL);
         const cards = visibleTasks.length
           ? visibleTasks.map(renderTaskCard).join('')
-          : `<div style="color:var(--muted);font-size:13px;padding:12px 4px;">暂无该象限事项</div>`;
+          : `<div style="color:var(--muted);font-size:13px;padding:12px 4px;">${_taskQuickScope === 'all' ? '暂无该象限事项' : '当前筛选下暂无事项'}</div>`;
         const restCount = allQTasks.length - visibleTasks.length;
         const foldBtn = allQTasks.length > TASK_QUAD_INITIAL
           ? `<button type="button" class="quad-fold-btn" onclick="toggleExpandQuadrant('${qKey}')">${isExpanded ? `收起至前 ${TASK_QUAD_INITIAL} 项 ▲` : `展开其余 ${restCount} 项（共 ${allQTasks.length} 项） ▼`}</button>`
           : '';
+        const dispCount = _taskQuickScope === 'all' ? qObj.count : allQTasks.length;
         return `
           <div class="quad-box quad-${qKey}">
             <div class="quad-header">
               <span>${esc(qObj.label)}</span>
-              <span class="badge badge-${qKey}">${qObj.count} 项待办</span>
+              <span class="badge badge-${qKey}">${dispCount} 项待办</span>
             </div>
             ${cards}
             ${foldBtn}
@@ -4422,7 +4890,10 @@
         `;
       }).join('');
 
-      const shownList = sorted.slice(0, _taskListVisibleCount);
+      const filteredSorted = _taskQuickScope === 'all'
+        ? sorted
+        : sorted.filter(t => matchesTaskQuickScope(t, _taskQuickScope));
+      const shownList = filteredSorted.slice(0, _taskListVisibleCount);
       document.getElementById('listContainer').innerHTML = shownList.length
         ? shownList.map(renderTaskCard).join('')
         : `<div class="card-box" style="color:var(--muted);">暂无符合条件的待办事项</div>`;
@@ -4430,8 +4901,8 @@
         renderLoadMoreBar(
           'taskListLoadMoreBar',
           shownList.length,
-          sorted.length,
-          shownList.length < sorted.length,
+          filteredSorted.length,
+          shownList.length < filteredSorted.length,
           TASK_LIST_PAGE_SIZE,
           '项任务',
           'loadMoreTasksList()'
@@ -4509,6 +4980,12 @@
 
       const diags = data.diagnostics || [];
       document.getElementById('diagList').innerHTML = diags.map(d => `<li>${esc(d)}</li>`).join('');
+      const digestEl = document.getElementById('todoInsightsDigest');
+      if (digestEl) {
+        digestEl.textContent = diags.length
+          ? String(diags[0])
+          : (topTodos.length ? `首要聚焦：${topTodos[0].title}` : '展开查看高优聚焦清单与象限分布');
+      }
       if (diags.length && document.getElementById('railTipText')) {
         const cleanTip = String(diags[0]).replace(/^(?:\p{Extended_Pictographic}|↻)\uFE0F?\s*/u, '');
         const tipEl = document.getElementById('railTipText');
@@ -4612,15 +5089,108 @@
       await loadTasks();
     }
 
+    function _cloneTaskSnapshot(obj) {
+      if (!obj) return null;
+      try { return structuredClone(obj); } catch (e) { return JSON.parse(JSON.stringify(obj)); }
+    }
+
+    function _applyOptimisticTaskTransition(memId, action, seedTask = null) {
+      if (!_lastMatrixData) return null;
+      const snapshot = _cloneTaskSnapshot(_lastMatrixData);
+      const nextStatusMap = { complete_task: 'done', cancel_task: 'cancelled', reopen_task: 'todo' };
+      const nextStatus = nextStatusMap[action];
+      if (!nextStatus) return snapshot;
+      const incDone = Boolean(document.getElementById('includeDoneCheck')?.checked);
+      let foundInSorted = false;
+      const patchItem = (item) => {
+        if (!item || item.memory_id !== memId) return item;
+        foundInSorted = true;
+        const cloned = {
+          ...item,
+          version: (Number(item.version) || 1) + 1,
+          payload: { ...(item.payload || {}), task_status: nextStatus },
+        };
+        if (nextStatus !== 'todo') cloned.payload.is_overdue = false;
+        cachedTasksById[memId] = cloned;
+        return cloned;
+      };
+      const keepItem = (item) => incDone || (item?.payload?.task_status !== 'done' && item?.payload?.task_status !== 'cancelled');
+      _lastMatrixData.sorted_tasks = (_lastMatrixData.sorted_tasks || []).map(patchItem).filter(keepItem);
+      if (!foundInSorted && nextStatus === 'todo' && seedTask) {
+        const restored = {
+          ...seedTask,
+          version: (Number(seedTask.version) || 1) + 1,
+          payload: { ...(seedTask.payload || {}), task_status: 'todo' },
+        };
+        cachedTasksById[memId] = restored;
+        _lastMatrixData.sorted_tasks.unshift(restored);
+        const qTarget = restored.payload?.quadrant || 'Q2_schedule';
+        if (_lastMatrixData.quadrants && _lastMatrixData.quadrants[qTarget]) {
+          _lastMatrixData.quadrants[qTarget].tasks = [
+            restored,
+            ...(_lastMatrixData.quadrants[qTarget].tasks || []).filter(t => t.memory_id !== memId),
+          ];
+        }
+      }
+      lastLoadedTasks = _lastMatrixData.sorted_tasks;
+      for (const qKey of ['Q1_do_first', 'Q2_schedule', 'Q3_delegate', 'Q4_eliminate']) {
+        const qObj = (_lastMatrixData.quadrants || {})[qKey];
+        if (!qObj) continue;
+        qObj.tasks = (qObj.tasks || []).map(patchItem).filter(keepItem);
+        qObj.count = qObj.tasks.filter(t => t.payload?.task_status !== 'done' && t.payload?.task_status !== 'cancelled').length;
+      }
+      renderTaskViewsFromCache();
+      return snapshot;
+    }
+
     async function transitionTask(memId, action, ver) {
-      const res = await apiPost('/api/tasks/transition', { memory_id: memId, action, expected_version: ver });
-      if (res.error) return showToast(`操作失败: ${res.error}`, 'error');
+      const prevTask = _cloneTaskSnapshot(cachedTasksById[memId]);
+      const prevMatrix = _applyOptimisticTaskTransition(memId, action, prevTask);
+      let res;
+      try {
+        res = await apiPost('/api/tasks/transition', { memory_id: memId, action, expected_version: ver });
+      } catch (err) {
+        res = { error: err?.message || '网络异常' };
+      }
+      if (res.error) {
+        if (prevTask) cachedTasksById[memId] = prevTask;
+        if (prevMatrix) {
+          _lastMatrixData = prevMatrix;
+          lastLoadedTasks = prevMatrix.sorted_tasks || [];
+          renderTaskViewsFromCache();
+        }
+        return showToast(`操作失败: ${res.error}`, 'error');
+      }
+      const updatedMem = res.memory || prevTask;
+      if (res.memory) {
+        cachedTasksById[memId] = res.memory;
+      }
+      const shortTitle = String(updatedMem?.title || '任务').slice(0, 22);
       if (res.next_task) {
         showToast(`✅ 本期已完成，已自动生成下一周期 (${res.next_task.payload?.due_at?.slice(0,10) || ''})`);
+      } else if (action === 'complete_task') {
+        const undoVer = Number(res.memory?.version) || ((Number(ver) || 1) + 1);
+        showToast(`✅ 已完成「${shortTitle}」`, '', {
+          actionLabel: '↩ 撤销',
+          durationMs: 5200,
+          onAction: () => transitionTask(memId, 'reopen_task', undoVer),
+        });
+      } else if (action === 'reopen_task') {
+        showToast(`↩️ 已恢复待办「${shortTitle}」`);
+      } else if (action === 'cancel_task') {
+        const undoVer = Number(res.memory?.version) || ((Number(ver) || 1) + 1);
+        showToast(`✕ 已取消「${shortTitle}」`, '', {
+          actionLabel: '↩ 撤销',
+          durationMs: 5200,
+          onAction: () => transitionTask(memId, 'reopen_task', undoVer),
+        });
       } else {
         showToast(`已更新状态 -> v${res.memory?.version}`);
       }
-      loadTasks();
+      await loadTasks();
+      if (res.memory) {
+        cachedTasksById[memId] = res.memory;
+      }
       if (document.getElementById('panel-supervision').classList.contains('active')) loadSupervisionBoard();
     }
 
@@ -5230,6 +5800,7 @@
       overlay.classList.add('open');
       overlay.showModal();
       overlay.append(document.getElementById('toast'));
+      if (typeof syncAskFabVisibility === 'function') syncAskFabVisibility();
       applyFocusSceneDOM();
       startAmbience();
     }
@@ -5258,6 +5829,7 @@
         overlay.classList.remove('open');
         overlay.close();
       }
+      if (typeof syncAskFabVisibility === 'function') syncAskFabVisibility();
       stopAmbience();
       ensureFxLoop();
     }
@@ -5572,7 +6144,11 @@
     }
 
     async function revokeAllSupervisionLinks() {
-      if (!confirm('确认撤销当前空间所有已发出的好友监督分享链接？撤销后旧链接将立即失效。')) return;
+      const ok = await askConfirmModal(
+        '确认撤销当前空间所有已发出的好友监督分享链接？撤销后旧链接将立即失效。',
+        { title: '🚫 撤销全部监督链接', confirmText: '确认撤销', danger: true }
+      );
+      if (!ok) return;
       const res = await apiPost('/api/supervision/share/revoke', {});
       if (res.error) return showToast(`撤销失败: ${res.error}`, 'error');
       showToast(`🚫 已撤销 ${res.revoked ?? 0} 条监督分享链接`);
@@ -7005,6 +7581,251 @@
       });
     }
 
+    // ---------------- Floating Evidence Q&A Copilot Drawer ----------------
+    let _askFloatBusy = false;
+    let _lastFloatAskTraceId = '';
+    const ASK_STARTER_PROMPTS = [
+      '今天有哪些紧急或逾期的待办？',
+      '总结我最近记录的重要事项与偏好',
+      '最近一周我完成了哪些关键工作？',
+    ];
+
+    function _askFloatStorageKey() {
+      return `tm_ask_float_turns_${space()}`;
+    }
+
+    function _loadAskFloatTurns() {
+      try {
+        const raw = sessionStorage.getItem(_askFloatStorageKey());
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function _saveAskFloatTurns(turns) {
+      try {
+        sessionStorage.setItem(_askFloatStorageKey(), JSON.stringify((turns || []).slice(-12)));
+      } catch (e) {}
+    }
+
+    function syncAskFabVisibility() {
+      const fab = document.getElementById('askFabBtn');
+      const panel = document.getElementById('askFloatPanel');
+      if (!fab || !panel) return;
+      const onAskPanel = Boolean(document.getElementById('panel-ask')?.classList.contains('active'));
+      const focusOpen = Boolean(document.getElementById('focusOverlay')?.classList.contains('open'));
+      const authLocked = Boolean((authRequiredFlag && !currentUser) || authLockOpen);
+      const isGuestShare = Boolean(activeShareToken);
+      const shouldHide = onAskPanel || focusOpen || authLocked || isGuestShare;
+      fab.hidden = shouldHide;
+      if (shouldHide && panel.classList.contains('open')) {
+        closeAskFloatPanel();
+      }
+    }
+
+    function renderAskFloatTurnAnswerHtml(res) {
+      const memCites = ((res.citations || {}).memories || []).map(
+        m => `<button type="button" class="chip-btn" data-mem-id="${esc(m.memory_id)}" onclick="openDetail(this.dataset.memId)">🧠 ${esc(m.title)}</button>`
+      ).join(' ');
+      const noteCites = ((res.citations || {}).notes || []).map(
+        n => `<span class="tag">📝 ${esc((n.event_time || '').slice(0, 10))} “${esc((n.content || '').slice(0, 32))}”</span>`
+      ).join(' ');
+      const mediaCites = (res.citations || {}).media || [];
+      const mediaHtml = mediaCites.length
+        ? `<div style="margin-top:2px;">${renderMediaGridHtml(mediaCites)}</div>`
+        : '';
+      const modeText = res.query_mode === 'history' ? '🕰️ 历史追溯' : '📍 状态检索';
+      const statusText = res.planning_status === 'overflow'
+        ? '子问题超出上限'
+        : (res.has_sufficient_evidence ? '✓ 证据充分' : '⚠️ 证据不足');
+      const statusStyle = res.has_sufficient_evidence
+        ? 'background:#dcfce7;color:#166534'
+        : 'background:#fef3c7;color:#92400e';
+      const citesBlock = (memCites || noteCites || mediaHtml)
+        ? `<div style="border-top:1px dashed var(--border);padding-top:6px;display:grid;gap:4px;font-size:11.5px;">
+            ${memCites ? `<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">${memCites}</div>` : ''}
+            ${noteCites ? `<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">${noteCites}</div>` : ''}
+            ${mediaHtml}
+          </div>`
+        : '';
+      return `
+        <div class="meta-row" style="gap:5px;">
+          <span class="tag score">${modeText}</span>
+          <span class="tag" style="${statusStyle}">${statusText}</span>
+        </div>
+        <div class="answer-box">${renderMarkdownHtml(res.answer || '')}</div>
+        ${citesBlock}
+      `;
+    }
+
+    function renderAskFloatHistory() {
+      const box = document.getElementById('askFloatHistory');
+      if (!box) return;
+      const turns = _loadAskFloatTurns();
+      if (!turns.length && !_askFloatBusy) {
+        box.innerHTML = `
+          <div class="ask-float-empty">
+            <div style="font-size:28px;">🧠</div>
+            <div style="font-weight:700;font-size:14px;color:var(--heading);">随时向你的记忆库提问</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.5;">无需离开当前工作流，自动检索你的待办、偏好、随记与图片证据并附带溯源引用</div>
+            <div class="ask-starter-list">
+              ${ASK_STARTER_PROMPTS.map(p => `<button type="button" class="ask-starter-chip" data-prompt="${esc(p)}" onclick="useAskStarter(this.dataset.prompt)">💡 ${esc(p)}</button>`).join('')}
+            </div>
+          </div>
+        `;
+        return;
+      }
+      box.innerHTML = turns.map(t => `
+        <div class="ask-turn-q">${esc(t.question)}</div>
+        <div class="ask-turn-a">${t.error
+          ? `<span style="color:#dc2626;font-size:12.5px;">⚠️ ${esc(t.error)}</span>`
+          : renderAskFloatTurnAnswerHtml(t.response || {})
+        }</div>
+      `).join('') + (_askFloatBusy ? `
+        <div class="ask-turn-a" aria-busy="true">
+          <div style="font-size:12px;color:var(--muted);font-weight:600;">⏳ 正在检索记忆证据并推演回答…</div>
+          <div class="tm-skeleton-line" style="width:92%;"></div>
+          <div class="tm-skeleton-line" style="width:74%;"></div>
+        </div>
+      ` : '');
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function openAskFloatPanel() {
+      syncAskFabVisibility();
+      const fab = document.getElementById('askFabBtn');
+      const panel = document.getElementById('askFloatPanel');
+      if (!panel || fab?.hidden) return;
+      panel.classList.add('open');
+      panel.setAttribute('aria-hidden', 'false');
+      fab?.classList.add('active');
+      fab?.setAttribute('aria-expanded', 'true');
+      renderAskFloatHistory();
+      document.getElementById('askFloatInput')?.focus();
+    }
+
+    function closeAskFloatPanel() {
+      const fab = document.getElementById('askFabBtn');
+      const panel = document.getElementById('askFloatPanel');
+      if (!panel) return;
+      panel.classList.remove('open');
+      panel.setAttribute('aria-hidden', 'true');
+      fab?.classList.remove('active');
+      fab?.setAttribute('aria-expanded', 'false');
+    }
+
+    function toggleAskFloatPanel() {
+      const panel = document.getElementById('askFloatPanel');
+      if (panel?.classList.contains('open')) closeAskFloatPanel();
+      else openAskFloatPanel();
+    }
+
+    function useAskStarter(promptText) {
+      const inp = document.getElementById('askFloatInput');
+      if (!inp) return;
+      inp.value = promptText || '';
+      submitAskFloat();
+    }
+
+    function clearAskFloatHistory() {
+      if (_askFloatBusy) return;
+      try { sessionStorage.removeItem(_askFloatStorageKey()); } catch (e) {}
+      _lastFloatAskTraceId = '';
+      renderAskFloatHistory();
+      document.getElementById('askFloatInput')?.focus();
+    }
+
+    async function submitAskFloat() {
+      if (_askFloatBusy) return;
+      const inp = document.getElementById('askFloatInput');
+      const btn = document.getElementById('askFloatSendBtn');
+      const q = (inp?.value || '').trim();
+      if (!q) {
+        showToast('请输入想要提问的问题');
+        inp?.focus();
+        return;
+      }
+      inp.value = '';
+      _askFloatBusy = true;
+      if (btn) { btn.disabled = true; btn.textContent = '思考中…'; }
+      const box = document.getElementById('askFloatHistory');
+      const turns = _loadAskFloatTurns();
+      if (box) {
+        const pendingTurns = [...turns];
+        box.innerHTML = pendingTurns.map(t => `
+          <div class="ask-turn-q">${esc(t.question)}</div>
+          <div class="ask-turn-a">${t.error
+            ? `<span style="color:#dc2626;font-size:12.5px;">⚠️ ${esc(t.error)}</span>`
+            : renderAskFloatTurnAnswerHtml(t.response || {})
+          }</div>
+        `).join('') + `
+          <div class="ask-turn-q">${esc(q)}</div>
+          <div class="ask-turn-a" aria-busy="true">
+            <div style="font-size:12px;color:var(--muted);font-weight:600;">⏳ 正在检索记忆证据并推演回答…</div>
+            <div class="tm-skeleton-line" style="width:92%;"></div>
+            <div class="tm-skeleton-line" style="width:68%;"></div>
+          </div>
+        `;
+        box.scrollTop = box.scrollHeight;
+      }
+      try {
+        const res = await apiPost('/api/ask', { question: q });
+        const latest = _loadAskFloatTurns();
+        if (res.error) {
+          latest.push({ question: q, error: res.error });
+        } else {
+          _lastFloatAskTraceId = res.trace_id || '';
+          latest.push({ question: q, response: res });
+          const askInput = document.getElementById('askInput');
+          if (askInput) askInput.value = q;
+          const askResultEl = document.getElementById('askResult');
+          if (askResultEl) {
+            const memCites = ((res.citations || {}).memories || []).map(m => `<button type="button" class="chip-btn" data-mem-id="${esc(m.memory_id)}" onclick="openDetail(this.dataset.memId)">🧠 ${esc(m.title)}</button>`).join(' ');
+            const noteCites = ((res.citations || {}).notes || []).map(n => `<span class="tag">📝 ${esc((n.event_time || '').slice(0, 10))} “${esc((n.content || '').slice(0, 40))}”</span>`).join(' ');
+            const mediaCites = ((res.citations || {}).media || []);
+            const mediaGridHtml = mediaCites.length
+              ? `<div style="margin-top:4px;"><strong>🖼️ 关联图片溯源 (${mediaCites.length} 张):</strong>${renderMediaGridHtml(mediaCites)}</div>`
+              : '';
+            const modeText = res.query_mode === 'history' ? '🕰️ 历史演进追溯' : '📍 当前状态检索';
+            askResultEl.innerHTML = `
+              <div style="margin-top:10px;" class="meta-row">
+                <span class="tag score">${modeText}</span>
+                <span class="tag" style="background:${res.has_sufficient_evidence ? '#dcfce7;color:#166534' : '#fef3c7;color:#92400e'}">${res.planning_status === 'overflow' ? '子问题超出上限' : (res.has_sufficient_evidence ? '✓ 证据充分' : '⚠️ 证据不足安全拒答')}</span>
+                <span class="tag">Trace: ${esc(res.trace_id)}</span>
+              </div>
+              <div class="answer-box">${renderMarkdownHtml(res.answer || '')}</div>
+              <div style="margin-top:8px;font-size:12px;display:grid;gap:6px;">
+                <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><strong>引用记忆卡:</strong> ${memCites || '<span style="color:var(--muted);">无</span>'}</div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><strong>支撑原话:</strong> ${noteCites || '<span style="color:var(--muted);">无</span>'}</div>
+                ${mediaGridHtml}
+              </div>
+            `;
+          }
+        }
+        _saveAskFloatTurns(latest);
+      } catch (err) {
+        const latest = _loadAskFloatTurns();
+        latest.push({ question: q, error: err?.message || String(err) });
+        _saveAskFloatTurns(latest);
+      } finally {
+        _askFloatBusy = false;
+        if (btn) { btn.disabled = false; btn.textContent = '发送'; }
+        renderAskFloatHistory();
+        inp?.focus();
+      }
+    }
+
+    function openFullAskFromFloat() {
+      const traceId = _lastFloatAskTraceId;
+      closeAskFloatPanel();
+      switchTab('ask');
+      if (traceId) {
+        loadTraces(traceId).catch(() => {});
+      }
+    }
+
     function traceStage(label, payload, duration, open = false) {
       const ms = typeof duration === 'number' ? ` · ${esc(duration)} ms` : '';
       return `
@@ -7241,7 +8062,11 @@
     }
 
     async function forgetMemory(memId, expectedVer) {
-      if (!confirm('确认彻底遗忘此条记忆？将同步清除仅关联该记忆的原始证据、向量/全文索引、历史明文及衍生洞察（不可恢复）。')) return;
+      const ok = await askConfirmModal(
+        '确认彻底遗忘此条记忆？将同步清除仅关联该记忆的原始证据、向量/全文索引、历史明文及衍生洞察（不可恢复）。',
+        { title: '🗑️ 彻底遗忘记忆', confirmText: '确认遗忘', danger: true }
+      );
+      if (!ok) return;
       const res = await apiPost('/api/memories/propose', {
         action: 'forget',
         target_memory_id: memId,
@@ -7418,11 +8243,13 @@
         setAuthMode(hasUsersFlag ? authMode : 'register');
       }
       modal.classList.add('open');
+      if (typeof syncAskFabVisibility === 'function') syncAskFabVisibility();
     }
 
     function closeAuthModal() {
       if (authLockOpen) return;
       document.getElementById('authModal').classList.remove('open');
+      if (typeof syncAskFabVisibility === 'function') syncAskFabVisibility();
     }
 
     function copyCurrentToken() {
@@ -7514,8 +8341,16 @@
         const el = document.getElementById(id);
         if (el) el.innerHTML = '';
       });
+      try {
+        Object.keys(sessionStorage).forEach(k => {
+          if (k.startsWith('tm_ask_float_turns_')) sessionStorage.removeItem(k);
+        });
+      } catch (e) {}
+      _lastFloatAskTraceId = '';
+      closeAskFloatPanel();
       document.getElementById('authModal').classList.remove('open');
       updateAccountUi();
+      syncAskFabVisibility();
       if (document.getElementById('panel-admin').classList.contains('active')) {
         switchTab('tasks');
       }
@@ -7523,17 +8358,17 @@
       reloadAll();
     }
 
-    async function syncAuthStatus() {
-      const res = await fetch('/api/auth/status', { headers: authHeaders() });
-      const data = await parseApiResponse(res);
+    function applyAuthStatusData(data) {
+      if (!data) return;
       authRequiredFlag = !!data.auth_required;
       hasUsersFlag = data.has_users !== false;
       allowRegFlag = data.allow_registration !== false;
       if (data.authenticated && data.user) {
         currentUser = data.user;
         currentQuota = data.quota || null;
+        authLockOpen = false;
       } else {
-        if (authToken && data._httpStatus === 200) {
+        if (authToken && (data._httpStatus === 200 || data._httpStatus === undefined)) {
           authToken = '';
           localStorage.removeItem('tm_auth_token');
         }
@@ -7544,6 +8379,13 @@
       if (authRequiredFlag && !currentUser && !activeShareToken) {
         openAuthModal(true);
       }
+      if (typeof syncAskFabVisibility === 'function') syncAskFabVisibility();
+    }
+
+    async function syncAuthStatus() {
+      const res = await fetch('/api/auth/status', { headers: authHeaders() });
+      const data = await parseApiResponse(res);
+      applyAuthStatusData(data);
     }
 
     const ADMIN_USER_PAGE_SIZE = 20;
@@ -8488,8 +9330,7 @@
     applyThemeDOM(appPreferences.theme_id);
     applyModuleTogglesDOM();
 
-    async function syncPreferencesFromServer() {
-      const res = await apiGet('/api/preferences');
+    function applyPreferencesData(res) {
       if (!res || res.error) return;
       appPreferences = {
         ...appPreferences,
@@ -8519,6 +9360,11 @@
       if (document.getElementById('prefsModal')?.classList.contains('open')) {
         renderPrefsModalContent();
       }
+    }
+
+    async function syncPreferencesFromServer() {
+      const res = await apiGet('/api/preferences');
+      applyPreferencesData(res);
     }
 
     function openPrefsModal() {
@@ -10813,7 +11659,11 @@
     }
 
     async function removeExistingNoteMedia(bucket, mediaId) {
-      if (!confirm('确认删除这张已保存的附图？图片文件与图中 OCR 索引将同步清理。')) return;
+      const ok = await askConfirmModal(
+        '确认删除这张已保存的附图？图片文件与图中 OCR 索引将同步清理。',
+        { title: '🗑️ 删除已保存附图', confirmText: '确认删除', danger: true }
+      );
+      if (!ok) return;
       const res = await apiPost('/api/media/delete', { media_id: mediaId });
       if (res.error) return showToast(`删除附图失败: ${res.error}`, 'error');
       _existingEditMedia[bucket] = (_existingEditMedia[bucket] || []).filter(m => m.media_id !== mediaId);
@@ -10896,7 +11746,11 @@
     }
 
     async function forgetNoteFromStream(noteId) {
-      if (!confirm('确认遗忘该条随记？关联的单源派生记忆与向量也将同步清理。')) return;
+      const ok = await askConfirmModal(
+        '确认遗忘该条随记？关联的单源派生记忆与向量也将同步清理。',
+        { title: '🧹 遗忘随记与派生记忆', confirmText: '确认遗忘', danger: true }
+      );
+      if (!ok) return;
       const res = await apiPost('/api/notes/forget', { note_id: noteId });
       if (res.error) return showToast(`遗忘失败: ${res.error}`, 'error');
       if (_detailModalState && _detailModalState.noteId === noteId) {
@@ -11089,23 +11943,68 @@
     const headerOffline = document.getElementById('headerOffline');
     window.addEventListener('offline', () => { if (headerOffline) headerOffline.hidden = false; });
 
+    function renderInitialTasksSkeleton() {
+      if (_lastMatrixData) return;
+      const mc = document.getElementById('matrixContainer');
+      if (!mc || mc.children.length > 0) return;
+      const qSkeletons = [
+        ['Q1_do_first', '🔥 Q1 · 重要且紧急'],
+        ['Q2_schedule', '📅 Q2 · 重要不紧急'],
+        ['Q3_delegate', '⚡ Q3 · 紧急不重要'],
+        ['Q4_eliminate', '🗂️ Q4 · 稍后/精简'],
+      ];
+      mc.innerHTML = qSkeletons.map(([qk, lbl]) => `
+        <div class="quad-box quad-${qk}" aria-busy="true">
+          <div class="quad-header"><span>${lbl}</span><span class="tm-skeleton-line" style="width:52px;height:18px;border-radius:999px;"></span></div>
+          <div class="tm-skeleton-card">
+            <div class="tm-skeleton-line" style="width:78%;"></div>
+            <div class="tm-skeleton-line" style="width:46%;"></div>
+          </div>
+          <div class="tm-skeleton-card">
+            <div class="tm-skeleton-line" style="width:64%;"></div>
+            <div class="tm-skeleton-line" style="width:40%;"></div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function applySyncStateSnapshot(st) {
+      if (!st || st.error) return;
+      const ver = Number(st.sync_version || 0);
+      const bjDate = String(st.beijing_date || '');
+      const pending = Number(st.pending_ingest || 0);
+      updateIngestPendingPill(pending);
+      if (ver >= 0) _knownSyncVersion = ver;
+      if (bjDate) _lastBeijingDate = bjDate;
+    }
+
     async function reloadAll() {
+      renderInitialTasksSkeleton();
       try {
-        await syncAuthStatus();
+        const bootRes = await fetch(`/api/bootstrap?space_id=${encodeURIComponent(space())}`, {
+          headers: authHeaders(),
+          cache: 'no-store',
+        });
+        const boot = await parseApiResponse(bootRes);
+        if (boot && boot.auth) {
+          applyAuthStatusData(boot.auth);
+        } else {
+          await syncAuthStatus();
+        }
         if (headerOffline) headerOffline.hidden = true;
         if (authRequiredFlag && !currentUser && !activeShareToken) return;
+        if (boot && boot.preferences) applyPreferencesData(boot.preferences);
+        if (boot && boot.sync_state) applySyncStateSnapshot(boot.sync_state);
         await flushOfflineQueue();
-        await Promise.all([
-          apiGet('/api/health'),
-          syncPreferencesFromServer().catch(() => {}),
-        ]);
       } catch (e) {
         if (headerOffline) headerOffline.hidden = false;
       }
       if (activeShareToken) {
+        syncAskFabVisibility();
         switchTab('supervision', null, { preserveScroll: true });
         return;
       }
+      syncAskFabVisibility();
       await Promise.all([
         loadTasks(),
         loadCountdownsData().catch(() => {}),
@@ -11147,6 +12046,8 @@
         'detailModal',
         'noteDetailModal',
         'mediaLightboxModal',
+        'confirmDialogModal',
+        'askFloatPanel',
         'authModal',
         'prefsModal',
         'focusOverlay',
@@ -11160,10 +12061,29 @@
     }
 
     document.addEventListener('keydown', ev => {
+      if ((ev.metaKey || ev.ctrlKey) && !ev.shiftKey && !ev.altKey && ev.key.toLowerCase() === 'k') {
+        if (document.getElementById('focusOverlay')?.open) return;
+        if ((authRequiredFlag && !currentUser) || authLockOpen || activeShareToken) return;
+        ev.preventDefault();
+        if (document.getElementById('panel-ask')?.classList.contains('active')) {
+          document.getElementById('askInput')?.focus();
+        } else {
+          toggleAskFloatPanel();
+        }
+        return;
+      }
       if (ev.key !== 'Escape') return;
       if (document.getElementById('focusOverlay').open) return;
+      if (document.getElementById('confirmDialogModal')?.classList.contains('open')) {
+        resolveConfirmModal(false);
+        return;
+      }
       if (document.getElementById('mediaLightboxModal')?.classList.contains('open')) {
         closeMediaLightbox();
+        return;
+      }
+      if (document.getElementById('detailModal')?.classList.contains('open')) {
+        closeModal();
         return;
       }
       if (document.getElementById('noteDetailModal')?.classList.contains('open')) {
@@ -11172,6 +12092,10 @@
         } else {
           closeNoteDetailModal();
         }
+        return;
+      }
+      if (document.getElementById('askFloatPanel')?.classList.contains('open')) {
+        closeAskFloatPanel();
         return;
       }
       if (_inlineEditMemoId) {
@@ -11228,16 +12152,22 @@
       navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
     refreshNotifButtonUI();
+    syncAskFabVisibility();
     window.addEventListener('online', () => { reloadAll(); checkRemoteSyncState(false); });
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
+        ensureFxLoop();
         checkRemoteSyncState(true);
         checkTaskReminders();
+      } else if (_fxEngine.running && _fxEngine.raf) {
+        cancelAnimationFrame(_fxEngine.raf);
+        _fxEngine.running = false;
+        _fxEngine.raf = 0;
       }
     });
-    setInterval(checkTaskReminders, 30_000);
-    setInterval(() => checkRemoteSyncState(true), 10_000);
-    reloadAll().then(() => checkRemoteSyncState(false));
+    setInterval(() => { if (!document.hidden) checkTaskReminders(); }, 30_000);
+    setInterval(() => { if (!document.hidden) checkRemoteSyncState(true); }, 10_000);
+    reloadAll().then(() => { if (_knownSyncVersion < 0) checkRemoteSyncState(false); });
   </script>
 </body>
 </html>
