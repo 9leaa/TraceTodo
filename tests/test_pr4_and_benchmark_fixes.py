@@ -122,6 +122,13 @@ class TestPR4AndBenchmarkFixes(unittest.TestCase):
         def fake_post(_url, _key, payload, **_opts):
             payloads.append(json.loads(json.dumps(payload)))
             if len(payloads) == 1:
+                self.assertNotIn("tools", payload)
+                plan = {"questions": ["我以前住在哪里？"], "tool_calls": []}
+                return {
+                    "choices": [{"message": {"content": json.dumps(plan)}}],
+                    "usage": {"total_tokens": 7},
+                }
+            if len(payloads) == 2:
                 return {
                     "choices": [
                         {
@@ -140,7 +147,7 @@ class TestPR4AndBenchmarkFixes(unittest.TestCase):
                     ],
                     "usage": {"total_tokens": 11},
                 }
-            if len(payloads) == 2:
+            if len(payloads) == 3:
                 # Simulate Qwen emitting plain [Thinking] text when tools are present
                 return {
                     "choices": [
@@ -184,8 +191,8 @@ class TestPR4AndBenchmarkFixes(unittest.TestCase):
         self.assertEqual([n["note_id"] for n in out["citations"]["notes"]], ["note_from_tool"])
         trace = app.trace_repo.list_traces("qa")[0]
         self.assertEqual(trace["details"]["stop_reason"], "invalid_answer_recovered")
-        self.assertEqual(trace["llm_calls"], 3)
-        self.assertEqual(trace["tokens_used"], 41)
+        self.assertEqual(trace["llm_calls"], 4)
+        self.assertEqual(trace["tokens_used"], 48)
 
     def test_p1_default_preference_and_episodic_payloads_enable_propose_and_dream(self) -> None:
         app = AppContainer.build(self.cfg)

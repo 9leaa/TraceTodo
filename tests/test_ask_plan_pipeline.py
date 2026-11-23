@@ -69,13 +69,31 @@ class TestAskPlanPipeline(unittest.TestCase):
     def trace(self):
         return self.app.trace_repo.list_traces("qa")[0]
 
-    def test_simple_question_keeps_single_model_turn(self):
+    def test_simple_question_is_planned_and_retrieved_verbatim(self):
+        question = "实习哪天结束？"
+        self.model.plan = {"questions": ["实习结束日期"], "tool_calls": []}
         self.model.turns = [self.model.answer()]
-        self.app.ask_service.ask("qa", "实习哪天结束？")
-        self.assertEqual(self.model.planner_calls, [])
+        self.app.ask_service.ask("qa", question)
+        self.assertEqual(self.model.planner_calls, [question])
+        self.assertEqual(len(self.model.answer_inputs), 1)
         trace = self.trace()
-        self.assertEqual(trace["llm_calls"], 1)
-        self.assertEqual(trace["details"]["pipeline"]["planning"]["status"], "direct")
+        self.assertEqual(trace["llm_calls"], 2)
+        pipeline = trace["details"]["pipeline"]
+        self.assertEqual(pipeline["planning"]["status"], "planned")
+        self.assertEqual(pipeline["planning"]["questions"][0]["query"], question)
+        self.assertEqual(pipeline["retrievals"][0]["query"], question)
+        self.assertEqual(pipeline["initial_tools"], [])
+
+    def test_invalid_plan_falls_back_to_original_query(self):
+        question = "我喜欢喝什么？"
+        self.model.turns = [self.model.answer()]
+        self.app.ask_service.ask("qa", question)
+        pipeline = self.trace()["details"]["pipeline"]
+        self.assertEqual(pipeline["planning"]["status"], "fallback")
+        self.assertEqual(pipeline["planning"]["llm_calls"], 1)
+        self.assertEqual(pipeline["retrievals"][0]["query"], question)
+        self.assertEqual(pipeline["initial_tools"], [])
+        self.assertEqual(pipeline["react"]["stop_reason"], "answer")
 
     def test_overflow_stops_before_retrieval_or_execution(self):
         self.model.plan = {"questions": ["A", "B", "C", "D"]}
@@ -88,11 +106,14 @@ class TestAskPlanPipeline(unittest.TestCase):
         self.assertEqual(self.model.answer_inputs, [])
         self.assertEqual(self.trace()["details"]["pipeline"]["retrievals"], [])
 
-    def test_parallel_plan_dedup_and_follow_up_are_audited(self):
+    def test_parallel_plan_limits_initial_and_follow_up_tools(self):
         query = "咖啡偏好是什么，另外有哪些任务？"
         self.model.plan = {
             "questions": ["咖啡偏好", "有哪些任务"],
-            "tool_calls": [{"question": 2, "name": "inspect", "arguments": {"kind": "first"}}],
+            "tool_calls": [
+                {"question": 2, "name": "inspect", "arguments": {"kind": "first"}},
+                {"question": 1, "name": "inspect", "arguments": {"kind": "extra"}},
+            ],
         }
         shared = self.app.note_repo.save(RawNote(
             note_id="note_shared", space_id="qa", content="咖啡偏好 有哪些任务"
@@ -117,7 +138,7 @@ class TestAskPlanPipeline(unittest.TestCase):
         with patch.object(self.app.ask_service, "_retrieve", side_effect=retrieve):
             result = self.app.ask_service.ask("qa", query)
 
-        self.assertEqual(self.executions, [("qa", {"kind": "first"}), ("qa", {"kind": "follow"})])
+        self.assertEqual(self.executions, [("qa", {"kind": "first"})])
         first_model_input = self.model.answer_inputs[0][-1]["content"]
         bundle = json.loads(first_model_input.split("按子问题组织的证据与首批工具结果：\n")[1])
         self.assertEqual([g["tool_result_ids"] for g in bundle["questions"]], [[], ["t1"]])
@@ -126,17 +147,19 @@ class TestAskPlanPipeline(unittest.TestCase):
         self.assertNotIn("note_other_space", first_model_input)
         self.assertEqual(
             [n["note_id"] for n in result["citations"]["notes"]],
-            [shared.note_id, "note_tool", "note_follow"],
+            [shared.note_id, "note_tool"],
         )
         trace = self.trace()
         stages = trace["details"]["pipeline"]
         self.assertEqual((trace["llm_calls"], trace["tokens_used"]), (3, 31))
         self.assertEqual([r["question_id"] for r in stages["retrievals"]], ["q1", "q2"])
+        self.assertEqual([r["question_id"] for r in stages["planning"]["tool_calls"]], ["q2"])
+        self.assertEqual([r["question_id"] for r in stages["initial_tools"]], ["q2"])
         self.assertEqual(stages["initial_tools"][0]["result"]["data"]["total"], 1)
         react = stages["react"]
         self.assertEqual([r["status"] for r in react["rounds"]], ["tool_calls", "answer"])
-        self.assertEqual([r["status"] for r in react["follow_up_tools"]], ["reused", "ok"])
-        self.assertEqual(react["result"]["cited_note_ids"], [shared.note_id, "note_tool", "note_follow"])
+        self.assertEqual([r["status"] for r in react["follow_up_tools"]], ["reused", "tool_limit"])
+        self.assertEqual(react["result"]["cited_note_ids"], [shared.note_id, "note_tool"])
         for row in [stages["planning"], *stages["retrievals"], *stages["initial_tools"],
                     react, *react["rounds"], *react["follow_up_tools"]]:
             self.assertGreaterEqual(row["duration_ms"], 0)
