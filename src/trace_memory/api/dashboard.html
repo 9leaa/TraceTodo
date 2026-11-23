@@ -2045,6 +2045,16 @@
       outline: 2px dashed var(--primary);
       background: var(--primary-soft) !important;
     }
+    .sr-only-file-input {
+      position: fixed;
+      left: -9999px;
+      top: -9999px;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
 
     /* ---------------- QA 2026-11-21 layout fixes ---------------- */
     /* Ask / trace_runs: long unbreakable JSON & ids must wrap inside their cards instead of widening the page */
@@ -2102,7 +2112,7 @@
     </div>
     <button type="button" class="header-account" id="accountBtn" onclick="openAuthModal()"><span class="control-icon" aria-hidden="true">👤</span><span data-control-label>登录</span></button>
   </header>
-  <input type="file" id="sharedImageFileInput" accept="image/*" multiple style="display:none;" onchange="onImageFilesSelected(event)" />
+  <input type="file" id="sharedImageFileInput" class="sr-only-file-input" accept=".jpg,.jpeg,.png,.webp,.gif,.bmp" multiple tabindex="-1" aria-hidden="true" onchange="onImageFilesSelected(event)" oncancel="onImagePickerCancel()" />
   <div id="quickMediaDraftBar" style="display:none;padding:6px 20px;background:var(--surface);border-bottom:1px solid var(--border);align-items:center;gap:10px;flex-wrap:wrap;">
     <span style="font-size:12px;color:var(--muted);font-weight:600;">🖼️ 待录入附图：</span>
     <div id="quickMediaDraftGrid" class="media-thumb-grid" style="margin-top:0;"></div>
@@ -8242,17 +8252,39 @@
       document.getElementById('mediaLightboxModal').classList.remove('open');
     }
 
+    let _imagePickerLastTriggerMs = 0;
+    let _imagePickerActive = false;
+    let _imageUploadInFlight = false;
+
     function triggerImagePicker(targetKey) {
+      const now = Date.now();
+      if (_imageUploadInFlight) {
+        showToast('正在处理上一批图片，请稍候...');
+        return;
+      }
+      if (now - _imagePickerLastTriggerMs < 400) return;
+      _imagePickerLastTriggerMs = now;
       _activeImageTarget = (targetKey === 'quick' || targetKey === 'journal') ? targetKey : 'notes';
       const inp = document.getElementById('sharedImageFileInput');
-      if (inp) {
-        inp.value = '';
-        inp.click();
-      }
+      if (!inp) return;
+      _imagePickerActive = true;
+      window.addEventListener('focus', () => {
+        setTimeout(() => { _imagePickerActive = false; }, 600);
+      }, { once: true });
+      inp.click();
+    }
+
+    function onImagePickerCancel() {
+      _imagePickerActive = false;
     }
 
     function onImageFilesSelected(ev) {
-      const files = Array.from(ev.target.files || []);
+      _imagePickerActive = false;
+      const inputEl = ev?.target;
+      const files = Array.from(inputEl?.files || []);
+      if (inputEl) {
+        try { inputEl.value = ''; } catch (e) {}
+      }
       if (files.length) uploadCompressedImages(files, _activeImageTarget);
     }
 
@@ -8281,19 +8313,82 @@
       if (files.length) uploadCompressedImages(files, 'notes');
     }
 
-    async function compressImageFileToJpeg(file) {
+    function canvasToJpegDataUrlAsync(canvas, quality) {
+      if (typeof canvas.toBlob !== 'function') {
+        return Promise.resolve(canvas.toDataURL('image/jpeg', quality));
+      }
+      return new Promise((resolve, reject) => {
+        try {
+          canvas.toBlob(blob => {
+            if (!blob) {
+              try {
+                resolve(canvas.toDataURL('image/jpeg', quality));
+              } catch (e) {
+                reject(e);
+              }
+              return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(new Error('图片编码失败'));
+            reader.readAsDataURL(blob);
+          }, 'image/jpeg', quality);
+        } catch (err) {
+          reject(err);
+        }
+      });
+    }
+
+    async function decodeImageForCanvas(file, timeoutMs = 15000) {
+      let timerId = null;
+      const withTimeout = (p) => Promise.race([
+        p,
+        new Promise((_, reject) => {
+          timerId = setTimeout(() => reject(new Error('图片解码超时，请尝试更换图片或缩小体积')), timeoutMs);
+        }),
+      ]).finally(() => { if (timerId) clearTimeout(timerId); });
+
+      if (typeof createImageBitmap === 'function') {
+        try {
+          const bmp = await withTimeout(createImageBitmap(file));
+          return {
+            srcEl: bmp,
+            srcW: bmp.width || 800,
+            srcH: bmp.height || 600,
+            cleanup: () => { try { bmp.close(); } catch (e) {} },
+          };
+        } catch (err) {
+          if (err && /超时/.test(String(err.message || ''))) throw err;
+          // Fall back to HTMLImageElement for formats/codecs createImageBitmap declined
+        }
+      }
+
       const bitmapUrl = URL.createObjectURL(file);
       try {
-        const img = await new Promise((resolve, reject) => {
+        const img = await withTimeout(new Promise((resolve, reject) => {
           const el = new Image();
           el.onload = () => resolve(el);
-          el.onerror = reject;
+          el.onerror = () => reject(new Error('无法解码图片，请选择 JPG/PNG/WebP/GIF 格式'));
           el.src = bitmapUrl;
-        });
+        }));
+        return {
+          srcEl: img,
+          srcW: img.naturalWidth || img.width || 800,
+          srcH: img.naturalHeight || img.height || 600,
+          cleanup: () => URL.revokeObjectURL(bitmapUrl),
+        };
+      } catch (err) {
+        URL.revokeObjectURL(bitmapUrl);
+        throw err;
+      }
+    }
 
-        const renderScaled = (maxEdge, quality) => {
-          let w = img.naturalWidth || img.width || 800;
-          let h = img.naturalHeight || img.height || 600;
+    async function compressImageFileToJpeg(file) {
+      const decoded = await decodeImageForCanvas(file, 15000);
+      try {
+        const renderScaled = async (maxEdge, quality) => {
+          let w = decoded.srcW || 800;
+          let h = decoded.srcH || 600;
           if (Math.max(w, h) > maxEdge) {
             const ratio = maxEdge / Math.max(w, h);
             w = Math.max(1, Math.round(w * ratio));
@@ -8302,46 +8397,74 @@
           const canvas = document.createElement('canvas');
           canvas.width = w;
           canvas.height = h;
-          const ctx = canvas.getContext('2d');
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, w, h);
-          ctx.drawImage(img, 0, 0, w, h);
-          return { dataUrl: canvas.toDataURL('image/jpeg', quality), width: w, height: h };
+          try {
+            const ctx = canvas.getContext('2d');
+            if (!ctx) throw new Error('无法初始化画布上下文');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(decoded.srcEl, 0, 0, w, h);
+            const dataUrl = await canvasToJpegDataUrlAsync(canvas, quality);
+            return { dataUrl, width: w, height: h };
+          } finally {
+            canvas.width = 0;
+            canvas.height = 0;
+          }
         };
 
-        // Compress main image targeting ~150-280 KB
-        let main = renderScaled(1440, 0.78);
+        // Compress main image targeting ~150-280 KB off the sync toDataURL hot path
+        let main = await renderScaled(1440, 0.78);
         if (main.dataUrl.length > 380000) {
-          main = renderScaled(1200, 0.66);
+          main = await renderScaled(1200, 0.66);
         }
-        const thumb = renderScaled(320, 0.70);
+        const thumb = await renderScaled(320, 0.70);
         return { mainDataUrl: main.dataUrl, thumbDataUrl: thumb.dataUrl, width: main.width, height: main.height };
       } finally {
-        URL.revokeObjectURL(bitmapUrl);
+        decoded.cleanup();
       }
     }
 
     async function uploadCompressedImages(files, targetKey) {
+      if (_imageUploadInFlight) {
+        showToast('正在处理上一批图片，请稍候...');
+        return;
+      }
       const bucket = (targetKey === 'quick' || targetKey === 'journal') ? targetKey : 'notes';
-      showToast(`🖼️ 正在端侧压缩并上传 ${files.length} 张图片...`);
-      for (const f of files.slice(0, 6)) {
-        try {
-          const compressed = await compressImageFileToJpeg(f);
-          const res = await apiPost('/api/media/upload', {
-            image_base64: compressed.mainDataUrl,
-            thumb_base64: compressed.thumbDataUrl,
-            width: compressed.width,
-            height: compressed.height,
-          });
-          if (res.error) {
-            showToast(`图片上传失败: ${res.error}`, 'error');
-          } else if (res.media) {
-            _pendingMediaDrafts[bucket].push(res.media);
-            renderPendingMediaDrafts(bucket);
+      const batch = Array.from(files || []).slice(0, 6);
+      if (!batch.length) return;
+      _imageUploadInFlight = true;
+      let uploadedOk = 0;
+      try {
+        showToast(`🖼️ 正在端侧压缩并上传 ${batch.length} 张图片...`);
+        for (const f of batch) {
+          if (Number(f.size || 0) > 25 * 1024 * 1024) {
+            showToast(`图片「${f.name || '未命名'}」超过 25MB，请先裁剪后再传`, 'error');
+            continue;
           }
-        } catch (err) {
-          showToast(`图片处理失败: ${err?.message || err}`, 'error');
+          try {
+            const compressed = await compressImageFileToJpeg(f);
+            const res = await apiPost('/api/media/upload', {
+              image_base64: compressed.mainDataUrl,
+              thumb_base64: compressed.thumbDataUrl,
+              width: compressed.width,
+              height: compressed.height,
+            });
+            if (res.error) {
+              showToast(`图片上传失败: ${res.error}`, 'error');
+            } else if (res.media) {
+              _pendingMediaDrafts[bucket].push(res.media);
+              renderPendingMediaDrafts(bucket);
+              uploadedOk += 1;
+            }
+          } catch (err) {
+            showToast(`图片处理失败: ${err?.message || err}`, 'error');
+          }
+          await new Promise(resolve => setTimeout(resolve, 0));
         }
+        if (uploadedOk > 0) {
+          showToast(`✅ 已附加 ${uploadedOk} 张图片`);
+        }
+      } finally {
+        _imageUploadInFlight = false;
       }
     }
 
@@ -8610,6 +8733,7 @@
     let _syncCheckInFlight = false;
 
     function isAnyEditorModalOpen() {
+      if (_imagePickerActive || _imageUploadInFlight) return true;
       const ids = ['taskSheetModal', 'detailModal', 'authModal', 'prefsModal', 'focusOverlay', 'calSlotModal', 'countdownEditorModal'];
       return ids.some(id => {
         const el = document.getElementById(id);
