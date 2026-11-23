@@ -1980,15 +1980,19 @@
       position: absolute;
       left: 3px;
       right: 3px;
+      height: 17px;
       transform: translateY(-50%);
-      padding: 2px 3px;
+      padding: 0 2px;
       border-radius: 6px;
       border: 1px dashed var(--border);
       background: var(--surface);
       color: var(--muted);
       font-size: 9.5px;
       font-weight: 700;
-      line-height: 1.1;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       text-align: center;
       cursor: pointer;
       white-space: nowrap;
@@ -2038,8 +2042,12 @@
     .cal-hour-slot:hover::after {
       content: attr(data-slot-hint);
       position: absolute;
-      left: 6px;
-      top: 4px;
+      left: 5px;
+      top: 3px;
+      max-width: calc(100% - 8px);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
       font-size: 10px;
       font-weight: 600;
       color: var(--primary);
@@ -2053,11 +2061,11 @@
     }
     .cal-macaron-block {
       position: absolute;
-      z-index: 3;
+      z-index: 4;
       border-radius: 8px;
-      padding: 4px 6px;
+      padding: 3px 6px;
       font-size: 11px;
-      line-height: 1.28;
+      line-height: 1.22;
       overflow: hidden;
       cursor: pointer;
       box-shadow: 0 2px 6px rgba(15, 23, 42, 0.07);
@@ -2066,6 +2074,33 @@
       color: #0f172a;
       transition: transform 0.12s ease, box-shadow 0.12s ease;
     }
+    .cal-macaron-block.is-single-line {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 1px 5px;
+    }
+    .cal-unsched-x {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 15px;
+      height: 15px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1;
+      background: rgba(15, 23, 42, 0.14);
+      color: inherit;
+      opacity: 0;
+      transition: opacity 0.12s ease, background 0.12s ease;
+      cursor: pointer;
+    }
+    .cal-macaron-block:hover .cal-unsched-x { opacity: 0.92; }
+    .cal-unsched-x:hover { background: rgba(220, 38, 38, 0.85); color: #fff; }
     .cal-macaron-block:hover {
       z-index: 6;
       transform: translateY(-1px);
@@ -3245,11 +3280,6 @@
         <button type="button" class="tab-btn" data-tab="notes" data-module-toggle="notes" onclick="switchTab('notes', this)"><span class="tab-ico">📝</span><span>随记</span></button>
         <button type="button" class="tab-btn" data-tab="memories" onclick="switchTab('graph', this)"><span class="tab-ico">🧠</span><span>记忆</span></button>
         <button type="button" class="tab-btn" id="adminTabBtn" data-tab="admin" style="display:none;" onclick="switchTab('admin', this)"><span class="tab-ico">🛡️</span><span>后台</span></button>
-      </div>
-      <div class="rail-tip-box">
-        <div class="rail-tip-title">TIP</div>
-        <div style="font-size:16px;">💡</div>
-        <div class="rail-tip-card" id="railTipText">记录想法，AI 自动归类四象限</div>
       </div>
     </aside>
 
@@ -10510,17 +10540,20 @@
           }
         }
 
-        // Ensure each folded band has at least 18px combined height so its pill label is legible
+        // Ensure each folded band has at least 26px combined height so its pill never collides with neighboring hour labels
         for (const b of foldedBands) {
           const len = b.end - b.start + 1;
           let sumB = 0;
           for (let h = b.start; h <= b.end; h++) sumB += raw[h];
-          if (sumB < 18) {
-            const perH = 18 / len;
+          const minBandPx = 26;
+          const minPerH = minBandPx / len;
+          if (sumB < minBandPx) {
             for (let h = b.start; h <= b.end; h++) {
-              raw[h] = perH;
-              floors[h] = Math.max(floors[h], perH);
+              raw[h] = minPerH;
             }
+          }
+          for (let h = b.start; h <= b.end; h++) {
+            floors[h] = Math.max(floors[h], minPerH);
           }
         }
 
@@ -10606,20 +10639,44 @@
       };
 
       let gutterHtml = `<div class="cal-time-gutter" style="height:${totalGridH}px;">`;
+      const gutterOccupied = [];
+      const hasGutterOverlap = (y0, y1) => gutterOccupied.some(([a, b]) => y0 < b && y1 > a);
+
       for (const b of foldedBands) {
-        const midY = Math.round((hourTop[b.start] + hourTop[b.end + 1]) / 2);
+        const bandTop = hourTop[b.start];
+        const bandBot = hourTop[b.end + 1];
+        const midY = Math.round((bandTop + bandBot) / 2);
         const sLbl = String(b.start).padStart(2, '0');
         const eLbl = String(b.end + 1).padStart(2, '0');
+        gutterOccupied.push([midY - 10, midY + 10]);
         gutterHtml += `<button type="button" class="cal-fold-band-pill" style="top:${midY}px;" title="本周 ${sLbl}:00–${eLbl}:00 全周无排期，点击展开" onclick="toggleCalIdleBand(${b.start}, ${b.end})">${sLbl}–${eLbl}</button>`;
       }
-      let lastLabelY = -999;
+
       for (let h = 0; h < 24; h++) {
         if (foldedHourSet.has(h)) continue;
         const topPx = hourTop[h];
-        if (topPx - lastLabelY < 13 && !activeHours.has(h)) continue;
-        lastLabelY = topPx;
-        const topStyle = topPx === 0 ? 'top:2px;transform:none;' : `top:${topPx}px;`;
-        gutterHtml += `<div class="cal-time-label" style="${topStyle}${activeHours.has(h) ? 'color:var(--primary);font-weight:700;' : ''}">${String(h).padStart(2, '0')}:00</div>`;
+        const afterFolded = h === 0 || foldedHourSet.has(h - 1);
+        let yStart = afterFolded ? topPx + 3 : topPx - 6;
+        let yEnd = yStart + 12;
+        if (hasGutterOverlap(yStart, yEnd)) {
+          if (activeHours.has(h)) {
+            // Shift slightly downward below any preceding pill/label if space exists inside hour h
+            let shifted = yStart;
+            while (shifted + 12 <= hourTop[h + 1] - 1 && hasGutterOverlap(shifted, shifted + 12)) {
+              shifted += 1;
+            }
+            if (hasGutterOverlap(shifted, shifted + 12)) continue;
+            yStart = shifted;
+            yEnd = shifted + 12;
+          } else {
+            continue;
+          }
+        }
+        gutterOccupied.push([yStart - 2, yEnd + 2]);
+        const posStyle = (afterFolded || yStart !== topPx - 6)
+          ? `top:${Math.round(yStart)}px;transform:none;`
+          : `top:${Math.round(topPx)}px;`;
+        gutterHtml += `<div class="cal-time-label" style="${posStyle}${activeHours.has(h) ? 'color:var(--primary);font-weight:700;' : ''}">${String(h).padStart(2, '0')}:00</div>`;
       }
       gutterHtml += `</div>`;
 
@@ -10635,38 +10692,67 @@
           slotsHtml += `<div class="cal-hour-slot ${isRest ? 'is-rest' : ''} ${isFolded ? 'is-idle-fold' : ''} ${isBandEnd ? 'is-idle-band-end' : ''} ${isCompact ? 'is-compact' : ''}" style="height:${hourHeights[h]}px;" data-slot-hint="+ ${hhLabel} 排期" onclick="openSlotScheduleModal('${d.date}', ${h}, false)"></div>`;
         }
 
-        // Timed Macaron Task Blocks
+        // Timed Macaron Task Blocks (single-line vs compact 2-line vs multi-line, zero wrapping overlap)
         let blocksHtml = '';
+        const dayTaskRects = [];
         for (const blk of (d.timed_blocks || [])) {
           const topPx = Math.round(minuteToY(blk.start_minute));
           const botPx = Math.round(minuteToY(blk.end_minute));
-          const heightPx = Math.max(24, botPx - topPx - 2);
+          const heightPx = Math.max(22, botPx - topPx - 2);
+          dayTaskRects.push({ top: topPx, bot: topPx + heightPx });
           const colTotal = Math.max(1, blk.col_total || 1);
           const colIdx = Math.min(colTotal - 1, blk.col_idx || 0);
           const leftPct = (colIdx / colTotal) * 100;
           const widthPct = (1 / colTotal) * 100;
+          const compactRange = String(blk.time_range_label || '').replace(/\s*-\s*/g, '–');
+          const startOnly = compactRange.split('–')[0] || compactRange;
+          const timeText = colTotal >= 2 ? startOnly : compactRange;
+          const titleText = `${blk.is_done ? '✓ ' : ''}${esc(blk.title)}`;
+          const isSingleLine = heightPx < 36;
+          const clampLines = heightPx >= 78 ? 3 : (heightPx >= 56 ? 2 : 1);
+          const innerContent = isSingleLine
+            ? `<span style="font-size:9.5px;font-weight:700;opacity:0.78;flex-shrink:0;">${esc(startOnly)}</span>
+               <span style="font-weight:700;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1;">${titleText}</span>`
+            : `<div style="font-size:9.5px;font-weight:700;line-height:1.15;opacity:0.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:12px;">${esc(timeText)}</div>
+               <div style="font-weight:700;font-size:11px;line-height:1.25;margin-top:1px;${clampLines === 1 ? 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' : `display:-webkit-box;-webkit-line-clamp:${clampLines};-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;`}">${titleText}</div>`;
           blocksHtml += `
-            <div class="cal-macaron-block cal-macaron-${esc(blk.color_theme || 'sky')} ${blk.is_done ? 'is-done' : ''}"
+            <div class="cal-macaron-block cal-macaron-${esc(blk.color_theme || 'sky')} ${blk.is_done ? 'is-done' : ''} ${isSingleLine ? 'is-single-line' : ''}"
                  style="top:${topPx}px;height:${heightPx}px;left:calc(${leftPct}% + 2px);width:calc(${widthPct}% - 5px);"
                  title="${esc(blk.time_range_label)} · ${esc(blk.title)}"
                  onclick="event.stopPropagation(); openCalendarTaskEditor('${esc(blk.memory_id)}')">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:4px;font-size:9.5px;font-weight:700;opacity:0.82;">
-                <span>${esc(blk.time_range_label)}</span>
-                <span onclick="unscheduleTaskFromCalendar('${esc(blk.memory_id)}', event)" title="移回待排期池" style="cursor:pointer;padding:0 2px;">×</span>
-              </div>
-              <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${blk.is_done ? '✓ ' : ''}${esc(blk.title)}</div>
+              ${innerContent}
+              <span class="cal-unsched-x" onclick="unscheduleTaskFromCalendar('${esc(blk.memory_id)}', event)" title="移回待排期池">×</span>
             </div>
           `;
         }
 
-        // Completed Focus Session Track Pills
+        // Completed Focus Session Track Pills (avoid overlapping scheduled task cards)
         let focusHtml = '';
         for (const fb of (d.focus_blocks || [])) {
-          const topPx = Math.round(minuteToY(fb.start_minute));
-          const botPx = Math.round(minuteToY(fb.end_minute ?? (fb.start_minute + fb.duration_minutes)));
-          const heightPx = Math.max(18, botPx - topPx);
+          let fTop = Math.round(minuteToY(fb.start_minute));
+          const rawBot = Math.round(minuteToY(fb.end_minute ?? (fb.start_minute + fb.duration_minutes)));
+          let fHeight = Math.max(15, rawBot - fTop);
+          let skipFocusPill = false;
+          for (const tr of dayTaskRects) {
+            if (fTop < tr.bot && fTop + fHeight > tr.top) {
+              if (fTop < tr.top - 3) {
+                const candidateTop = tr.top - fHeight - 2;
+                const hitsOther = candidateTop < 0 || dayTaskRects.some(o => o !== tr && candidateTop < o.bot && candidateTop + fHeight > o.top);
+                if (!hitsOther) {
+                  fTop = candidateTop;
+                } else if (tr.top - fTop >= 14) {
+                  fHeight = tr.top - fTop - 1;
+                } else {
+                  skipFocusPill = true;
+                }
+              } else {
+                skipFocusPill = true;
+              }
+            }
+          }
+          if (skipFocusPill) continue;
           focusHtml += `
-            <div class="cal-focus-track" style="top:${topPx}px;height:${heightPx}px;" title="已完成专注：${esc(fb.title)} (${fb.duration_minutes}m)">
+            <div class="cal-focus-track" style="top:${fTop}px;height:${fHeight}px;line-height:1.1;" title="已完成专注：${esc(fb.title)} (${fb.duration_minutes}m)">
               🍅 ${fb.duration_minutes}m ${esc(fb.title)}
             </div>
           `;
