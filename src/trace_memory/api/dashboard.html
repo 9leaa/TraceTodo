@@ -112,6 +112,79 @@
       --q3-bg: #2b2112; --q3-border: #78350f; --q3-badge: #fbbf24;
       --q4-bg: #15231f; --q4-border: #28423a; --q4-badge: #94a3b8;
     }
+    [data-theme="nebula"] {
+      --bg: #0d0b1e;
+      --surface: #171432;
+      --surface-alt: #1e1a3f;
+      --border: #322b5e;
+      --text: #e6e2ff;
+      --heading: #f5f3ff;
+      --muted: #9d97c4;
+      --primary: #8b5cf6;
+      --primary-hover: #7c3aed;
+      --primary-soft: #241d4d;
+      --header-bg: linear-gradient(90deg, #12102a 0%, #1a1638 65%, #251440 100%);
+      --rail-active-bg: #241d4d;
+      --rail-active-ico: #a78bfa;
+      --tl-header-grad: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+      --q1-bg: #2b1220; --q1-border: #86198f; --q1-badge: #f472b6;
+      --q2-bg: #1b1638; --q2-border: #4c1d95; --q2-badge: #a78bfa;
+      --q3-bg: #2b2112; --q3-border: #78350f; --q3-badge: #fbbf24;
+      --q4-bg: #191530; --q4-border: #37306b; --q4-badge: #a5b4fc;
+    }
+    [data-theme="cyber"] {
+      --bg: #061019;
+      --surface: #0d1b26;
+      --surface-alt: #12222f;
+      --border: #1d3a4a;
+      --text: #dff3f7;
+      --heading: #f0fdff;
+      --muted: #7fa3ad;
+      --primary: #06b6d4;
+      --primary-hover: #0891b2;
+      --primary-soft: #0e3742;
+      --header-bg: linear-gradient(90deg, #071520 0%, #0c2431 65%, #131b33 100%);
+      --rail-active-bg: #0e3742;
+      --rail-active-ico: #22d3ee;
+      --tl-header-grad: linear-gradient(135deg, #06b6d4 0%, #d946ef 100%);
+      --q1-bg: #251019; --q1-border: #9f1239; --q1-badge: #fb7185;
+      --q2-bg: #0c2431; --q2-border: #155e75; --q2-badge: #22d3ee;
+      --q3-bg: #241a2e; --q3-border: #86198f; --q3-badge: #e879f9;
+      --q4-bg: #101c26; --q4-border: #29455a; --q4-badge: #94a3b8;
+    }
+    [data-theme="polar"] {
+      --bg: #071318;
+      --surface: #0e2027;
+      --surface-alt: #132b33;
+      --border: #1f4048;
+      --text: #dcf3f0;
+      --heading: #ecfeff;
+      --muted: #86aeb0;
+      --primary: #2dd4bf;
+      --primary-hover: #14b8a6;
+      --primary-soft: #113c3c;
+      --header-bg: linear-gradient(90deg, #0b1d24 0%, #0f2a30 65%, #12303a 100%);
+      --rail-active-bg: #113c3c;
+      --rail-active-ico: #5eead4;
+      --tl-header-grad: linear-gradient(135deg, #14b8a6 0%, #818cf8 100%);
+      --q1-bg: #251418; --q1-border: #7f1d1d; --q1-badge: #f87171;
+      --q2-bg: #10263a; --q2-border: #1e40af; --q2-badge: #818cf8;
+      --q3-bg: #262112; --q3-border: #78350f; --q3-badge: #fbbf24;
+      --q4-bg: #12242b; --q4-border: #2b4a54; --q4-badge: #94a3b8;
+    }
+    [data-theme="sakura"] {
+      --bg: #fdf2f6;
+      --surface: #ffffff;
+      --surface-alt: #fff7fa;
+      --border: #fbcfe8;
+      --primary: #db2777;
+      --primary-hover: #be185d;
+      --primary-soft: #fce7f3;
+      --header-bg: linear-gradient(90deg, #ffffff 0%, #fdf2f8 60%, #fae8ff 100%);
+      --rail-active-bg: #fce7f3;
+      --rail-active-ico: #be185d;
+      --tl-header-grad: linear-gradient(135deg, #ec4899 0%, #a855f7 100%);
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -1630,12 +1703,30 @@
     .cal-macaron-butter   { background: #fef9c3; border-left-color: #ca8a04; color: #422006; }
     .cal-macaron-mint     { background: #dcfce7; border-left-color: #059669; color: #052e16; }
     .cal-macaron-peach    { background: #ffedd5; border-left-color: #ea580c; color: #431407; }
-    [data-theme="deep_forest"] .cal-macaron-lavender { background: rgba(139, 92, 246, 0.26); color: #ede9fe; }
-    [data-theme="deep_forest"] .cal-macaron-pink     { background: rgba(236, 72, 153, 0.26); color: #fce7f3; }
-    [data-theme="deep_forest"] .cal-macaron-sky      { background: rgba(14, 165, 233, 0.26); color: #e0f2fe; }
-    [data-theme="deep_forest"] .cal-macaron-butter   { background: rgba(234, 179, 8, 0.25); color: #fef9c3; }
-    [data-theme="deep_forest"] .cal-macaron-mint     { background: rgba(16, 185, 129, 0.26); color: #dcfce7; }
-    [data-theme="deep_forest"] .cal-macaron-peach    { background: rgba(249, 115, 22, 0.26); color: #ffedd5; }
+    [data-theme="deep_forest"] .cal-macaron-lavender,
+    [data-theme="nebula"] .cal-macaron-lavender,
+    [data-theme="cyber"] .cal-macaron-lavender,
+    [data-theme="polar"] .cal-macaron-lavender { background: rgba(139, 92, 246, 0.26); color: #ede9fe; }
+    [data-theme="deep_forest"] .cal-macaron-pink,
+    [data-theme="nebula"] .cal-macaron-pink,
+    [data-theme="cyber"] .cal-macaron-pink,
+    [data-theme="polar"] .cal-macaron-pink     { background: rgba(236, 72, 153, 0.26); color: #fce7f3; }
+    [data-theme="deep_forest"] .cal-macaron-sky,
+    [data-theme="nebula"] .cal-macaron-sky,
+    [data-theme="cyber"] .cal-macaron-sky,
+    [data-theme="polar"] .cal-macaron-sky      { background: rgba(14, 165, 233, 0.26); color: #e0f2fe; }
+    [data-theme="deep_forest"] .cal-macaron-butter,
+    [data-theme="nebula"] .cal-macaron-butter,
+    [data-theme="cyber"] .cal-macaron-butter,
+    [data-theme="polar"] .cal-macaron-butter   { background: rgba(234, 179, 8, 0.25); color: #fef9c3; }
+    [data-theme="deep_forest"] .cal-macaron-mint,
+    [data-theme="nebula"] .cal-macaron-mint,
+    [data-theme="cyber"] .cal-macaron-mint,
+    [data-theme="polar"] .cal-macaron-mint     { background: rgba(16, 185, 129, 0.26); color: #dcfce7; }
+    [data-theme="deep_forest"] .cal-macaron-peach,
+    [data-theme="nebula"] .cal-macaron-peach,
+    [data-theme="cyber"] .cal-macaron-peach,
+    [data-theme="polar"] .cal-macaron-peach    { background: rgba(249, 115, 22, 0.26); color: #ffedd5; }
 
     .cal-focus-track {
       position: absolute;
@@ -1654,9 +1745,12 @@
       text-overflow: ellipsis;
       pointer-events: none;
     }
-    [data-theme="deep_forest"] .cal-focus-track {
-      color: #6ee7b7;
-      background: rgba(16, 185, 129, 0.22);
+    [data-theme="deep_forest"] .cal-focus-track,
+    [data-theme="nebula"] .cal-focus-track,
+    [data-theme="cyber"] .cal-focus-track,
+    [data-theme="polar"] .cal-focus-track {
+      color: var(--primary);
+      background: color-mix(in srgb, var(--primary) 22%, transparent);
     }
     .cal-now-line {
       position: absolute;
@@ -1997,22 +2091,61 @@
     .md-rendered code { background: var(--surface-alt); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
 
     [data-theme="deep_forest"] .analytic-card,
+    [data-theme="nebula"] .analytic-card,
+    [data-theme="cyber"] .analytic-card,
+    [data-theme="polar"] .analytic-card,
     [data-theme="deep_forest"] .tl-card,
+    [data-theme="nebula"] .tl-card,
+    [data-theme="cyber"] .tl-card,
+    [data-theme="polar"] .tl-card,
     [data-theme="deep_forest"] .card-box,
+    [data-theme="nebula"] .card-box,
+    [data-theme="cyber"] .card-box,
+    [data-theme="polar"] .card-box,
     [data-theme="deep_forest"] .modal,
+    [data-theme="nebula"] .modal,
+    [data-theme="cyber"] .modal,
+    [data-theme="polar"] .modal,
     [data-theme="deep_forest"] .duodo-sheet,
+    [data-theme="nebula"] .duodo-sheet,
+    [data-theme="cyber"] .duodo-sheet,
+    [data-theme="polar"] .duodo-sheet,
     [data-theme="deep_forest"] .duodo-card,
+    [data-theme="nebula"] .duodo-card,
+    [data-theme="cyber"] .duodo-card,
+    [data-theme="polar"] .duodo-card,
     [data-theme="deep_forest"] .auth-sheet,
+    [data-theme="nebula"] .auth-sheet,
+    [data-theme="cyber"] .auth-sheet,
+    [data-theme="polar"] .auth-sheet,
     [data-theme="deep_forest"] .graph-toolbar-card,
-    [data-theme="deep_forest"] .graph-relation-options {
+    [data-theme="nebula"] .graph-toolbar-card,
+    [data-theme="cyber"] .graph-toolbar-card,
+    [data-theme="polar"] .graph-toolbar-card,
+    [data-theme="deep_forest"] .graph-relation-options,
+    [data-theme="nebula"] .graph-relation-options,
+    [data-theme="cyber"] .graph-relation-options,
+    [data-theme="polar"] .graph-relation-options {
       background: var(--surface);
       color: var(--text);
       border-color: var(--border);
     }
-    [data-theme="deep_forest"] .graph-relations > summary { color: var(--text); }
+    [data-theme="deep_forest"] .graph-relations > summary,
+    [data-theme="nebula"] .graph-relations > summary,
+    [data-theme="cyber"] .graph-relations > summary,
+    [data-theme="polar"] .graph-relations > summary { color: var(--text); }
     [data-theme="deep_forest"] .graph-chip:not(.active),
+    [data-theme="nebula"] .graph-chip:not(.active),
+    [data-theme="cyber"] .graph-chip:not(.active),
+    [data-theme="polar"] .graph-chip:not(.active),
     [data-theme="deep_forest"] .graph-layer-toggle,
-    [data-theme="deep_forest"] input.main-input {
+    [data-theme="nebula"] .graph-layer-toggle,
+    [data-theme="cyber"] .graph-layer-toggle,
+    [data-theme="polar"] .graph-layer-toggle,
+    [data-theme="deep_forest"] input.main-input,
+    [data-theme="nebula"] input.main-input,
+    [data-theme="cyber"] input.main-input,
+    [data-theme="polar"] input.main-input {
       background: var(--surface-alt);
       color: var(--text);
       border-color: var(--border);
@@ -2022,11 +2155,35 @@
       border-color: #254b3e;
     }
     [data-theme="deep_forest"] .diag-box h3 { color: #6ee7b7; }
-    [data-theme="deep_forest"] .diag-list { color: var(--text); }
-    [data-theme="deep_forest"] .task-card { background: var(--surface); }
-    [data-theme="deep_forest"] .card-checklist { background: var(--surface-alt); border-color: var(--border); }
-    [data-theme="deep_forest"] .tag { background: var(--surface-alt); color: var(--text); }
-    [data-theme="deep_forest"] .focus-row { border-bottom-color: var(--border); }
+    [data-theme="nebula"] .diag-box,
+    [data-theme="cyber"] .diag-box,
+    [data-theme="polar"] .diag-box {
+      background: linear-gradient(135deg, var(--surface-alt) 0%, var(--surface) 100%);
+      border-color: var(--border);
+    }
+    [data-theme="nebula"] .diag-box h3,
+    [data-theme="cyber"] .diag-box h3,
+    [data-theme="polar"] .diag-box h3 { color: var(--primary); }
+    [data-theme="deep_forest"] .diag-list,
+    [data-theme="nebula"] .diag-list,
+    [data-theme="cyber"] .diag-list,
+    [data-theme="polar"] .diag-list { color: var(--text); }
+    [data-theme="deep_forest"] .task-card,
+    [data-theme="nebula"] .task-card,
+    [data-theme="cyber"] .task-card,
+    [data-theme="polar"] .task-card { background: var(--surface); }
+    [data-theme="deep_forest"] .card-checklist,
+    [data-theme="nebula"] .card-checklist,
+    [data-theme="cyber"] .card-checklist,
+    [data-theme="polar"] .card-checklist { background: var(--surface-alt); border-color: var(--border); }
+    [data-theme="deep_forest"] .tag,
+    [data-theme="nebula"] .tag,
+    [data-theme="cyber"] .tag,
+    [data-theme="polar"] .tag { background: var(--surface-alt); color: var(--text); }
+    [data-theme="deep_forest"] .focus-row,
+    [data-theme="nebula"] .focus-row,
+    [data-theme="cyber"] .focus-row,
+    [data-theme="polar"] .focus-row { border-bottom-color: var(--border); }
 
     /* Pomodoro & Stopwatch Focus Center */
     .focus-center-grid {
@@ -2183,9 +2340,352 @@
     #panel-calendar { min-width: 0; max-width: 100%; }
     /* Memo masonry: size columns by container width (the notes pane is narrower than the viewport) */
     .memo-masonry { column-count: auto; column-width: 240px; }
+    /* ---------------- Ambient Scene Layer & Immersive Focus Scenes ---------------- */
+    * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--primary) 50%, var(--border)) transparent; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: color-mix(in srgb, var(--primary) 45%, var(--border));
+      border-radius: 999px;
+      border: 2.5px solid transparent;
+      background-clip: padding-box;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: color-mix(in srgb, var(--primary) 75%, var(--border));
+      border: 2.5px solid transparent;
+      background-clip: padding-box;
+    }
+    .ambient-scene-layer {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .ambient-scene-layer img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0;
+      transition: opacity 0.7s ease;
+      transform: scale(1.04);
+      animation: ambientDrift 46s ease-in-out infinite alternate;
+    }
+    @keyframes ambientDrift {
+      from { transform: scale(1.04) translate3d(-0.6%, -0.4%, 0); }
+      to { transform: scale(1.1) translate3d(0.6%, 0.5%, 0); }
+    }
+    .ambient-scene-scrim {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg,
+        color-mix(in srgb, var(--bg) 46%, transparent) 0%,
+        color-mix(in srgb, var(--bg) 74%, transparent) 52%,
+        color-mix(in srgb, var(--bg) 88%, transparent) 100%);
+    }
+    .ambient-scene-layer canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+    body.has-scene .card-box,
+    body.has-scene .duodo-card,
+    body.has-scene .memo-card,
+    body.has-scene .tl-card,
+    body.has-scene .analytic-card,
+    body.has-scene .modal,
+    body.has-scene .duodo-sheet {
+      background: color-mix(in srgb, var(--surface) 87%, transparent);
+    }
+    body.has-scene .task-card { background: color-mix(in srgb, var(--surface) 93%, transparent); }
+    body.has-scene header {
+      background: color-mix(in srgb, var(--surface) 80%, transparent);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+    .header-theme-art.has-scene {
+      width: 420px;
+      opacity: 0.5;
+      background-size: cover;
+      background-position: 72% center;
+      -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 58%);
+      mask-image: linear-gradient(90deg, transparent 0%, #000 58%);
+    }
+    .scene-gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+      gap: 10px;
+    }
+    .scene-card-item {
+      border: 1.5px solid var(--border);
+      background: var(--surface);
+      border-radius: 14px;
+      padding: 7px;
+      cursor: pointer;
+      display: grid;
+      gap: 6px;
+      text-align: left;
+      transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .scene-card-item:hover { transform: translateY(-2px); border-color: var(--primary); box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14); }
+    .scene-card-item.selected { border-color: var(--primary); box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--primary) 35%, transparent); }
+    .scene-card-thumb {
+      height: 82px;
+      border-radius: 9px;
+      background-size: cover;
+      background-position: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .scene-card-thumb .scene-check {
+      position: absolute;
+      right: 5px;
+      top: 5px;
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      background: var(--primary);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+    }
+    .scene-card-none {
+      height: 82px;
+      border-radius: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      background: linear-gradient(135deg, var(--surface-alt), var(--primary-soft));
+      border: 1px dashed var(--border);
+    }
+
+    .focus-overlay { overflow: hidden; padding: 56px 24px 196px; }
+    .focus-scene-layer { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
+    .focus-scene-layer img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: opacity 0.6s ease, filter 0.3s ease;
+    }
+    .focus-scene-dim { position: absolute; inset: 0; background: #04060f; opacity: 0.45; transition: opacity 0.25s ease; }
+    .focus-scene-layer canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .focus-overlay > .focus-card { position: relative; z-index: 1; }
+    .focus-overlay > .focus-topbar,
+    .focus-overlay > .focus-scene-dock { z-index: 1; }
+    .focus-topbar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    }
+    .focus-mode-chip {
+      font-size: 11.5px;
+      letter-spacing: 1.2px;
+      color: #e9d5ff;
+      font-weight: 700;
+      background: rgba(10, 8, 24, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      padding: 5px 12px;
+      border-radius: 999px;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+    .focus-sound-btn {
+      background: rgba(10, 8, 24, 0.55);
+      color: #f1f5f9;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 999px;
+      padding: 5px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      transition: background 0.2s ease, border-color 0.2s ease;
+    }
+    .focus-sound-btn:hover { background: rgba(30, 24, 60, 0.7); }
+    .focus-sound-btn.muted { color: #94a3b8; border-color: rgba(148, 163, 184, 0.35); }
+    .focus-overlay .focus-card {
+      margin: auto 0;
+      background: rgba(8, 10, 22, 0.55);
+      border: 1px solid color-mix(in srgb, var(--scene-acc, #a855f7) 45%, rgba(255, 255, 255, 0.14));
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      max-height: calc(100vh - 250px);
+      overflow-y: auto;
+      scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+    }
+    .focus-overlay.glow-on .focus-card { animation: focusBreath 5s ease-in-out infinite; }
+    @keyframes focusBreath {
+      0%, 100% { box-shadow: 0 0 26px color-mix(in srgb, var(--scene-acc, #a855f7) 22%, transparent); }
+      50% { box-shadow: 0 0 58px color-mix(in srgb, var(--scene-acc, #a855f7) 48%, transparent); }
+    }
+    .focus-overlay .focus-timer {
+      background: linear-gradient(135deg, var(--scene-acc, #c4b5fd), var(--scene-acc2, #f9a8d4));
+      -webkit-background-clip: text;
+      background-clip: text;
+    }
+    .focus-overlay .focus-progress-bar {
+      background: linear-gradient(90deg, var(--scene-acc, #a855f7), var(--scene-acc2, #ec4899));
+      box-shadow: 0 0 12px color-mix(in srgb, var(--scene-acc, #a855f7) 65%, transparent);
+    }
+    .focus-scene-dock {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: grid;
+      gap: 8px;
+      padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+      background: linear-gradient(180deg, rgba(6, 8, 18, 0.62) 0%, rgba(6, 8, 18, 0.88) 100%);
+      border-top: 1px solid rgba(255, 255, 255, 0.14);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      max-height: min(42vh, 196px);
+      overflow-y: auto;
+      scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+    }
+    .focus-scene-dock::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.3); border: 2.5px solid transparent; background-clip: padding-box; }
+    .focus-scene-strip {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+    }
+    .focus-scene-strip::-webkit-scrollbar { height: 6px; }
+    .focus-scene-strip::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.3); border: 1.5px solid transparent; background-clip: padding-box; }
+    .fs-scene-btn {
+      flex: 0 0 auto;
+      width: 86px;
+      border: 1.5px solid rgba(255, 255, 255, 0.18);
+      border-radius: 11px;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 4px;
+      cursor: pointer;
+      display: grid;
+      gap: 3px;
+      color: #e2e8f0;
+      transition: border-color 0.15s ease, transform 0.15s ease;
+    }
+    .fs-scene-btn:hover { transform: translateY(-1px); border-color: rgba(255, 255, 255, 0.45); }
+    .fs-scene-btn.selected { border-color: var(--scene-acc, #a855f7); box-shadow: 0 0 0 2px color-mix(in srgb, var(--scene-acc, #a855f7) 45%, transparent); }
+    .fs-scene-btn .fs-thumb {
+      height: 44px;
+      border-radius: 7px;
+      background-size: cover;
+      background-position: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      background-color: rgba(255, 255, 255, 0.08);
+    }
+    .fs-scene-btn .fs-name { font-size: 10.5px; font-weight: 700; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fs-ctrl-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 8px 14px;
+      align-items: center;
+    }
+    .fs-ctrl { display: grid; gap: 3px; }
+    .fs-ctrl-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10.5px;
+      font-weight: 700;
+      color: #cbd5e1;
+      letter-spacing: 0.4px;
+    }
+    .fs-ctrl-label output { color: var(--scene-acc, #c4b5fd); font-variant-numeric: tabular-nums; }
+    .fs-range {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.22);
+      outline: none;
+      cursor: pointer;
+    }
+    .fs-range::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: var(--scene-acc, #a855f7);
+      border: 2px solid #fff;
+      box-shadow: 0 0 9px color-mix(in srgb, var(--scene-acc, #a855f7) 75%, transparent);
+      cursor: pointer;
+    }
+    .fs-range::-moz-range-thumb {
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: var(--scene-acc, #a855f7);
+      border: 2px solid #fff;
+      box-shadow: 0 0 9px color-mix(in srgb, var(--scene-acc, #a855f7) 75%, transparent);
+      cursor: pointer;
+    }
+    .fs-toggle-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .fs-toggle {
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      background: rgba(255, 255, 255, 0.07);
+      color: #94a3b8;
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+    .fs-toggle.on {
+      background: color-mix(in srgb, var(--scene-acc, #a855f7) 30%, transparent);
+      border-color: var(--scene-acc, #a855f7);
+      color: #fff;
+      box-shadow: 0 0 10px color-mix(in srgb, var(--scene-acc, #a855f7) 40%, transparent);
+    }
+    .fs-action-btn {
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      background: rgba(255, 255, 255, 0.1);
+      color: #f1f5f9;
+      border-radius: 999px;
+      padding: 4px 13px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .fs-action-btn:hover { background: rgba(255, 255, 255, 0.2); }
+    @media (max-width: 640px) {
+      .focus-overlay { padding: 52px 14px 236px; }
+      .focus-overlay .focus-card { max-height: calc(100vh - 300px); padding: 20px 16px; gap: 13px; }
+      .focus-overlay .focus-timer { font-size: 46px; }
+      .focus-scene-dock { max-height: min(46vh, 236px); }
+      .fs-ctrl-grid { grid-template-columns: repeat(2, 1fr); }
+      .header-theme-art.has-scene { width: 200px; opacity: 0.35; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .ambient-scene-layer img { animation: none; }
+      .focus-overlay.glow-on .focus-card { animation: none; }
+    }
   </style>
 </head>
 <body>
+  <div class="ambient-scene-layer" id="ambientSceneLayer" aria-hidden="true">
+    <img id="ambientSceneImg" alt="" />
+    <div class="ambient-scene-scrim"></div>
+    <canvas id="ambientSceneCanvas"></canvas>
+  </div>
   <header>
     <div class="header-theme-art" id="headerThemeArt" aria-hidden="true"></div>
     <div class="brand">
@@ -3036,8 +3536,16 @@
 
   <!-- Immersive Focus Lock-Screen Overlay -->
   <div class="focus-overlay" id="focusOverlay">
+    <div class="focus-scene-layer" aria-hidden="true">
+      <img id="focusSceneImg" alt="" />
+      <div class="focus-scene-dim" id="focusSceneDim"></div>
+      <canvas id="focusSceneCanvas"></canvas>
+    </div>
+    <div class="focus-topbar">
+      <span class="focus-mode-chip">🔒 沉浸专注锁屏模式 · DEEP WORK</span>
+      <button type="button" class="focus-sound-btn" id="focusSoundBtn" onclick="toggleSoundMuted()">🔊 环境音开</button>
+    </div>
     <div class="focus-card">
-      <div style="font-size:12px;letter-spacing:1.2px;color:#c4b5fd;font-weight:700;">🔒 沉浸专注锁屏模式 · DEEP WORK</div>
       <h2 id="focusTaskTitle" style="font-size:21px;line-height:1.35;">任务名称</h2>
       <div class="focus-timer" id="focusTimerText">25:00</div>
       <div class="focus-progress-track">
@@ -3060,6 +3568,34 @@
           <button type="button" onclick="document.getElementById('focusAbortBox').style.display='none'" style="background:transparent;color:#cbd5e1;border-color:#475569;">继续专注</button>
           <button type="button" onclick="confirmAbortFocus()" style="background:#dc2626;color:#fff;border:none;">确认退出并记录</button>
         </div>
+      </div>
+    </div>
+    <div class="focus-scene-dock" id="focusSceneDock">
+      <div class="focus-scene-strip" id="focusSceneStrip"></div>
+      <div class="fs-ctrl-grid">
+        <div class="fs-ctrl">
+          <div class="fs-ctrl-label"><span>🌑 背景暗度</span><output id="fsDimOut">45%</output></div>
+          <input type="range" class="fs-range" id="fsDimRange" min="0" max="85" value="45" oninput="setFocusSceneOpt('dim', this.value)" />
+        </div>
+        <div class="fs-ctrl">
+          <div class="fs-ctrl-label"><span>🌫️ 背景模糊</span><output id="fsBlurOut">0px</output></div>
+          <input type="range" class="fs-range" id="fsBlurRange" min="0" max="14" value="0" oninput="setFocusSceneOpt('blur', this.value)" />
+        </div>
+        <div class="fs-ctrl">
+          <div class="fs-ctrl-label"><span>✨ 粒子密度</span><output id="fsDensityOut">70%</output></div>
+          <input type="range" class="fs-range" id="fsDensityRange" min="0" max="100" value="70" oninput="setFocusSceneOpt('density', this.value)" />
+        </div>
+        <div class="fs-ctrl">
+          <div class="fs-ctrl-label"><span>🌀 流动速度</span><output id="fsSpeedOut">1.0×</output></div>
+          <input type="range" class="fs-range" id="fsSpeedRange" min="20" max="250" value="100" oninput="setFocusSceneOpt('speed', this.value)" />
+        </div>
+      </div>
+      <div class="fs-toggle-row">
+        <button type="button" class="fs-toggle on" id="fsParticlesToggle" onclick="toggleFocusSceneOpt('particles')">✨ 粒子</button>
+        <button type="button" class="fs-toggle on" id="fsGlowToggle" onclick="toggleFocusSceneOpt('glow')">💗 呼吸光晕</button>
+        <button type="button" class="fs-action-btn" onclick="randomizeFocusScene()">🎲 随机场景</button>
+        <button type="button" class="fs-action-btn" onclick="resetFocusSceneOpts()">↺ 重置</button>
+        <span style="font-size:10.5px;color:#94a3b8;margin-left:auto;">沉浸参数仅保存于本机</span>
       </div>
     </div>
   </div>
@@ -3150,6 +3686,21 @@
           <div style="font-size:11.5px;color:var(--muted);">零大图膨胀（&lt;10KB 纯 CSS Token + 矢量微插画），一键实时换肤</div>
         </div>
         <div class="theme-gallery-grid" id="themeGalleryGrid"></div>
+      </div>
+
+      <div class="duodo-card" style="display:grid;gap:10px;">
+        <div>
+          <div style="font-weight:700;font-size:14px;">🌌 环境场景画廊（AI 实景美图）</div>
+          <div style="font-size:11.5px;color:var(--muted);">星空 / 科幻 / 炫酷 / 自然 / 极光 / 深海 / 人像实景背景：全站氛围光 + 番茄沉浸锁屏共用，跨端同步</div>
+        </div>
+        <div class="scene-gallery-grid" id="sceneGalleryGrid"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <span style="font-size:12px;font-weight:700;">💡 全站氛围光强度</span>
+          <div class="seg-pill-bar" id="sceneIntensityBar"></div>
+          <label style="font-size:12px;display:inline-flex;gap:5px;align-items:center;cursor:pointer;margin-left:auto;">
+            <input type="checkbox" id="sceneMotionCheck" onchange="setSceneMotion(this.checked)" /> 🪽 氛围粒子飘动
+          </label>
+        </div>
       </div>
 
       <div class="duodo-card" style="display:grid;gap:8px;">
@@ -4387,6 +4938,7 @@
 
     // ---------------- Focus Lock Screen ----------------
     function playBellChime() {
+      if (sceneState.muted) return;
       try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
         const osc = ctx.createOscillator();
@@ -4567,6 +5119,9 @@
       renderFocusSubtasks();
       updateFocusTimerUI();
       document.getElementById('focusOverlay').classList.add('open');
+      applyFocusSceneDOM();
+      startAmbience();
+      ensureFxLoop();
     }
 
     function togglePauseUnifiedFocus() {
@@ -4632,6 +5187,7 @@
       const st = focusState;
       focusState = null;
       document.getElementById('focusOverlay').classList.remove('open');
+      stopAmbience();
       syncIdleFocusClockUI();
 
       const effDur = st.mode === 'pomodoro' && st.remainingSeconds <= 0
@@ -4686,6 +5242,7 @@
       const st = focusState;
       focusState = null;
       document.getElementById('focusOverlay').classList.remove('open');
+      stopAmbience();
       syncIdleFocusClockUI();
 
       await apiPost('/api/focus/record', {
@@ -7096,6 +7653,10 @@
       golden_gate: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><circle cx="244" cy="24" r="16" fill="#fb7185" fill-opacity="0.28"/><path d="M150 54 L150 16 M220 54 L220 16 M115 44 Q150 20 185 40 Q220 20 255 44 M110 44 L265 44" stroke="#dc2626" stroke-width="2" stroke-opacity="0.42" fill="none"/></svg>`,
       snow_peak: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><polygon points="110,56 162,14 214,56" fill="#0284c7" fill-opacity="0.18"/><polygon points="162,14 178,27 160,30 148,26" fill="#ffffff" fill-opacity="0.85"/><polygon points="182,56 232,18 286,56" fill="#4f46e5" fill-opacity="0.18"/></svg>`,
       deep_forest: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><circle cx="190" cy="14" r="1.6" fill="#a7f3d0"/><circle cx="226" cy="10" r="1.2" fill="#bae6fd"/><circle cx="258" cy="18" r="2" fill="#6ee7b7"/><polygon points="172,56 184,26 196,56" fill="#10b981" fill-opacity="0.32"/><polygon points="204,56 218,20 232,56" fill="#059669" fill-opacity="0.40"/><polygon points="238,56 250,28 262,56" fill="#34d399" fill-opacity="0.28"/></svg>`,
+      nebula: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><circle cx="210" cy="20" r="1.5" fill="#e9d5ff"/><circle cx="246" cy="12" r="1.1" fill="#f9a8d4"/><circle cx="272" cy="26" r="1.8" fill="#c4b5fd"/><circle cx="188" cy="34" r="1.2" fill="#a5f3fc"/><path d="M150 44 Q210 8 292 30" stroke="#8b5cf6" stroke-width="2.4" stroke-opacity="0.4" fill="none"/><path d="M164 50 Q220 20 296 40" stroke="#ec4899" stroke-width="1.6" stroke-opacity="0.35" fill="none"/></svg>`,
+      cyber: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><path d="M150 56 L150 24 L166 24 L166 56 M176 56 L176 12 L196 12 L196 56 M206 56 L206 30 L222 30 L222 56 M232 56 L232 18 L252 18 L252 56 M262 56 L262 34 L280 34 L280 56" stroke="#06b6d4" stroke-width="1.8" stroke-opacity="0.45" fill="none"/><path d="M140 46 Q210 38 292 44" stroke="#d946ef" stroke-width="1.6" stroke-opacity="0.5" fill="none"/><circle cx="186" cy="9" r="1.6" fill="#e879f9"/></svg>`,
+      polar: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><path d="M140 40 Q180 6 220 26 T296 12" stroke="#2dd4bf" stroke-width="2.6" stroke-opacity="0.42" fill="none"/><path d="M150 48 Q190 16 230 34 T298 22" stroke="#818cf8" stroke-width="1.8" stroke-opacity="0.38" fill="none"/><polygon points="160,56 176,40 192,56" fill="#e0f2fe" fill-opacity="0.35"/><polygon points="210,56 228,36 246,56" fill="#bae6fd" fill-opacity="0.3"/></svg>`,
+      sakura: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><circle cx="216" cy="16" r="5" fill="#f9a8d4" fill-opacity="0.55"/><circle cx="244" cy="30" r="4" fill="#fbcfe8" fill-opacity="0.6"/><circle cx="268" cy="12" r="3.4" fill="#e9d5ff" fill-opacity="0.6"/><circle cx="192" cy="34" r="3" fill="#f9a8d4" fill-opacity="0.45"/><path d="M150 52 Q210 40 292 46" stroke="#db2777" stroke-width="1.8" stroke-opacity="0.35" fill="none"/></svg>`,
     };
 
     const DEFAULT_THEMES_CATALOG = [
@@ -7105,6 +7666,10 @@
       { id: 'golden_gate', name: '金门落日红', subtitle: '朱砂海湾霞光 · 长桥剪影微插画', primary: '#dc2626', accent: '#e11d48', bg: '#fef4f4', is_dark: false },
       { id: 'snow_peak', name: '雪山冰川蓝', subtitle: '凛冽日照雪峰 · 冰川折线微插画', primary: '#0284c7', accent: '#4f46e5', bg: '#eff6ff', is_dark: false },
       { id: 'deep_forest', name: '深林暗夜', subtitle: '沉浸护眼松石暗色 · 星夜松影微插画', primary: '#10b981', accent: '#38bdf8', bg: '#0b1512', is_dark: true },
+      { id: 'nebula', name: '星穹紫夜', subtitle: '银河星云暗色 · 紫罗兰霓虹微光', primary: '#8b5cf6', accent: '#ec4899', bg: '#0d0b1e', is_dark: true },
+      { id: 'cyber', name: '赛博霓虹', subtitle: '夜城雨雾青品红 · 全息光轨微插画', primary: '#06b6d4', accent: '#d946ef', bg: '#061019', is_dark: true },
+      { id: 'polar', name: '极光夜航', subtitle: '冰原极光松石暗色 · 雪夜流萤微插画', primary: '#2dd4bf', accent: '#818cf8', bg: '#071318', is_dark: true },
+      { id: 'sakura', name: '樱语粉霞', subtitle: '暮樱粉紫霞光 · 落瓣微插画', primary: '#db2777', accent: '#a855f7', bg: '#fdf2f6', is_dark: false },
     ];
 
     const MODULE_TOGGLE_DEFS = [
@@ -7132,6 +7697,563 @@
       themes_catalog: DEFAULT_THEMES_CATALOG,
     };
 
+    // ---------------- AI Ambient Scenes & Immersive Focus Scene Engine ----------------
+    const SCENE_CATALOG = [
+      { id: 'none', name: '无场景', icon: '🪽', fx: null, acc: '#a855f7', acc2: '#ec4899', audio: null },
+      { id: 'starfield', name: '银河星空', icon: '🌌', fx: 'stars', acc: '#a78bfa', acc2: '#f472b6', audio: 'space' },
+      { id: 'scifi', name: '科幻夜城', icon: '🏙️', fx: 'streaks', acc: '#22d3ee', acc2: '#e879f9', audio: 'hum' },
+      { id: 'neon', name: '霓虹光轨', icon: '⚡', fx: 'neon', acc: '#38bdf8', acc2: '#f0abfc', audio: 'hum' },
+      { id: 'nature', name: '森林秘境', icon: '🌲', fx: 'fireflies', acc: '#34d399', acc2: '#fbbf24', audio: 'wind' },
+      { id: 'aurora', name: '极地极光', icon: '🌠', fx: 'snow', acc: '#5eead4', acc2: '#a5b4fc', audio: 'wind' },
+      { id: 'ocean', name: '深海之梦', icon: '🌊', fx: 'bubbles', acc: '#22d3ee', acc2: '#818cf8', audio: 'waves' },
+      { id: 'portrait_m', name: '霓虹绅士', icon: '🕴️', fx: 'bokeh', acc: '#fbbf24', acc2: '#2dd4bf', audio: 'vinyl' },
+      { id: 'portrait_f', name: '樱花佳人', icon: '🌸', fx: 'petals', acc: '#f9a8d4', acc2: '#c4b5fd', audio: 'vinyl' },
+    ];
+    const SCENE_INTENSITY_LABELS = ['关闭', '微光', '标准', '沉浸'];
+    const SCENE_INTENSITY_OPACITY = [0, 0.2, 0.36, 0.58];
+    const sceneState = {
+      site: localStorage.getItem('tm_scene_id') || 'none',
+      intensity: Math.max(0, Math.min(3, Number(localStorage.getItem('tm_scene_intensity') ?? 2) || 0)),
+      motion: localStorage.getItem('tm_scene_motion') !== '0',
+      focus: localStorage.getItem('tm_focus_scene') || 'auto',
+      dim: Number(localStorage.getItem('tm_focus_dim') ?? 45),
+      blur: Number(localStorage.getItem('tm_focus_blur') ?? 0),
+      density: Number(localStorage.getItem('tm_focus_density') ?? 70),
+      speed: Number(localStorage.getItem('tm_focus_speed') ?? 100),
+      particles: localStorage.getItem('tm_focus_particles') !== '0',
+      glow: localStorage.getItem('tm_focus_glow') !== '0',
+      muted: localStorage.getItem('tm_sound_muted') === '1',
+    };
+    if (!SCENE_CATALOG.some(s => s.id === sceneState.site)) sceneState.site = 'none';
+
+    function sceneById(id) {
+      return SCENE_CATALOG.find(s => s.id === id) || SCENE_CATALOG[0];
+    }
+    function resolvedFocusSceneId() {
+      if (sceneState.focus !== 'auto') return sceneState.focus;
+      return sceneState.site !== 'none' ? sceneState.site : 'starfield';
+    }
+    function sceneImgUrl(id) {
+      return id && id !== 'none' && id !== 'auto' ? `/scenes/${id}.jpg` : '';
+    }
+
+    function applySceneDOM() {
+      const sc = sceneById(sceneState.site);
+      const layerOn = sc.id !== 'none' && sceneState.intensity > 0;
+      document.body.classList.toggle('has-scene', layerOn);
+      const img = document.getElementById('ambientSceneImg');
+      if (img) {
+        const url = layerOn ? sceneImgUrl(sc.id) : '';
+        if (url && img.getAttribute('src') !== url) img.src = url;
+        img.style.opacity = layerOn ? String(SCENE_INTENSITY_OPACITY[sceneState.intensity]) : '0';
+      }
+      const art = document.getElementById('headerThemeArt');
+      if (art) {
+        if (layerOn) {
+          art.classList.add('has-scene');
+          art.innerHTML = '';
+          art.style.backgroundImage = `url('${sceneImgUrl(sc.id)}')`;
+        } else {
+          art.classList.remove('has-scene');
+          art.style.backgroundImage = '';
+          art.innerHTML = THEME_VECTOR_SVGS[appPreferences.theme_id] || '';
+        }
+      }
+      ensureFxLoop();
+    }
+
+    function syncScenePrefsToServer() {
+      apiPost('/api/preferences', {
+        extra: {
+          scene_id: sceneState.site,
+          scene_intensity: sceneState.intensity,
+          scene_motion: sceneState.motion ? 1 : 0,
+        },
+      }).catch(() => {});
+    }
+
+    function setSiteScene(id) {
+      sceneState.site = sceneById(id).id;
+      localStorage.setItem('tm_scene_id', sceneState.site);
+      applySceneDOM();
+      renderSceneGallery();
+      syncScenePrefsToServer();
+      const sc = sceneById(sceneState.site);
+      showToast(sc.id === 'none' ? '🪽 已关闭环境场景，回归纯净界面' : `🌌 环境场景：${sc.name}（全站氛围光已同步）`);
+    }
+
+    function setSceneIntensity(level) {
+      sceneState.intensity = Math.max(0, Math.min(3, Number(level) || 0));
+      localStorage.setItem('tm_scene_intensity', String(sceneState.intensity));
+      applySceneDOM();
+      renderSceneGallery();
+      syncScenePrefsToServer();
+    }
+
+    function setSceneMotion(on) {
+      sceneState.motion = Boolean(on);
+      localStorage.setItem('tm_scene_motion', sceneState.motion ? '1' : '0');
+      applySceneDOM();
+      syncScenePrefsToServer();
+    }
+
+    function renderSceneGallery() {
+      const grid = document.getElementById('sceneGalleryGrid');
+      if (grid) {
+        grid.innerHTML = SCENE_CATALOG.map(s => {
+          const sel = s.id === sceneState.site;
+          return `
+            <button type="button" class="scene-card-item ${sel ? 'selected' : ''}" onclick="setSiteScene('${esc(s.id)}')">
+              ${s.id === 'none'
+                ? `<div class="scene-card-none">🪽</div>`
+                : `<div class="scene-card-thumb" style="background-image:url('${sceneImgUrl(s.id)}');">${sel ? '<span class="scene-check">✓</span>' : ''}</div>`}
+              <div style="font-weight:700;font-size:12.5px;color:var(--heading);">${s.icon} ${esc(s.name)}</div>
+            </button>
+          `;
+        }).join('');
+      }
+      const bar = document.getElementById('sceneIntensityBar');
+      if (bar) {
+        bar.innerHTML = SCENE_INTENSITY_LABELS.map((label, i) => `
+          <button type="button" class="seg-pill-btn ${i === sceneState.intensity ? 'active' : ''}" onclick="setSceneIntensity(${i})">${label}</button>
+        `).join('');
+      }
+      const motionCheck = document.getElementById('sceneMotionCheck');
+      if (motionCheck) motionCheck.checked = sceneState.motion;
+    }
+
+    // ----- Immersive focus overlay scene controls -----
+    function saveFocusSceneOpts() {
+      localStorage.setItem('tm_focus_scene', sceneState.focus);
+      localStorage.setItem('tm_focus_dim', String(sceneState.dim));
+      localStorage.setItem('tm_focus_blur', String(sceneState.blur));
+      localStorage.setItem('tm_focus_density', String(sceneState.density));
+      localStorage.setItem('tm_focus_speed', String(sceneState.speed));
+      localStorage.setItem('tm_focus_particles', sceneState.particles ? '1' : '0');
+      localStorage.setItem('tm_focus_glow', sceneState.glow ? '1' : '0');
+    }
+
+    function renderFocusSceneStrip() {
+      const strip = document.getElementById('focusSceneStrip');
+      if (!strip) return;
+      const opts = [{ id: 'auto', name: '跟随全站', icon: '🪽' }, ...SCENE_CATALOG.filter(s => s.id !== 'none')];
+      strip.innerHTML = opts.map(s => `
+        <button type="button" class="fs-scene-btn ${sceneState.focus === s.id ? 'selected' : ''}" onclick="setFocusScene('${esc(s.id)}')">
+          <span class="fs-thumb" style="${s.id !== 'auto' ? `background-image:url('${sceneImgUrl(s.id)}');` : ''}">${s.id === 'auto' ? '🪽' : ''}</span>
+          <span class="fs-name">${esc(s.name)}</span>
+        </button>
+      `).join('');
+    }
+
+    function applyFocusSceneVisuals() {
+      const overlay = document.getElementById('focusOverlay');
+      if (!overlay) return;
+      const sc = sceneById(resolvedFocusSceneId());
+      overlay.style.setProperty('--scene-acc', sc.acc);
+      overlay.style.setProperty('--scene-acc2', sc.acc2);
+      overlay.classList.toggle('glow-on', sceneState.glow);
+      const img = document.getElementById('focusSceneImg');
+      const url = sceneImgUrl(sc.id);
+      if (img) {
+        if (url && img.getAttribute('src') !== url) img.src = url;
+        img.style.opacity = url ? '1' : '0';
+        img.style.filter = sceneState.blur > 0 ? `blur(${sceneState.blur}px)` : 'none';
+      }
+      const dim = document.getElementById('focusSceneDim');
+      if (dim) dim.style.opacity = String(sceneState.dim / 100);
+      const setRange = (id, outId, val, fmt) => {
+        const r = document.getElementById(id);
+        if (r && Number(r.value) !== Number(val)) r.value = val;
+        const o = document.getElementById(outId);
+        if (o) o.textContent = fmt(val);
+      };
+      setRange('fsDimRange', 'fsDimOut', sceneState.dim, v => `${v}%`);
+      setRange('fsBlurRange', 'fsBlurOut', sceneState.blur, v => `${v}px`);
+      setRange('fsDensityRange', 'fsDensityOut', sceneState.density, v => `${v}%`);
+      setRange('fsSpeedRange', 'fsSpeedOut', sceneState.speed, v => `${(v / 100).toFixed(1)}×`);
+      const pt = document.getElementById('fsParticlesToggle');
+      if (pt) pt.classList.toggle('on', sceneState.particles);
+      const gt = document.getElementById('fsGlowToggle');
+      if (gt) gt.classList.toggle('on', sceneState.glow);
+      updateSoundBtn();
+      ensureFxLoop();
+    }
+
+    function applyFocusSceneDOM() {
+      renderFocusSceneStrip();
+      applyFocusSceneVisuals();
+    }
+
+    function setFocusScene(id) {
+      sceneState.focus = id === 'auto' || SCENE_CATALOG.some(s => s.id === id) ? id : 'auto';
+      saveFocusSceneOpts();
+      renderFocusSceneStrip();
+      applyFocusSceneVisuals();
+      if (_amb) stopAmbience();
+      if (document.getElementById('focusOverlay')?.classList.contains('open')) startAmbience();
+      showToast(`🎬 沉浸场景：${sceneById(resolvedFocusSceneId()).name}`);
+    }
+
+    function setFocusSceneOpt(key, val) {
+      const n = Number(val);
+      if (key === 'dim') sceneState.dim = Math.max(0, Math.min(85, n));
+      else if (key === 'blur') sceneState.blur = Math.max(0, Math.min(14, n));
+      else if (key === 'density') sceneState.density = Math.max(0, Math.min(100, n));
+      else if (key === 'speed') sceneState.speed = Math.max(20, Math.min(250, n));
+      saveFocusSceneOpts();
+      applyFocusSceneVisuals();
+    }
+
+    function toggleFocusSceneOpt(key) {
+      if (key === 'particles') sceneState.particles = !sceneState.particles;
+      else if (key === 'glow') sceneState.glow = !sceneState.glow;
+      saveFocusSceneOpts();
+      applyFocusSceneVisuals();
+    }
+
+    function randomizeFocusScene() {
+      const pool = SCENE_CATALOG.filter(s => s.id !== 'none');
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      setFocusScene(pick.id);
+    }
+
+    function resetFocusSceneOpts() {
+      sceneState.dim = 45;
+      sceneState.blur = 0;
+      sceneState.density = 70;
+      sceneState.speed = 100;
+      sceneState.particles = true;
+      sceneState.glow = true;
+      saveFocusSceneOpts();
+      applyFocusSceneVisuals();
+      showToast('↺ 沉浸参数已恢复默认');
+    }
+
+    // ----- Scene particle engine (single rAF loop, DPR capped) -----
+    const _fxEngine = {
+      raf: 0, running: false, last: 0,
+      dpr: Math.min(1.5, window.devicePixelRatio || 1),
+      focus: [], ambient: [], focusKey: '', ambientKey: '',
+      meteor: { life: 0, x: 0, y: 0, vx: 0, vy: 0 },
+    };
+    const FX_BASE_COUNT = { stars: 110, streaks: 42, neon: 34, fireflies: 44, snow: 80, bubbles: 48, bokeh: 20, petals: 44 };
+    const FX_COLORS = {
+      stars: ['#ffffff', '#c4b5fd', '#a5f3fc'],
+      streaks: ['#22d3ee', '#e879f9', '#818cf8'],
+      neon: ['#38bdf8', '#f0abfc', '#67e8f9'],
+      fireflies: ['#fbbf24', '#34d399', '#a3e635'],
+      snow: ['#ffffff', '#e0f2fe'],
+      bubbles: ['#67e8f9', '#a5f3fc'],
+      bokeh: ['#fbbf24', '#2dd4bf', '#f472b6'],
+      petals: ['#f9a8d4', '#fbcfe8', '#e9d5ff'],
+    };
+
+    function fxCanvasDims(canvas) {
+      const rect = canvas.getBoundingClientRect();
+      const w = Math.max(1, Math.round(rect.width));
+      const h = Math.max(1, Math.round(rect.height));
+      if (canvas.width !== Math.round(w * _fxEngine.dpr) || canvas.height !== Math.round(h * _fxEngine.dpr)) {
+        canvas.width = Math.round(w * _fxEngine.dpr);
+        canvas.height = Math.round(h * _fxEngine.dpr);
+      }
+      return { w, h };
+    }
+
+    function makeFxParticles(type, count, w, h) {
+      const rnd = Math.random;
+      const parts = [];
+      for (let i = 0; i < count; i++) {
+        const p = { x: rnd() * w, y: rnd() * h, c: i % 3 };
+        if (type === 'stars') { p.r = 0.4 + rnd() * 1.5; p.p = rnd() * 6.28; p.tw = 0.6 + rnd() * 1.6; p.vx = -3 - rnd() * 5; p.vy = 1 + rnd() * 2; }
+        else if (type === 'streaks') { p.len = 26 + rnd() * 70; p.v = 40 + rnd() * 90; }
+        else if (type === 'neon') { p.len = 60 + rnd() * 120; p.v = 150 + rnd() * 220; }
+        else if (type === 'fireflies') { p.r = 1 + rnd() * 1.8; p.p = rnd() * 6.28; p.s = 0.3 + rnd() * 0.8; }
+        else if (type === 'snow') { p.r = 0.8 + rnd() * 2; p.v = 16 + rnd() * 30; p.sw = rnd() * 6.28; p.swv = 0.4 + rnd() * 0.9; }
+        else if (type === 'bubbles') { p.r = 1 + rnd() * 3.4; p.v = 18 + rnd() * 44; p.sw = rnd() * 6.28; }
+        else if (type === 'bokeh') { p.r = 8 + rnd() * 26; p.v = 4 + rnd() * 9; p.p = rnd() * 6.28; }
+        else if (type === 'petals') { p.r = 2.4 + rnd() * 3.4; p.v = 20 + rnd() * 34; p.rot = rnd() * 6.28; p.rotv = (rnd() - 0.5) * 2.4; p.sw = rnd() * 6.28; }
+        parts.push(p);
+      }
+      return parts;
+    }
+
+    function stepFxParticles(type, parts, dt, w, h, speed) {
+      for (const p of parts) {
+        if (type === 'stars') { p.x += p.vx * dt * speed * 0.3; p.y += p.vy * dt * speed * 0.3; p.p += p.tw * dt; }
+        else if (type === 'streaks') { p.y -= p.v * dt * speed; if (p.y < -p.len) { p.y = h + p.len; p.x = Math.random() * w; } }
+        else if (type === 'neon') { p.x += 0.86 * p.v * dt * speed; p.y -= 0.5 * p.v * dt * speed; if (p.x > w + p.len) { p.x = -p.len; p.y = Math.random() * h; } if (p.y < -p.len) p.y = h + p.len; }
+        else if (type === 'fireflies') { p.p += p.s * dt; p.x += Math.sin(p.p * 1.3) * 14 * dt * speed; p.y += Math.cos(p.p * 0.9) * 10 * dt * speed; }
+        else if (type === 'snow') { p.y += p.v * dt * speed; p.sw += p.swv * dt; p.x += Math.sin(p.sw) * 15 * dt; if (p.y > h + 4) { p.y = -4; p.x = Math.random() * w; } }
+        else if (type === 'bubbles') { p.y -= p.v * dt * speed; p.sw += dt; p.x += Math.sin(p.sw) * 11 * dt; if (p.y < -6) { p.y = h + 6; p.x = Math.random() * w; } }
+        else if (type === 'bokeh') { p.y -= p.v * dt * speed; p.p += dt * 0.4; p.x += Math.sin(p.p) * 7 * dt; if (p.y < -p.r) { p.y = h + p.r; p.x = Math.random() * w; } }
+        else if (type === 'petals') { p.y += p.v * dt * speed; p.rot += p.rotv * dt * speed; p.sw += dt; p.x += Math.sin(p.sw) * 22 * dt; if (p.y > h + 6) { p.y = -6; p.x = Math.random() * w; } }
+        if (p.x < -40) p.x = w + 30; else if (p.x > w + 40) p.x = -30;
+        if (type !== 'streaks' && type !== 'neon' && type !== 'snow' && type !== 'bubbles' && type !== 'petals' && type !== 'bokeh') {
+          if (p.y < -10) p.y = h + 8; else if (p.y > h + 10) p.y = -8;
+        }
+      }
+    }
+
+    function drawFxParticles(ctx, type, parts, w, h, alpha, dt, speed) {
+      ctx.setTransform(_fxEngine.dpr, 0, 0, _fxEngine.dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      const colors = FX_COLORS[type] || FX_COLORS.stars;
+      ctx.globalCompositeOperation = (type === 'snow' || type === 'petals') ? 'source-over' : 'lighter';
+      for (const p of parts) {
+        const col = colors[p.c % colors.length];
+        if (type === 'stars') {
+          ctx.globalAlpha = alpha * (0.3 + 0.7 * Math.abs(Math.sin(p.p)));
+          ctx.fillStyle = col;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.283); ctx.fill();
+        } else if (type === 'streaks' || type === 'neon') {
+          const dx = type === 'neon' ? -0.86 * p.len : 0;
+          const dy = type === 'neon' ? 0.5 * p.len : p.len;
+          ctx.globalAlpha = alpha * 0.55;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 1.6;
+          ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + dx, p.y + dy); ctx.stroke();
+          ctx.globalAlpha = alpha * 0.9;
+          ctx.fillStyle = col;
+          ctx.beginPath(); ctx.arc(p.x, p.y, 1.6, 0, 6.283); ctx.fill();
+        } else if (type === 'fireflies') {
+          const glow = 0.4 + 0.6 * Math.abs(Math.sin(p.p * 2));
+          ctx.globalAlpha = alpha * 0.22 * glow;
+          ctx.fillStyle = col;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 3.4, 0, 6.283); ctx.fill();
+          ctx.globalAlpha = alpha * glow;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.283); ctx.fill();
+        } else if (type === 'snow') {
+          ctx.globalAlpha = alpha * 0.8;
+          ctx.fillStyle = col;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.283); ctx.fill();
+        } else if (type === 'bubbles') {
+          ctx.globalAlpha = alpha * 0.5;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.283); ctx.stroke();
+          ctx.globalAlpha = alpha * 0.75;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(p.x - p.r * 0.35, p.y - p.r * 0.35, Math.max(0.4, p.r * 0.22), 0, 6.283); ctx.fill();
+        } else if (type === 'bokeh') {
+          ctx.globalAlpha = alpha * 0.12;
+          ctx.fillStyle = col;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.283); ctx.fill();
+          ctx.globalAlpha = alpha * 0.16;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 0.55, 0, 6.283); ctx.fill();
+        } else if (type === 'petals') {
+          ctx.globalAlpha = alpha * 0.8;
+          ctx.fillStyle = col;
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.rot);
+          ctx.beginPath(); ctx.ellipse(0, 0, p.r, p.r * 0.55, 0, 0, 6.283); ctx.fill();
+          ctx.restore();
+        }
+      }
+      if (type === 'stars') {
+        const m = _fxEngine.meteor;
+        m.life -= dt;
+        if (m.life <= 0 && Math.random() < dt / 7) {
+          m.life = 0.9;
+          m.x = w * (0.3 + Math.random() * 0.65);
+          m.y = h * Math.random() * 0.35;
+          m.vx = -(260 + Math.random() * 240);
+          m.vy = 130 + Math.random() * 120;
+        }
+        if (m.life > 0) {
+          m.x += m.vx * dt * speed;
+          m.y += m.vy * dt * speed;
+          const tail = 0.16;
+          const grad = ctx.createLinearGradient(m.x, m.y, m.x - m.vx * tail, m.y - m.vy * tail);
+          grad.addColorStop(0, `rgba(255,255,255,${0.85 * alpha})`);
+          grad.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = grad;
+          ctx.lineWidth = 1.8;
+          ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(m.x - m.vx * tail, m.y - m.vy * tail); ctx.stroke();
+        }
+      }
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    function fxTargetsActive() {
+      const focusOpen = Boolean(document.getElementById('focusOverlay')?.classList.contains('open'));
+      const ambientOn = document.body.classList.contains('has-scene') && sceneState.intensity > 0 && sceneState.motion && Boolean(sceneById(sceneState.site).fx);
+      return { focusOpen, ambientOn };
+    }
+
+    function ensureFxLoop() {
+      const t = fxTargetsActive();
+      if ((t.focusOpen || t.ambientOn) && !_fxEngine.running) {
+        _fxEngine.running = true;
+        _fxEngine.last = performance.now();
+        _fxEngine.raf = requestAnimationFrame(fxLoop);
+      }
+    }
+
+    function fxLoop(ts) {
+      const eng = _fxEngine;
+      const t = fxTargetsActive();
+      if (!t.focusOpen && !t.ambientOn) {
+        eng.running = false;
+        eng.raf = 0;
+        return;
+      }
+      eng.raf = requestAnimationFrame(fxLoop);
+      const dt = Math.min(0.05, Math.max(0.001, (ts - eng.last) / 1000));
+      eng.last = ts;
+      if (document.hidden) return;
+
+      if (t.focusOpen) {
+        const canvas = document.getElementById('focusSceneCanvas');
+        const sc = sceneById(resolvedFocusSceneId());
+        if (canvas && sc.fx && sceneState.particles && sceneState.density > 0) {
+          const { w, h } = fxCanvasDims(canvas);
+          const desired = Math.min(Math.round(FX_BASE_COUNT[sc.fx] * 1.6), Math.round(FX_BASE_COUNT[sc.fx] * (w * h) / (1280 * 720) * sceneState.density / 100));
+          const key = `${sc.fx}|${desired}|${w}x${h}`;
+          if (key !== eng.focusKey) { eng.focus = makeFxParticles(sc.fx, desired, w, h); eng.focusKey = key; }
+          const speed = sceneState.speed / 100;
+          stepFxParticles(sc.fx, eng.focus, dt, w, h, speed);
+          drawFxParticles(canvas.getContext('2d'), sc.fx, eng.focus, w, h, 0.9, dt, speed);
+        } else if (canvas && eng.focusKey) {
+          const { w, h } = fxCanvasDims(canvas);
+          canvas.getContext('2d').clearRect(0, 0, w, h);
+          eng.focusKey = '';
+          eng.focus = [];
+        }
+      } else if (eng.focusKey) {
+        const canvas = document.getElementById('focusSceneCanvas');
+        if (canvas) {
+          const { w, h } = fxCanvasDims(canvas);
+          canvas.getContext('2d').clearRect(0, 0, w, h);
+        }
+        eng.focusKey = '';
+        eng.focus = [];
+      }
+      if (t.ambientOn) {
+        const canvas = document.getElementById('ambientSceneCanvas');
+        const sc = sceneById(sceneState.site);
+        if (canvas && sc.fx) {
+          const { w, h } = fxCanvasDims(canvas);
+          const desired = Math.min(60, Math.round(FX_BASE_COUNT[sc.fx] * (w * h) / (1280 * 720) * 0.32));
+          const key = `${sc.fx}|${desired}|${w}x${h}`;
+          if (key !== eng.ambientKey) { eng.ambient = makeFxParticles(sc.fx, desired, w, h); eng.ambientKey = key; }
+          stepFxParticles(sc.fx, eng.ambient, dt, w, h, 0.6);
+          drawFxParticles(canvas.getContext('2d'), sc.fx, eng.ambient, w, h, 0.5, dt, 0.6);
+        }
+      } else if (eng.ambientKey) {
+        const canvas = document.getElementById('ambientSceneCanvas');
+        if (canvas) {
+          const { w, h } = fxCanvasDims(canvas);
+          canvas.getContext('2d').clearRect(0, 0, w, h);
+        }
+        eng.ambientKey = '';
+        eng.ambient = [];
+      }
+    }
+
+    window.addEventListener('resize', () => {
+      _fxEngine.focusKey = '';
+      _fxEngine.ambientKey = '';
+      ensureFxLoop();
+    });
+
+    // ----- Scene ambience audio (WebAudio, single master mute) -----
+    let _amb = null;
+
+    function updateSoundBtn() {
+      const btn = document.getElementById('focusSoundBtn');
+      if (!btn) return;
+      btn.textContent = sceneState.muted ? '🔇 环境音关' : '🔊 环境音开';
+      btn.classList.toggle('muted', sceneState.muted);
+    }
+
+    function toggleSoundMuted() {
+      sceneState.muted = !sceneState.muted;
+      localStorage.setItem('tm_sound_muted', sceneState.muted ? '1' : '0');
+      updateSoundBtn();
+      if (sceneState.muted) {
+        stopAmbience();
+        showToast('🔇 已静音：环境音与完成铃声全部关闭');
+      } else {
+        if (document.getElementById('focusOverlay')?.classList.contains('open')) startAmbience();
+        showToast('🔊 声音已恢复');
+      }
+    }
+
+    function startAmbience() {
+      if (_amb || sceneState.muted) return;
+      const sc = sceneById(resolvedFocusSceneId());
+      if (!sc.audio) return;
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const len = Math.floor(ctx.sampleRate * 2);
+        const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+        const data = buf.getChannelData(0);
+        let lastOut = 0;
+        for (let i = 0; i < len; i++) {
+          const white = Math.random() * 2 - 1;
+          lastOut = (lastOut + 0.02 * white) / 1.02;
+          data[i] = lastOut * 3.5;
+        }
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.loop = true;
+        const filter = ctx.createBiquadFilter();
+        const master = ctx.createGain();
+        master.gain.value = 0;
+        const lfo = ctx.createOscillator();
+        const lfoGain = ctx.createGain();
+        let target = 0.05;
+        if (sc.audio === 'space') {
+          filter.type = 'lowpass'; filter.frequency.value = 320;
+          lfo.frequency.value = 0.05; lfoGain.gain.value = 0.02;
+          lfo.connect(lfoGain); lfoGain.connect(master.gain);
+          target = 0.055;
+        } else if (sc.audio === 'hum') {
+          filter.type = 'bandpass'; filter.frequency.value = 180; filter.Q.value = 6;
+          lfo.frequency.value = 0.11; lfoGain.gain.value = 60;
+          lfo.connect(lfoGain); lfoGain.connect(filter.frequency);
+          target = 0.045;
+        } else if (sc.audio === 'wind') {
+          filter.type = 'bandpass'; filter.frequency.value = 520; filter.Q.value = 0.7;
+          lfo.frequency.value = 0.07; lfoGain.gain.value = 260;
+          lfo.connect(lfoGain); lfoGain.connect(filter.frequency);
+          target = 0.06;
+        } else if (sc.audio === 'waves') {
+          filter.type = 'lowpass'; filter.frequency.value = 420;
+          lfo.frequency.value = 0.09; lfoGain.gain.value = 0.035;
+          lfo.connect(lfoGain); lfoGain.connect(master.gain);
+          target = 0.075;
+        } else {
+          filter.type = 'lowpass'; filter.frequency.value = 1100;
+          target = 0.03;
+        }
+        src.connect(filter);
+        filter.connect(master);
+        master.connect(ctx.destination);
+        src.start();
+        lfo.start();
+        master.gain.linearRampToValueAtTime(target, ctx.currentTime + 1.2);
+        if (ctx.state === 'suspended') ctx.resume();
+        _amb = { ctx, master, src, lfo };
+      } catch (e) {}
+    }
+
+    function stopAmbience() {
+      if (!_amb) return;
+      const a = _amb;
+      _amb = null;
+      try {
+        a.master.gain.cancelScheduledValues(a.ctx.currentTime);
+        a.master.gain.setTargetAtTime(0, a.ctx.currentTime, 0.15);
+      } catch (e) {}
+      setTimeout(() => {
+        try { a.src.stop(); a.lfo.stop(); a.ctx.close(); } catch (e) {}
+      }, 500);
+    }
+
     function applyThemeDOM(themeId) {
       const validId = THEME_VECTOR_SVGS[themeId] ? themeId : 'classic';
       appPreferences.theme_id = validId;
@@ -7141,8 +8263,10 @@
       if (artEl) artEl.innerHTML = THEME_VECTOR_SVGS[validId] || '';
       const metaTheme = document.querySelector('meta[name="theme-color"]');
       if (metaTheme) {
-        metaTheme.setAttribute('content', validId === 'deep_forest' ? '#0b1512' : '#0f172a');
+        const darkBgs = { deep_forest: '#0b1512', nebula: '#0d0b1e', cyber: '#061019', polar: '#071318' };
+        metaTheme.setAttribute('content', darkBgs[validId] || '#0f172a');
       }
+      applySceneDOM();
     }
 
     function applyModuleTogglesDOM() {
@@ -7188,6 +8312,20 @@
       }
       applyThemeDOM(appPreferences.theme_id);
       applyModuleTogglesDOM();
+      const ex = res.extra || {};
+      if (typeof ex.scene_id === 'string' && SCENE_CATALOG.some(s => s.id === ex.scene_id)) {
+        sceneState.site = ex.scene_id;
+        localStorage.setItem('tm_scene_id', sceneState.site);
+      }
+      if (ex.scene_intensity !== undefined) {
+        sceneState.intensity = Math.max(0, Math.min(3, Number(ex.scene_intensity) || 0));
+        localStorage.setItem('tm_scene_intensity', String(sceneState.intensity));
+      }
+      if (ex.scene_motion !== undefined) {
+        sceneState.motion = ex.scene_motion !== 0 && ex.scene_motion !== false;
+        localStorage.setItem('tm_scene_motion', sceneState.motion ? '1' : '0');
+      }
+      applySceneDOM();
       if (document.getElementById('prefsModal')?.classList.contains('open')) {
         renderPrefsModalContent();
       }
@@ -7203,6 +8341,7 @@
     }
 
     function renderPrefsModalContent() {
+      renderSceneGallery();
       const cat = appPreferences.themes_catalog || DEFAULT_THEMES_CATALOG;
       const curTheme = appPreferences.theme_id || 'classic';
       const grid = document.getElementById('themeGalleryGrid');
