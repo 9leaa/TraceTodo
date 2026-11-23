@@ -2765,6 +2765,88 @@
       .ambient-scene-layer canvas, .focus-scene-layer canvas { display: none; }
     }
     body:not(.scene-motion) .ambient-scene-layer img { animation: none; }
+    .today-board { display: grid; gap: 12px; margin-bottom: 16px; }
+    .today-board > .card-box { margin: 0; }
+    .today-next { display: grid; gap: 9px; padding: clamp(16px, 4vw, 24px); }
+    [data-theme] body .today-next {
+      border-inline-start: 4px solid var(--primary);
+      background: var(--theme-shape), var(--theme-surface, var(--surface));
+    }
+    .today-kicker { font-size: 12px; font-weight: 700; letter-spacing: .12em; color: var(--muted); }
+    .today-title { font-size: clamp(19px, 3vw, 30px); color: var(--heading); overflow-wrap: anywhere; }
+    .today-next .meta-row { margin: 0; }
+    .today-step { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+    .today-queues { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .today-queue { min-width: 0; }
+    .today-queue h3 { display: flex; align-items: center; gap: 7px; }
+    .today-queue-list { display: grid; gap: 4px; }
+    .today-queue-list button { min-width: 0; text-align: start; display: flex; justify-content: space-between; gap: 8px; }
+    .today-queue-list button span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .today-queue-list button span:last-child { color: var(--muted); white-space: nowrap; }
+    .workspace-disclosure > summary { cursor: pointer; font-weight: 700; color: var(--heading); padding: 4px 0; }
+    .workspace-disclosure[open] > summary { margin-bottom: 12px; }
+    .task-card-details > summary { cursor: pointer; font-size: 12px; font-weight: 650; color: var(--muted); width: fit-content; }
+    .task-card-details[open] { display: grid; gap: 7px; }
+    .task-card-details .meta-row { margin: 0; }
+    .task-title-button { all: unset; cursor: pointer; }
+    .task-title-button:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+    :is(#matrixContainer, #listContainer).tasks-compact .task-card { padding-block: 8px; gap: 5px; }
+    :is(#matrixContainer, #listContainer).tasks-compact .card-actions button { padding-block: 4px; }
+    .workspace-floats {
+      position: fixed;
+      z-index: 45;
+      inset-inline-end: max(16px, env(safe-area-inset-right));
+      bottom: max(20px, env(safe-area-inset-bottom));
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .workspace-floats button { min-height: 44px; border-radius: 999px; padding-inline: 16px; box-shadow: 0 6px 24px #0003; }
+    .workspace-floats[hidden] { display: none; }
+    body:has(#panel-focus.active) #focusMiniBtn { display: none; }
+    .workspace-floats .ask-launcher { color: var(--heading); background: var(--surface); border: 1px solid var(--primary); font-weight: 750; }
+    .workspace-floats .ask-launcher:hover { background: var(--primary-soft); }
+    body:has(.modal-backdrop.open, .focus-overlay[open], .ask-drawer[open]) .workspace-floats { visibility: hidden; }
+    body:has(.ask-drawer[open]) { overflow: hidden; }
+    .ask-drawer {
+      position: fixed;
+      inset: 0 0 0 auto;
+      margin: 0;
+      width: min(100%, 490px);
+      height: 100%;
+      max-width: none;
+      max-height: none;
+      color: var(--text);
+      background: var(--surface);
+      border: 0;
+      border-inline-start: 1px solid var(--border);
+      box-shadow: -12px 0 48px #0003;
+      padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+      overflow: auto;
+      overscroll-behavior: contain;
+    }
+    .ask-drawer::backdrop { background: #070e2480; }
+    .ask-drawer[open] { display: grid; align-content: start; gap: 14px; }
+    .ask-drawer-head { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+    .ask-drawer-head h2 { color: var(--heading); font-size: 19px; }
+    .ask-drawer textarea { display: block; width: 100%; min-width: 0; resize: vertical; }
+    .ask-drawer .btn-group { margin-top: 8px; }
+    .ask-mobile-expand { display: none; }
+    .ask-context { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; overflow-wrap: anywhere; }
+    .ask-context[hidden] { display: none; }
+    .ask-status { font-size: 13px; color: var(--muted); }
+    .ask-status:not(:empty) { margin-top: 8px; }
+    .ask-evidence { display: grid; gap: 8px; margin-top: 10px; overflow-wrap: anywhere; }
+    .ask-evidence summary { cursor: pointer; color: var(--heading); }
+    .ask-evidence blockquote { margin: 6px 0; white-space: pre-wrap; }
+    @media (max-width: 768px) {
+      .workspace-shell .container { padding-bottom: calc(122px + env(safe-area-inset-bottom)); }
+      .workspace-floats { bottom: calc(61px + env(safe-area-inset-bottom)); }
+      .ask-drawer { inset: auto 0 0; width: 100%; height: min(72dvh, 650px); border-radius: 20px 20px 0 0; border: 1px solid var(--border); }
+      .ask-drawer.is-expanded, .ask-drawer:has(textarea:focus) { height: 96dvh; }
+      .ask-mobile-expand { display: inline-block; }
+    }
+    @media (max-width: 520px) { .today-queues { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -2829,12 +2911,11 @@
       <section id="panel-tasks" class="panel active">
         <div class="summary-header" style="flex-wrap:wrap;gap:10px;">
           <div>
-            <h2 class="summary-title">TODO · 待办中心</h2>
-            <div style="font-size:12px;color:var(--muted);">一处掌控今日重点、四象限优先级与全部待办</div>
+            <h2 class="summary-title">待办工作台</h2>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <div class="seg-pill-bar" id="todoViewSegBar">
-              <button type="button" class="seg-pill-btn active" id="viewBtnOverview" onclick="setTaskView('overview')">📊 概览</button>
+              <button type="button" class="seg-pill-btn active" id="viewBtnOverview" onclick="setTaskView('overview')">今日</button>
               <button type="button" class="seg-pill-btn" id="viewBtnMatrix" onclick="setTaskView('matrix')">田 四象限</button>
               <button type="button" class="seg-pill-btn" id="viewBtnList" onclick="setTaskView('list')">☰ 列表</button>
             </div>
@@ -2842,29 +2923,25 @@
           </div>
         </div>
 
-        <div class="countdown-strip" id="todoCountdownStrip" data-module-toggle="countdown" style="display:none;"></div>
-
         <div id="todoOverviewSection">
-          <div class="kpi-grid" id="taskKpis"></div>
-
-          <div class="analytics-row">
-            <div class="analytic-card">
-              <h4>TOP FOCUS · 优先聚焦</h4>
-              <div id="topFocusList"></div>
-            </div>
-            <div class="analytic-card">
-              <h4>TASK INSIGHTS · 分布洞察</h4>
-              <div id="taskInsightsBody"></div>
+          <div class="today-board">
+            <div class="card-box today-next" id="todayNextTask" aria-labelledby="todayNextLabel"><div class="today-kicker" id="todayNextLabel">下一件事</div><p class="today-step">正在读取待办…</p></div>
+            <div class="today-queues">
+              <section class="card-box today-queue" aria-labelledby="todayDueLabel"><h3 id="todayDueLabel">今天到期</h3><div class="today-queue-list" id="todayDueTasks"></div></section>
+              <section class="card-box today-queue" aria-labelledby="todayOverdueLabel"><h3 id="todayOverdueLabel">需要补做</h3><div class="today-queue-list" id="todayOverdueTasks"></div></section>
+              <section class="card-box today-queue" id="todayScheduleCard" aria-labelledby="todayScheduleLabel" hidden><h3 id="todayScheduleLabel">今日安排</h3><div class="today-queue-list" id="todayScheduledTasks"></div><button type="button" style="margin-top:8px;" onclick="openDailyAgenda()">打开日程</button></section>
             </div>
           </div>
-
-          <div class="diag-box">
-            <h3>🧭 艾森豪威尔四象限 · 记忆驱动负载诊断与优先建议</h3>
-            <ul class="diag-list" id="diagList"></ul>
-          </div>
+          <div class="countdown-strip" id="todoCountdownStrip" data-module-toggle="countdown" style="display:none;"></div>
+          <details class="card-box workspace-disclosure">
+            <summary id="todayStatsSummary">待办统计与建议</summary>
+            <div class="kpi-grid" id="taskKpis"></div>
+            <div class="analytic-card"><h4>任务分布</h4><div id="taskInsightsBody"></div></div>
+            <div class="diag-box"><h3>四象限建议</h3><ul class="diag-list" id="diagList"></ul></div>
+          </details>
         </div>
 
-        <div class="toolbar">
+        <div class="toolbar" id="taskViewToolbar" style="display:none;">
           <div style="font-size:13px;font-weight:600;color:var(--muted);" id="todoSubHeading">田 艾森豪威尔四象限看板</div>
           <div class="btn-group">
             <label style="font-size:12px;color:var(--muted);">排序依据:</label>
@@ -2874,13 +2951,14 @@
               <option value="importance">重要程度</option>
               <option value="updated">最近更新时间</option>
             </select>
+            <button type="button" id="taskDensityBtn" aria-pressed="false" onclick="toggleTaskCardDensity()">紧凑卡片</button>
             <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px;">
               <input type="checkbox" id="includeDoneCheck" onchange="loadTasks()" /> 显示已完成/已取消
             </label>
           </div>
         </div>
 
-        <div id="matrixContainer" class="matrix-grid"></div>
+        <div id="matrixContainer" class="matrix-grid" style="display:none;"></div>
         <div id="listContainer" class="list-stack" style="display:none;"></div>
         <div id="taskListLoadMoreBar" class="list-load-more-bar" hidden></div>
       </section>
@@ -2894,6 +2972,7 @@
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <div class="seg-pill-bar" id="calViewSegBar">
+              <button type="button" class="seg-pill-btn" id="calSubDayBtn" onclick="switchCalendarSubView('day')">日程</button>
               <button type="button" class="seg-pill-btn active" id="calSubWeekBtn" onclick="switchCalendarSubView('week')">📊 周视图</button>
               <button type="button" class="seg-pill-btn" id="calSubMonthBtn" onclick="switchCalendarSubView('month')">🗓️ 月视图</button>
               <button type="button" class="seg-pill-btn" id="calSubCountdownBtn" data-module-toggle="countdown" onclick="switchCalendarSubView('countdown')">⏳ 倒数纪念日</button>
@@ -3327,15 +3406,18 @@
         <div class="card-box">
           <h3>💬 结合记忆与原话的证据问答</h3>
           <div style="display:flex;gap:8px;">
-            <input id="askInput" class="main-input" style="flex:1;" aria-label="根据记忆提问" placeholder="例如：最近有什么结算风险？" onkeydown="if(event.key==='Enter' && !event.isComposing) askQuestion()" />
+            <input id="askInput" class="main-input" style="flex:1;min-width:0;" aria-label="根据记忆提问" placeholder="例如：最近有什么结算风险？" oninput="syncAskDraft(this)" onkeydown="if(event.key==='Enter' && !event.isComposing) askQuestion()" />
             <button type="button" id="askSubmitBtn" class="primary" onclick="askQuestion(this)">提问</button>
+            <button type="button" id="askCancelBtn" onclick="cancelAskRequest()" hidden>取消</button>
           </div>
+          <div class="ask-context" id="askFullContext" hidden><span id="askFullContextLabel"></span><button type="button" onclick="setAskContext(null)">移除上下文</button></div>
+          <div id="askStatus" class="ask-status" role="status"></div>
           <div id="askResult"></div>
         </div>
-        <div class="card-box">
-          <h3>🔍 问答全链路审计</h3>
+        <details class="card-box workspace-disclosure" id="askTraceDetails" ontoggle="if(this.open) refreshAskTraces()">
+          <summary>问答链路与检索详情</summary>
           <div id="traceList" class="list-stack"></div>
-        </div>
+        </details>
       </div>
     </section>
 
@@ -3656,7 +3738,9 @@
       <h2 id="focusTaskTitle" class="focus-task-title" tabindex="-1" autofocus>当前专注</h2>
       <div class="focus-sublist" id="focusSubtasksBox" style="display:none;"></div>
       <div class="focus-session-actions">
-        <button type="button" class="focus-finish" id="focusFinishBtn" onclick="completeFocusAndTask()">结束并记录</button>
+        <button type="button" class="focus-finish" onclick="finishFocusSession(false)">结束并记录</button>
+        <button type="button" id="focusFinishBtn" onclick="completeFocusAndTask()" hidden>完成任务并结束</button>
+        <button type="button" onclick="closeFocusLockOverlay()">缩小计时器</button>
         <button type="button" id="focusPauseBtn" onclick="togglePauseUnifiedFocus()">暂停</button>
         <button type="button" id="focusAbortBtn" onclick="promptAbortFocus()">提前退出</button>
       </div>
@@ -4022,6 +4106,22 @@
     </div>
   </div>
 
+  <div class="workspace-floats" id="workspaceFloats" hidden>
+    <button type="button" id="focusMiniBtn" onclick="enterFocusLockOverlay()" hidden>返回专注</button>
+    <button type="button" class="ask-launcher" id="askLauncher" aria-haspopup="dialog" aria-controls="askDrawer" onclick="openAskDrawer()">✦ 问记忆</button>
+  </div>
+  <dialog class="ask-drawer" id="askDrawer" aria-labelledby="askDrawerTitle" onclick="if(event.target===this){const bounds=this.getBoundingClientRect();if(event.clientX<bounds.left || event.clientY<bounds.top)this.close()}">
+    <div class="ask-drawer-head"><h2 id="askDrawerTitle">问记忆</h2><div class="btn-group"><button type="button" class="ask-mobile-expand" id="askDrawerSize" aria-expanded="false" onclick="toggleAskDrawerSize()">展开</button><button type="button" onclick="openFullAsk()">打开完整问答</button><button type="button" onclick="document.getElementById('askDrawer').close()" autofocus>关闭</button></div></div>
+    <p class="ask-status">查找你的任务、随记与记忆，回答会附可查阅的出处。</p>
+    <div class="btn-group" id="askSuggestions" aria-label="提问建议"></div>
+    <form onsubmit="event.preventDefault();askQuestion(document.getElementById('askDrawerSubmit'))">
+      <div class="ask-context" id="askDrawerContext" hidden><span id="askDrawerContextLabel"></span><button type="button" onclick="setAskContext(null)" aria-label="移除当前任务上下文">移除</button></div>
+      <textarea id="askDrawerInput" rows="2" aria-label="向记忆提问" placeholder="输入问题…" oninput="syncAskDraft(this)"></textarea>
+      <div class="btn-group"><button type="submit" id="askDrawerSubmit" class="primary">提问</button><button type="button" id="askDrawerCancel" onclick="cancelAskRequest()" hidden>取消请求</button></div>
+      <div id="askDrawerStatus" class="ask-status" role="status"></div>
+    </form>
+    <div id="askDrawerResult"></div>
+  </dialog>
   <div class="toast" id="toast"></div>
 
   <script>
@@ -4094,6 +4194,7 @@
           authToken = '';
           localStorage.removeItem('tm_auth_token');
           currentUser = null;
+          resetAskWorkspace();
           updateAccountUi();
         }
         if (authRequiredFlag) {
@@ -4113,7 +4214,7 @@
       return parseApiResponse(res);
     }
 
-    async function apiPost(path, data = {}) {
+    async function apiPost(path, data = {}, { signal } = {}) {
       const bodyObj = { ...data, space_id: space() };
       if (activeShareToken && path.startsWith('/api/supervision/')) {
         bodyObj.share_token = activeShareToken;
@@ -4122,6 +4223,7 @@
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(bodyObj),
+        signal,
       });
       return parseApiResponse(res);
     }
@@ -4173,7 +4275,7 @@
       if (name === 'supervision') loadSupervisionBoard().catch(handleErr);
       if (name === 'memories') loadMemories().catch(handleErr);
       if (name === 'graph' && !opts?.skipGraphLoad) loadGraph().catch(handleErr);
-      if (name === 'ask') loadTraces().catch(handleErr);
+      if (name === 'ask') refreshAskTraces();
       if (name === 'admin') loadAdminConsole().catch(handleErr);
     }
 
@@ -4201,6 +4303,7 @@
     let _taskListVisibleCount = TASK_LIST_PAGE_SIZE;
     let _lastMatrixData = null;
     let _lastTaskQueryKey = '';
+    let _taskLoadRequest = 0;
 
     function toggleExpandQuadrant(qKey) {
       _expandedQuadrants[qKey] = !_expandedQuadrants[qKey];
@@ -4220,7 +4323,8 @@
       document.getElementById('viewBtnList').classList.toggle('active', mode === 'list');
       const ovSec = document.getElementById('todoOverviewSection');
       if (ovSec) ovSec.style.display = mode === 'overview' ? 'block' : 'none';
-      const showMatrix = (mode === 'overview' || mode === 'matrix');
+      const showMatrix = mode === 'matrix';
+      document.getElementById('taskViewToolbar').style.display = mode === 'overview' ? 'none' : 'flex';
       document.getElementById('matrixContainer').style.display = showMatrix ? 'grid' : 'none';
       document.getElementById('listContainer').style.display = mode === 'list' ? 'flex' : 'none';
       const subHdr = document.getElementById('todoSubHeading');
@@ -4235,10 +4339,22 @@
       }
     }
 
-    function renderTaskCard(t) {
+    function applyTaskCardDensity() {
+      const compact = localStorage.getItem('tm_task_density') === 'compact';
+      for (const id of ['matrixContainer', 'listContainer']) document.getElementById(id).classList.toggle('tasks-compact', compact);
+      document.getElementById('taskDensityBtn').setAttribute('aria-pressed', String(compact));
+    }
+
+    function toggleTaskCardDensity() {
+      localStorage.setItem('tm_task_density', localStorage.getItem('tm_task_density') === 'compact' ? 'comfortable' : 'compact');
+      applyTaskCardDensity();
+    }
+
+    function renderTaskCard(t, openDetails) {
       cachedTasksById[t.memory_id] = t;
       const p = t.payload || {};
       const isDone = p.task_status === 'done';
+      const isTodo = p.task_status === 'todo';
       const quad = p.quadrant || 'Q4_eliminate';
       const theme = p.color_theme || 'sky';
       const subs = Array.isArray(p.subtasks) ? p.subtasks : [];
@@ -4309,31 +4425,37 @@
       return `
         <div class="task-card theme-${esc(theme)} ${isDone ? 'done' : ''}">
           <div class="task-top">
-            <div class="task-title" data-mem-id="${esc(t.memory_id)}" onclick="openTaskSheet(this.dataset.memId)" title="点击编辑任务卡片">${esc(t.title)}</div>
+            <button type="button" class="task-title task-title-button" data-mem-id="${esc(t.memory_id)}" onclick="openTaskSheet(this.dataset.memId)" title="编辑任务">${esc(t.title)}</button>
             <span class="badge badge-${esc(quad)}" title="${esc(reasonTip)}">${esc(quad.slice(0, 2))} · ${esc(p.priority_score)}分</span>
           </div>
-          ${summaryHtml}
-          ${checklistHtml}
           <div class="meta-row">
+            ${dueBadge}
+            ${subs.length ? `<span class="tag">子步骤 ${doneSubs}/${subs.length}</span>` : ''}
+            ${lockBadge}
+          </div>
+          <div class="card-actions">
+            ${isTodo
+              ? `<button type="button" data-mem-id="${esc(t.memory_id)}" data-ver="${Number(t.version) || 1}" onclick="transitionTask(this.dataset.memId, 'complete_task', Number(this.dataset.ver))">完成</button>
+                 <button type="button" data-mem-id="${esc(t.memory_id)}" onclick="openFocusLock(this.dataset.memId)">专注</button>`
+              : `<button type="button" data-mem-id="${esc(t.memory_id)}" data-ver="${Number(t.version) || 1}" onclick="transitionTask(this.dataset.memId, 'reopen_task', Number(this.dataset.ver))">重新开启</button>`
+            }
+          </div>
+          <details class="task-card-details" data-task-details="${esc(t.memory_id)}" ${openDetails ? 'open' : ''}>
+            <summary>更多${subs.length ? '与子步骤' : ''}</summary>
+            ${summaryHtml}
+            ${checklistHtml}
+            <div class="meta-row">
             <span class="tag">重要 ${'★'.repeat(p.importance || 3)}</span>
             <span class="tag">紧急 ${'⚡'.repeat(p.effective_urgency || 3)}</span>
-            ${dueBadge}
             ${repeatBadge}
             ${remBadge}
             ${rollBadge}
             ${supBadge}
             ${nudgeBadge}
-            ${lockBadge}
             <span class="tag">v${t.version}</span>
-          </div>
-          <div class="card-actions">
-            ${!isDone
-              ? `<button data-mem-id="${esc(t.memory_id)}" data-ver="${Number(t.version) || 1}" onclick="transitionTask(this.dataset.memId, 'complete_task', Number(this.dataset.ver))">✅ 完成</button>
-                 <button data-mem-id="${esc(t.memory_id)}" onclick="openFocusLock(this.dataset.memId)">🎯 专注</button>
-                 <button data-mem-id="${esc(t.memory_id)}" onclick="openTaskSheet(this.dataset.memId)">✏️ 编辑</button>
-                 <button data-mem-id="${esc(t.memory_id)}" data-ver="${Number(t.version) || 1}" onclick="transitionTask(this.dataset.memId, 'cancel_task', Number(this.dataset.ver))">✕ 取消</button>`
-              : `<button data-mem-id="${esc(t.memory_id)}" data-ver="${Number(t.version) || 1}" onclick="transitionTask(this.dataset.memId, 'reopen_task', Number(this.dataset.ver))">↩️ 重新开启</button>`
-            }
+            </div>
+            <div class="card-actions">
+            ${isTodo ? `<button type="button" data-mem-id="${esc(t.memory_id)}" data-ver="${Number(t.version) || 1}" onclick="transitionTask(this.dataset.memId, 'cancel_task', Number(this.dataset.ver))">取消任务</button>` : ''}
             <select data-mem-id="${esc(t.memory_id)}" data-ver="${Number(t.version) || 1}" onchange="changeQuadrant(this.dataset.memId, Number(this.dataset.ver), this.value)">
               <option value="" disabled selected>调整象限...</option>
               <option value="Q1_do_first">移至 Q1 重要且紧急</option>
@@ -4341,8 +4463,10 @@
               <option value="Q3_delegate">移至 Q3 紧急不重要</option>
               <option value="Q4_eliminate">移至 Q4 稍后/精简</option>
             </select>
-            <button data-mem-id="${esc(t.memory_id)}" onclick="openDetail(this.dataset.memId)">🔎 溯源</button>
-          </div>
+            <button type="button" data-mem-id="${esc(t.memory_id)}" onclick="openDetail(this.dataset.memId)">溯源</button>
+            <button type="button" data-mem-id="${esc(t.memory_id)}" onclick="askAboutTask(this.dataset.memId)">问记忆</button>
+            </div>
+          </details>
         </div>
       `;
     }
@@ -4396,6 +4520,11 @@
     function renderTaskViewsFromCache() {
       const data = _lastMatrixData;
       if (!data) return;
+      const openTaskDetails = container => new Set(Array.from(
+        document.querySelectorAll(`#${container} details[data-task-details][open]`), element => element.dataset.taskDetails
+      ));
+      const openMatrix = openTaskDetails('matrixContainer');
+      const openList = openTaskDetails('listContainer');
       const sorted = data.sorted_tasks || [];
       const qOrder = ['Q1_do_first', 'Q2_schedule', 'Q3_delegate', 'Q4_eliminate'];
       document.getElementById('matrixContainer').innerHTML = qOrder.map(qKey => {
@@ -4404,7 +4533,7 @@
         const isExpanded = Boolean(_expandedQuadrants[qKey]);
         const visibleTasks = isExpanded ? allQTasks : allQTasks.slice(0, TASK_QUAD_INITIAL);
         const cards = visibleTasks.length
-          ? visibleTasks.map(renderTaskCard).join('')
+          ? visibleTasks.map(task => renderTaskCard(task, openMatrix.has(task.memory_id))).join('')
           : `<div style="color:var(--muted);font-size:13px;padding:12px 4px;">暂无该象限事项</div>`;
         const restCount = allQTasks.length - visibleTasks.length;
         const foldBtn = allQTasks.length > TASK_QUAD_INITIAL
@@ -4424,7 +4553,7 @@
 
       const shownList = sorted.slice(0, _taskListVisibleCount);
       document.getElementById('listContainer').innerHTML = shownList.length
-        ? shownList.map(renderTaskCard).join('')
+        ? shownList.map(task => renderTaskCard(task, openList.has(task.memory_id))).join('')
         : `<div class="card-box" style="color:var(--muted);">暂无符合条件的待办事项</div>`;
       if (currentTaskView === 'list') {
         renderLoadMoreBar(
@@ -4442,7 +4571,68 @@
       }
     }
 
+    function todayTaskPlan(tasks, now = Date.now()) {
+      const today = parseIsoYmdHhmm(new Date(now).toISOString()).ymd;
+      const pending = tasks.filter(task => task.payload?.task_status === 'todo');
+      const dueInfo = task => parseIsoYmdHhmm(task.payload.due_at);
+      const startInfo = task => parseIsoYmdHhmm(task.payload.start_at);
+      const overdue = pending.filter(task => task.payload.is_overdue);
+      const upcoming = pending.filter(task => !task.payload.is_overdue);
+      const dueToday = upcoming.filter(task => dueInfo(task)?.ymd === today);
+      const scheduledToday = pending.filter(task => startInfo(task)?.ymd === today);
+      const eligible = upcoming.filter(task => {
+        const start = startInfo(task);
+        return !start || start.ms <= now || task.payload.is_all_day && start.ymd === today;
+      });
+      const byPriority = (left, right) => Number(right.payload.priority_score || 0) - Number(left.payload.priority_score || 0);
+      const byDeadline = (left, right) => (dueInfo(left)?.ms ?? Infinity) - (dueInfo(right)?.ms ?? Infinity);
+      overdue.sort(byDeadline);
+      dueToday.sort(byDeadline);
+      scheduledToday.sort((left, right) => Number(Boolean(right.payload.is_all_day)) - Number(Boolean(left.payload.is_all_day)) || startInfo(left).ms - startInfo(right).ms);
+      const next = [...overdue].sort(byPriority)[0]
+        || eligible.filter(task => dueInfo(task)?.ymd === today || startInfo(task)?.ymd === today).sort(byPriority)[0]
+        || eligible.sort(byPriority)[0];
+      return { today, next, overdue, dueToday, scheduledToday };
+    }
+
+    function renderTodayWorkboard(tasks, counts = {}) {
+      const plan = todayTaskPlan(tasks);
+      const next = plan.next;
+      const dueText = task => {
+        const due = parseIsoYmdHhmm(task.payload.due_at);
+        if (!due) return '';
+        if (due.ymd === plan.today) return task.payload.is_all_day ? '今天' : due.hhmm;
+        return task.payload.is_all_day ? due.ymd : `${due.ymd} ${due.hhmm}`;
+      };
+      const taskId = next ? esc(next.memory_id) : '';
+      const firstStep = next?.payload.subtasks?.find(step => !step.done)?.title;
+      const est = Number(next?.payload.duration_minutes || next?.payload.focus_minutes || 0);
+      document.getElementById('todayNextTask').innerHTML = `
+        <div class="today-kicker" id="todayNextLabel">下一件事</div>
+        ${next ? `<h3 class="today-title">${esc(next.title)}</h3>
+          <div class="meta-row">${dueText(next) ? `<span class="tag ${next.payload.is_overdue ? 'rollover-warn' : ''}">${next.payload.is_overdue ? '逾期 · ' : '截止 · '}${esc(dueText(next))}</span>` : ''}${est > 0 ? `<span class="tag">预计 ${est} 分钟</span>` : ''}</div>
+          ${firstStep ? `<p class="today-step">下一步：${esc(firstStep)}</p>` : ''}
+          <div class="btn-group"><button type="button" class="duodo-btn" data-mem-id="${taskId}" onclick="openFocusLock(this.dataset.memId)">开始专注</button><button type="button" data-mem-id="${taskId}" onclick="openTaskSheet(this.dataset.memId)">查看任务</button></div>`
+          : `<h3 class="today-title">${plan.scheduledToday.length || plan.dueToday.length ? '稍后还有安排' : '暂无可开始的任务'}</h3><div class="btn-group"><button type="button" onclick="openTaskSheet(null)">新建任务</button><button type="button" onclick="setTaskView('list')">查看列表</button></div>`}`;
+      const queue = (items, empty, label = dueText, more = "setTaskView('list')") => items.length ? items.slice(0, 4).map(task => `
+        <button type="button" data-mem-id="${esc(task.memory_id)}" onclick="openTaskSheet(this.dataset.memId)"><span>${esc(task.title)}</span><span>${esc(label(task))}</span></button>`).join('')
+        + (items.length > 4 ? `<button type="button" onclick="${more}">另有 ${items.length - 4} 项，查看更多</button>` : '')
+        : `<p class="today-step">${empty}</p>`;
+      document.getElementById('todayDueLabel').textContent = `今天到期 · ${plan.dueToday.length}`;
+      document.getElementById('todayOverdueLabel').textContent = `已逾期 · ${plan.overdue.length}`;
+      document.getElementById('todayDueTasks').innerHTML = queue(plan.dueToday, '暂无待到期任务');
+      document.getElementById('todayOverdueTasks').innerHTML = queue(plan.overdue, '当前没有逾期任务');
+      const hasCalendar = appPreferences.enabled_modules?.calendar !== false;
+      document.getElementById('todayScheduleCard').hidden = !hasCalendar || !plan.scheduledToday.length;
+      document.getElementById('todayScheduleLabel').textContent = `今日安排 · ${plan.scheduledToday.length}`;
+      document.getElementById('todayScheduledTasks').innerHTML = queue(plan.scheduledToday, '暂无安排', task => task.payload.is_all_day ? '全天' : parseIsoYmdHhmm(task.payload.start_at)?.hhmm, 'openDailyAgenda()');
+      document.getElementById('todayStatsSummary').textContent = `待办 ${counts.total_todo ?? 0} · 已完成 ${counts.total_done ?? 0} · 统计与建议`;
+    }
+
     async function loadTasks() {
+      const request = ++_taskLoadRequest;
+      const requestToken = authToken;
+      const requestSpace = space();
       const sortBy = document.getElementById('taskSortSelect').value;
       const incDone = document.getElementById('includeDoneCheck').checked;
       const queryKey = `${sortBy}:${incDone}`;
@@ -4451,6 +4641,8 @@
         _taskListVisibleCount = TASK_LIST_PAGE_SIZE;
       }
       const data = await apiGet(`/api/tasks/matrix?sort_by=${sortBy}&include_done=${incDone}`);
+      if (request !== _taskLoadRequest || requestToken !== authToken || requestSpace !== space()) return;
+      if (data.error) return showToast(`待办加载失败：${data.error}`, 'error');
       const c = data.summary_counts || {};
       const sorted = data.sorted_tasks || [];
       _lastMatrixData = data;
@@ -4490,20 +4682,7 @@
         </div>
       `;
 
-      const topTodos = sorted.filter(t => t.payload?.task_status !== 'done').slice(0, 4);
-      document.getElementById('topFocusList').innerHTML = topTodos.length
-        ? topTodos.map((t, idx) => {
-            const subs = Array.isArray(t.payload?.subtasks) ? t.payload.subtasks : [];
-            // Without subtasks show the priority score as 分 — rendering it as % read like completion progress
-            const scoreTxt = `${Math.round(Number(t.payload?.priority_score || 0))}分`;
-            return `
-              <div class="focus-row" data-mem-id="${esc(t.memory_id)}" title="${esc(t.title)}" onclick="openTaskSheet(this.dataset.memId)">
-                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px;">${idx + 1}. ${esc(t.title)}</span>
-                <span class="tag score" style="flex-shrink:0;">${subs.length ? subs.filter(s => s.done).length + '/' + subs.length : scoreTxt}</span>
-              </div>
-            `;
-          }).join('')
-        : `<div style="color:#94a3b8;font-size:13px;padding:24px 0;text-align:center;">暂无高优待办</div>`;
+      renderTodayWorkboard(sorted, c);
 
       document.getElementById('taskInsightsBody').innerHTML = renderSvgDonut(c);
 
@@ -5145,6 +5324,7 @@
 
     function syncIdleFocusClockUI() {
       if (focusState) return;
+      document.getElementById('focusMiniBtn').hidden = true;
       const clk = document.getElementById('fcClockDisplay');
       const hint = document.getElementById('fcStatusHint');
       const arc = document.getElementById('fcRingArc');
@@ -5171,6 +5351,7 @@
       const planMins = (explicitMemId && taskObj?.payload?.focus_minutes) ? Number(taskObj.payload.focus_minutes) : fcPlannedMinutes;
       const titleText = taskObj ? taskObj.title : (customTitle || '自由专注');
 
+      const startedAt = Date.now();
       focusState = {
         mode,
         task: taskObj || null,
@@ -5180,7 +5361,9 @@
         remainingSeconds: mode === 'pomodoro' ? planMins * 60 : 0,
         elapsedSeconds: 0,
         paused: false,
-        startedAtIso: new Date().toISOString(),
+        startedAtIso: new Date(startedAt).toISOString(),
+        runningSince: startedAt,
+        accumulatedMs: 0,
         timer: null,
       };
 
@@ -5192,10 +5375,7 @@
 
       focusState.timer = setInterval(() => {
         if (!focusState || focusState.paused) return;
-        focusState.elapsedSeconds += 1;
-        if (focusState.mode === 'pomodoro') {
-          focusState.remainingSeconds = Math.max(0, focusState.totalSeconds - focusState.elapsedSeconds);
-        }
+        syncFocusElapsed(focusState);
         updateFocusTimerUI();
         if (focusState.mode === 'pomodoro' && focusState.remainingSeconds <= 0) {
           clearInterval(focusState.timer);
@@ -5206,10 +5386,20 @@
       }, 1000);
     }
 
+    function syncFocusElapsed(state, now = Date.now()) {
+      const activeMs = state.paused ? 0 : Math.max(0, now - state.runningSince);
+      state.elapsedSeconds = Math.floor((state.accumulatedMs + activeMs) / 1000);
+      if (state.mode === 'pomodoro') state.remainingSeconds = Math.max(0, state.totalSeconds - state.elapsedSeconds);
+    }
+
     function openFocusLock(memId) {
       if (focusState) {
-        clearInterval(focusState.timer);
-        focusState = null;
+        if (focusState.task?.memory_id !== memId) {
+          showToast('已有一段专注正在进行，请先结束或返回该计时。');
+          return;
+        }
+        enterFocusLockOverlay();
+        return;
       }
       startUnifiedFocus(true, memId);
     }
@@ -5221,7 +5411,7 @@
       overlay.dataset.mode = focusState.mode;
       document.getElementById('focusModeChip').textContent = focusState.mode === 'stopwatch' ? '正计时专注' : '番茄专注';
       document.getElementById('focusTaskTitle').textContent = focusState.taskTitle;
-      document.getElementById('focusFinishBtn').textContent = focusState.task ? '完成任务并结束' : '结束并记录';
+      document.getElementById('focusFinishBtn').hidden = !focusState.task;
       document.getElementById('focusAbortReason').value = '';
       document.getElementById('focusAbortBox').style.display = 'none';
       setFocusSceneDockOpen(false);
@@ -5264,7 +5454,11 @@
 
     function togglePauseUnifiedFocus() {
       if (!focusState) return;
+      const now = Date.now();
+      if (focusState.paused) focusState.runningSince = now;
+      else focusState.accumulatedMs += Math.max(0, now - focusState.runningSince);
       focusState.paused = !focusState.paused;
+      syncFocusElapsed(focusState, now);
       const btn = document.getElementById('fcPauseResumeBtn');
       if (btn) btn.textContent = focusState.paused ? '▶ 继续' : '⏸ 暂停';
       updateFocusTimerUI();
@@ -5303,6 +5497,10 @@
       document.getElementById('focusProgressBar').setAttribute('stroke-dashoffset', (100 * (1 - Math.min(1, Math.max(0, ratio)))).toFixed(2));
       document.getElementById('focusClockCaption').textContent = focusState.paused ? '已暂停' : (isSw ? '已专注' : '剩余时间');
       document.getElementById('focusPauseBtn').textContent = focusState.paused ? '继续' : '暂停';
+      const mini = document.getElementById('focusMiniBtn');
+      mini.hidden = false;
+      mini.textContent = `${clockTxt} · ${focusState.paused ? '已暂停' : '专注'}`;
+      mini.setAttribute('aria-label', focusState.paused ? '返回已暂停的专注计时' : '返回专注计时');
 
       const fcClk = document.getElementById('fcClockDisplay');
       const fcHint = document.getElementById('fcStatusHint');
@@ -5323,6 +5521,7 @@
 
     async function finishFocusSession(markDone) {
       if (!focusState) return;
+      syncFocusElapsed(focusState);
       clearInterval(focusState.timer);
       const st = focusState;
       focusState = null;
@@ -5331,7 +5530,7 @@
 
       const effDur = st.mode === 'pomodoro' && st.remainingSeconds <= 0
         ? st.totalSeconds
-        : Math.max(1, st.elapsedSeconds || st.totalSeconds || (st.plannedMinutes * 60));
+        : Math.max(1, st.elapsedSeconds);
 
       const res = await apiPost('/api/focus/record', {
         mode: st.mode,
@@ -5384,6 +5583,7 @@
 
     async function recordAbortedFocus(reason) {
       if (!focusState) return;
+      syncFocusElapsed(focusState);
       clearInterval(focusState.timer);
       const st = focusState;
       focusState = null;
@@ -5579,13 +5779,15 @@
     }
 
     async function copySupervisionLink() {
-      let url = `${location.origin}/?tab=supervision&space_id=${encodeURIComponent(space())}`;
+      if (!window.confirm('创建好友监督链接？持有链接的人可查看已公开的监督事项，并可催办或点赞。')) return;
+      let url;
       try {
         const res = await apiPost('/api/supervision/share', { label: '好友监督看板' });
-        if (res && res.share_token) {
-          url = `${location.origin}/?tab=supervision&share_token=${encodeURIComponent(res.share_token)}`;
-        }
-      } catch (e) {}
+        if (!res?.share_token) return showToast('未能创建监督链接，请确认已登录后重试。');
+        url = `${location.origin}/?tab=supervision&share_token=${encodeURIComponent(res.share_token)}`;
+      } catch (e) {
+        return showToast('未能创建监督链接，请稍后重试。');
+      }
       const okMsg = '🔗 已复制安全监督分享链接（仅限查看公开监督事项与催办/点赞）！';
       if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(url).then(() => showToast(okMsg)).catch(() => fallbackCopyText(url, okMsg));
@@ -5935,18 +6137,17 @@
 
     function renderMemoryCard(h) {
       const m = h.memory;
+      const searchDetails = [
+        h.rrf_score != null ? `<span class="tag score">RRF: ${esc(h.rrf_score)}</span>` : '',
+        h.bm25_rank ? `<span class="tag">BM25 #${esc(h.bm25_rank)}</span>` : '',
+        h.vector_rank ? `<span class="tag">Vector #${esc(h.vector_rank)} (cos=${esc(h.vector_score)})</span>` : '',
+      ].filter(Boolean).join('');
       return `
         <div class="mem-card">
           <div class="task-top">
             <div>
               <span class="tag" style="font-weight:700;">${esc(m.memory_type)}</span>
               <strong style="margin-left:6px;">${esc(m.title)}</strong>
-              <code style="font-size:12px;color:var(--muted);margin-left:8px;">${esc(m.uri)}</code>
-            </div>
-            <div class="btn-group">
-              ${h.rrf_score != null ? `<span class="tag score">RRF: ${h.rrf_score}</span>` : ''}
-              ${h.bm25_rank ? `<span class="tag">BM25 #${h.bm25_rank}</span>` : ''}
-              ${h.vector_rank ? `<span class="tag">Vector #${h.vector_rank} (cos=${h.vector_score})</span>` : ''}
             </div>
           </div>
           <div style="font-size:13.5px;">${esc(m.summary)}</div>
@@ -5959,12 +6160,18 @@
           </div>
           <div class="card-actions">
             <button type="button" onclick="openDetail('${m.memory_id}', 'form')">✏️ 编辑记忆</button>
-            <button type="button" onclick="openDetail('${m.memory_id}', 'markdown')">📝 Markdown 编辑</button>
             <button type="button" onclick="openDetail('${m.memory_id}', 'provenance')">🔎 溯源与版本链</button>
+          </div>
+          <details class="task-card-details">
+            <summary>更多${searchDetails ? '与检索详情' : ''}</summary>
+            <div class="meta-row"><code>${esc(m.uri)}</code>${searchDetails}</div>
+            <div class="card-actions">
+            <button type="button" onclick="openDetail('${m.memory_id}', 'markdown')">📝 Markdown 编辑</button>
             <button type="button" onclick="focusNodeInGraph('${m.memory_id}')">🕸️ 图谱定位</button>
             ${m.memory_type === 'task' ? `<button type="button" onclick="openTaskSheet('${m.memory_id}')">🎨 待办卡片设置</button>` : ''}
             <button type="button" onclick="forgetMemory('${m.memory_id}', ${m.version})" style="color:#b91c1c;">🗑️ 遗忘</button>
-          </div>
+            </div>
+          </details>
         </div>
       `;
     }
@@ -6965,44 +7172,165 @@
       return out.join('');
     }
 
+    const askState = { draft: '', context: null, request: null, answer: null, question: '', status: '' };
+
+    function syncAskDraft(input) {
+      askState.draft = input.value;
+      for (const id of ['askInput', 'askDrawerInput']) {
+        const field = document.getElementById(id);
+        if (field !== input) field.value = askState.draft;
+      }
+    }
+
+    function setAskSuggestion(question) {
+      const input = document.getElementById('askDrawerInput');
+      input.value = question;
+      syncAskDraft(input);
+      input.focus();
+    }
+
+    function setAskContext(context) {
+      askState.context = context;
+      for (const prefix of ['askDrawerContext', 'askFullContext']) {
+        document.getElementById(prefix).hidden = !context;
+        document.getElementById(`${prefix}Label`).textContent = context ? `${context.kind}：${context.title}` : '';
+      }
+    }
+
+    function openAskDrawer(context = null) {
+      if (activeShareToken || authLockOpen || authRequiredFlag && !currentUser || document.getElementById('focusOverlay').open) return;
+      const dialog = document.getElementById('askDrawer');
+      if (context) setAskContext(context);
+      const panel = document.querySelector('.panel.active')?.id;
+      const suggestions = context ? ['这件事之前有哪些相关记录？', '关于这件事有什么未决事项？']
+        : panel === 'panel-calendar' ? ['今天还有什么安排？', '这周有哪些重要截止日期？']
+        : panel === 'panel-tasks' ? ['有哪些需要优先处理的待办？', '最近有哪些逾期任务？']
+        : panel === 'panel-notes' ? ['最近的随记里有哪些行动项？', '回顾一下我这周的日记']
+        : ['最近记录了哪些重要决定？', '我有哪些长期偏好？'];
+      document.getElementById('askSuggestions').innerHTML = suggestions.map(question =>
+        `<button type="button" class="chip-btn" data-question="${esc(question)}" onclick="setAskSuggestion(this.dataset.question)">${esc(question)}</button>`
+      ).join('');
+      if (!dialog.open) dialog.showModal();
+    }
+
+    function toggleAskDrawerSize() {
+      const expanded = document.getElementById('askDrawer').classList.toggle('is-expanded');
+      const button = document.getElementById('askDrawerSize');
+      button.setAttribute('aria-expanded', String(expanded));
+      button.textContent = expanded ? '收起' : '展开';
+    }
+
+    function askAboutTask(memId) {
+      const task = cachedTasksById[memId];
+      if (task) openAskDrawer({ kind: '任务', title: task.title });
+    }
+
+    function openFullAsk() {
+      document.getElementById('askDrawer').close();
+      switchTab('ask');
+      document.getElementById('askInput').focus({ preventScroll: true });
+    }
+
+    function openAskMemoryCitation(memId) {
+      document.getElementById('askDrawer').close();
+      openDetail(memId);
+    }
+
+    function renderAskAnswer(res, question, full) {
+      const citations = res.citations || {};
+      const memories = (citations.memories || []).map(memory =>
+        `<button type="button" class="chip-btn" data-mem-id="${esc(memory.memory_id)}" onclick="openAskMemoryCitation(this.dataset.memId)">${esc(memory.title)}</button>`
+      ).join(' ');
+      const notes = (citations.notes || []).map(note => {
+        const content = String(note.content || '');
+        const date = (note.event_time || '').slice(0, 10);
+        return `<details><summary>${esc(date ? `${date} · ` : '')}${esc(content.slice(0, 46))}${content.length > 46 ? '…' : ''}</summary><blockquote>${esc(content)}</blockquote></details>`;
+      }).join('');
+      const media = citations.media || [];
+      const evidence = res.planning_status === 'overflow' ? '问题范围过大' : res.has_sufficient_evidence ? '有证据支持' : '证据不足';
+      return `<div class="ask-evidence">
+        <strong>${esc(question)}</strong>
+        <div class="meta-row"><span class="tag ${res.has_sufficient_evidence ? 'score' : 'rollover-warn'}">${evidence}</span>${full ? `<span class="tag">${res.query_mode === 'history' ? '历史演进' : '当前状态'}</span><span class="tag">Trace: ${esc(res.trace_id)}</span>` : ''}</div>
+        <div class="answer-box">${renderMarkdownHtml(res.answer || '')}</div>
+        ${memories ? `<div><strong>记忆引用</strong><div class="btn-group">${memories}</div></div>` : ''}
+        ${notes ? `<div><strong>原话证据</strong>${notes}</div>` : ''}
+        ${media.length ? `<div><strong>图片证据</strong>${renderMediaGridHtml(media)}</div>` : ''}
+      </div>`;
+    }
+
+    function paintAskStatus() {
+      for (const [submitId, cancelId, statusId] of [['askSubmitBtn', 'askCancelBtn', 'askStatus'], ['askDrawerSubmit', 'askDrawerCancel', 'askDrawerStatus']]) {
+        document.getElementById(submitId).disabled = Boolean(askState.request);
+        document.getElementById(cancelId).hidden = !askState.request;
+        document.getElementById(statusId).textContent = askState.status;
+      }
+    }
+
+    function cancelAskRequest(status = '已停止等待，可以重新提问。') {
+      const controller = askState.request;
+      askState.request = null;
+      controller?.abort();
+      askState.status = status;
+      paintAskStatus();
+    }
+
+    function resetAskWorkspace() {
+      document.getElementById('askDrawer').close();
+      cancelAskRequest('');
+      setAskContext(null);
+      askState.answer = null;
+      askState.question = '';
+      document.getElementById('askInput').value = '';
+      syncAskDraft(document.getElementById('askInput'));
+      for (const id of ['askResult', 'askDrawerResult', 'traceList']) document.getElementById(id).replaceChildren();
+    }
+
+    function refreshAskTraces() {
+      if (document.getElementById('askTraceDetails').open && !activeShareToken) {
+        loadTraces(askState.answer?.trace_id || '').catch(() => showToast('问答链路加载失败', 'error'));
+      }
+    }
+
     async function askQuestion(btn) {
-      const targetBtn = btn || document.getElementById('askSubmitBtn');
-      if (targetBtn?.disabled) return;
-      const askInput = document.getElementById('askInput');
-      const q = (askInput?.value || '').trim();
-      if (!q) {
-        showToast('请输入想要提问的问题');
-        askInput?.focus();
+      if (askState.request || activeShareToken || authLockOpen || authRequiredFlag && !currentUser) return;
+      const input = document.getElementById(btn?.id === 'askDrawerSubmit' ? 'askDrawerInput' : 'askInput');
+      const question = input.value.trim();
+      if (!question) {
+        askState.status = '请输入想问的问题。';
+        paintAskStatus();
+        input.focus();
         return;
       }
-      await withBtnBusy(targetBtn, '⏳ 思考中...', async () => {
-        const res = await apiPost('/api/ask', { question: q });
-        if (res.error) return showToast(`问答失败: ${res.error}`, 'error');
-        const memCites = ((res.citations || {}).memories || []).map(m => `<button type="button" class="chip-btn" data-mem-id="${esc(m.memory_id)}" onclick="openDetail(this.dataset.memId)">🧠 ${esc(m.title)}</button>`).join(' ');
-        const noteCites = ((res.citations || {}).notes || []).map(n => `<span class="tag">📝 ${esc((n.event_time || '').slice(0, 10))} “${esc((n.content || '').slice(0, 40))}”</span>`).join(' ');
-        const mediaCites = ((res.citations || {}).media || []);
-        const mediaGridHtml = mediaCites.length
-          ? `<div style="margin-top:4px;"><strong>🖼️ 关联图片溯源 (${mediaCites.length} 张):</strong>${renderMediaGridHtml(mediaCites)}</div>`
-          : '';
-        const modeText = res.query_mode === 'history' ? '🕰️ 历史演进追溯' : '📍 当前状态检索';
-        const askResultEl = document.getElementById('askResult');
-        if (askResultEl) {
-          askResultEl.innerHTML = `
-          <div style="margin-top:10px;" class="meta-row">
-            <span class="tag score">${modeText}</span>
-            <span class="tag" style="background:${res.has_sufficient_evidence ? '#dcfce7;color:#166534' : '#fef3c7;color:#92400e'}">${res.planning_status === 'overflow' ? '子问题超出上限' : (res.has_sufficient_evidence ? '✓ 证据充分' : '⚠️ 证据不足安全拒答')}</span>
-            <span class="tag">Trace: ${esc(res.trace_id)}</span>
-          </div>
-          <div class="answer-box">${renderMarkdownHtml(res.answer || '')}</div>
-          <div style="margin-top:8px;font-size:12px;display:grid;gap:6px;">
-            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><strong>引用记忆卡:</strong> ${memCites || '<span style="color:var(--muted);">无</span>'}</div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><strong>支撑原话:</strong> ${noteCites || '<span style="color:var(--muted);">无</span>'}</div>
-            ${mediaGridHtml}
-          </div>
-        `;
+      syncAskDraft(input);
+      const context = askState.context;
+      const requestQuestion = context ? `${question}\n当前参考${context.kind}：${context.title}` : question;
+      const controller = new AbortController();
+      const requestSpace = space();
+      const requestToken = authToken;
+      askState.request = controller;
+      askState.status = '正在检索记忆与原话…';
+      paintAskStatus();
+      try {
+        const res = await apiPost('/api/ask', { question: requestQuestion }, { signal: controller.signal });
+        if (askState.request !== controller || requestSpace !== space() || requestToken !== authToken) return;
+        if (res.error) {
+          askState.status = `问答失败：${res.error}。可重试。`;
+          return;
         }
-        loadTraces(res.trace_id);
-      });
+        askState.answer = res;
+        askState.question = context ? `${question}（${context.kind}：${context.title}）` : question;
+        document.getElementById('askDrawerResult').innerHTML = renderAskAnswer(res, askState.question, false);
+        document.getElementById('askResult').innerHTML = renderAskAnswer(res, askState.question, true);
+        askState.status = '';
+        refreshAskTraces();
+      } catch (error) {
+        if (askState.request === controller) askState.status = `问答未完成：${error?.message || '网络异常'}。可重试。`;
+      } finally {
+        if (askState.request === controller) {
+          askState.request = null;
+          paintAskStatus();
+        }
+      }
     }
 
     function traceStage(label, payload, duration, open = false) {
@@ -7037,7 +7365,10 @@
     }
 
     async function loadTraces(focusTraceId = '') {
+      const requestSpace = space();
+      const requestToken = authToken;
       const data = await apiGet('/api/traces');
+      if (requestSpace !== space() || requestToken !== authToken) return;
       const traces = data.traces || [];
       document.getElementById('traceList').innerHTML = traces.map(t => `
         <div class="mem-card">
@@ -7462,6 +7793,7 @@
           errEl.style.display = 'block';
           return;
         }
+        resetAskWorkspace();
         authToken = data.token;
         localStorage.setItem('tm_auth_token', authToken);
         currentUser = data.user;
@@ -7504,13 +7836,17 @@
       localStorage.removeItem('tm_sent_reminders');
       currentUser = null;
       currentQuota = null;
+      resetAskWorkspace();
       lastLoadedTasks = [];
+      _taskLoadRequest += 1;
+      _lastMatrixData = null;
       cachedTasksById = {};
       _cachedMemosById = {};
       _countdownCache = { items: [], top_capsules: [], today_lunar: '' };
       activeDetailState = null;
       document.getElementById('detailModal')?.classList.remove('open');
-      ['matrixContainer', 'listContainer', 'topFocusList', 'memoriesList', 'notesStreamList', 'askResult', 'traceList', 'adminUsersList'].forEach(id => {
+      renderTodayWorkboard([]);
+      ['matrixContainer', 'listContainer', 'taskKpis', 'taskInsightsBody', 'diagList', 'memoriesList', 'notesStreamList', 'adminUsersList'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.innerHTML = '';
       });
@@ -7534,6 +7870,7 @@
         currentQuota = data.quota || null;
       } else {
         if (authToken && data._httpStatus === 200) {
+          resetAskWorkspace();
           authToken = '';
           localStorage.removeItem('tm_auth_token');
         }
@@ -8834,8 +9171,8 @@
     }
 
     // ---------------- Phase 3: Calendar Week Timeline & Month Panorama ----------------
-    let _calSubView = 'week'; // 'week' | 'month'
-    let _calSelectedDate = fmtLocalYMD(new Date());
+    let _calSubView = matchMedia('(max-width: 768px)').matches ? 'day' : 'week';
+    let _calSelectedDate = parseIsoYmdHhmm(new Date().toISOString()).ymd;
     let _calOverviewCache = null;
     let _calWeekScrolledOnce = false;
     let _calWeekDensity = localStorage.getItem('tracetodo_cal_week_density') || 'adaptive'; // 'adaptive' | 'uniform'
@@ -8857,8 +9194,19 @@
       if (sub === 'countdown' && appPreferences.enabled_modules?.countdown !== false) {
         _calSubView = 'countdown';
       } else {
-        _calSubView = sub === 'month' ? 'month' : 'week';
+        _calSubView = ['day', 'week', 'month'].includes(sub) ? sub : 'week';
       }
+      renderCalendarPanel();
+    }
+
+    function openDailyAgenda() {
+      _calSelectedDate = parseIsoYmdHhmm(new Date().toISOString()).ymd;
+      _calSubView = 'day';
+      switchTab('calendar');
+    }
+
+    function syncCalendarViewControls() {
+      document.getElementById('calSubDayBtn')?.classList.toggle('active', _calSubView === 'day');
       document.getElementById('calSubWeekBtn')?.classList.toggle('active', _calSubView === 'week');
       document.getElementById('calSubMonthBtn')?.classList.toggle('active', _calSubView === 'month');
       document.getElementById('calSubCountdownBtn')?.classList.toggle('active', _calSubView === 'countdown');
@@ -8879,17 +9227,18 @@
       document.getElementById('calDensityAdaptiveBtn')?.classList.toggle('active', _calWeekDensity === 'adaptive');
       document.getElementById('calDensityUniformBtn')?.classList.toggle('active', _calWeekDensity === 'uniform');
       if (addCdBtn) addCdBtn.style.display = _calSubView === 'countdown' ? '' : 'none';
-      if (statsEl) statsEl.style.display = _calSubView === 'countdown' ? 'none' : 'flex';
-      renderCalendarPanel();
+      if (statsEl) statsEl.style.display = _calSubView === 'countdown' || _calSubView === 'day' ? 'none' : 'flex';
     }
 
     function shiftCalendarPeriod(delta) {
       if (delta === 0) {
-        _calSelectedDate = fmtLocalYMD(new Date());
+        _calSelectedDate = parseIsoYmdHhmm(new Date().toISOString()).ymd;
       } else {
         const parts = _calSelectedDate.split('-').map(Number);
         const cur = new Date(parts[0], (parts[1] || 1) - 1, parts[2] || 1);
-        if (_calSubView === 'week') {
+        if (_calSubView === 'day') {
+          cur.setDate(cur.getDate() + delta);
+        } else if (_calSubView === 'week') {
           cur.setDate(cur.getDate() + delta * 7);
         } else {
           cur.setMonth(cur.getMonth() + delta);
@@ -9144,6 +9493,7 @@
 
     let _calRenderSeq = 0;
     async function renderCalendarPanel() {
+      syncCalendarViewControls();
       // Monotonic request token: rapid ◀ / ▶ / 今天 clicks fire overlapping fetches, and a slow
       // earlier response must never overwrite the view the user navigated to afterwards.
       const seq = ++_calRenderSeq;
@@ -9158,7 +9508,7 @@
       }
       const subView = _calSubView === 'month' ? 'month' : 'week';
       // Reflect the target view / date immediately instead of keeping the previous sub-view's header
-      if (heading) heading.textContent = `${_calSelectedDate.slice(0, 7).replace('-', ' 年 ')} 月 · ${subView === 'week' ? '周时间轴' : '月全景'}（加载中…）`;
+      if (heading) heading.textContent = _calSubView === 'day' ? `${_calSelectedDate} · 日程（加载中…）` : `${_calSelectedDate.slice(0, 7).replace('-', ' 年 ')} 月 · ${subView === 'week' ? '周时间轴' : '月全景'}（加载中…）`;
       if (selLabel) selLabel.textContent = `选中：${_calSelectedDate}`;
       const anchor = _calSelectedDate;
       let res;
@@ -9180,7 +9530,7 @@
     function paintCalendarOverview(data) {
       const summary = data.summary || {};
       const days = data.days || [];
-      document.getElementById('calPeriodHeading').textContent = `${data.period_label || ''} · ${_calSubView === 'week' ? '周时间轴' : '月全景'}`;
+      document.getElementById('calPeriodHeading').textContent = _calSubView === 'day' ? `${_calSelectedDate} · 日程` : `${data.period_label || ''} · ${_calSubView === 'week' ? '周时间轴' : '月全景'}`;
       document.getElementById('calSelectedDateLabel').textContent = `选中：${_calSelectedDate}`;
       const statsEl = document.getElementById('calSummaryStatsBar');
       if (statsEl) {
@@ -9193,7 +9543,7 @@
 
       if (_calSubView === 'week') {
         paintWeekTimeline(days, data.now_minute ?? 540);
-      } else {
+      } else if (_calSubView === 'month') {
         paintMonthPanorama(days, data.period_label || '');
       }
 
@@ -9964,6 +10314,7 @@
         if (actionsEl) {
           actionsEl.innerHTML = `
             <button type="button" class="primary" onclick="startDetailModalEdit()">✏️ 编辑此篇日记</button>
+            <button type="button" onclick="askAboutOpenNote()">问这条记录</button>
             <button type="button" style="color:#b91c1c;" onclick="forgetNoteFromStream('${esc(item.note_id)}')">🗑️ 遗忘</button>
           `;
         }
@@ -9990,6 +10341,7 @@
           actionsEl.innerHTML = `
             <button type="button" onclick="toggleMemoPin('${esc(item.note_id)}', ${item.pinned ? 'false' : 'true'})">${item.pinned ? '取消置顶' : '📌 置顶'}</button>
             <button type="button" class="primary" onclick="startDetailModalEdit()">✏️ 编辑备忘</button>
+            <button type="button" onclick="askAboutOpenNote()">问这条记录</button>
             <button type="button" style="color:#b91c1c;" onclick="forgetNoteFromStream('${esc(item.note_id)}')">🗑️ 遗忘</button>
           `;
         }
@@ -10203,6 +10555,16 @@
           showToast(`📖 ${entry.journal_date} 日记已保存`);
         });
       }
+    }
+
+    function askAboutOpenNote() {
+      if (!_detailModalState || _detailModalState.editing) return;
+      const { kind, noteId } = _detailModalState;
+      const journal = kind === 'journal';
+      const item = journal ? _cachedJournalsById[noteId] : _cachedMemosById[noteId];
+      const title = journal ? item?.journal_date : item?.title;
+      closeNoteDetailModal();
+      openAskDrawer(title ? { kind: journal ? '日记' : '备忘录', title } : null);
     }
 
     function closeNoteDetailModal() {
@@ -10561,6 +10923,7 @@
     function openMediaLightbox(mediaId) {
       const m = _mediaCacheById[mediaId];
       if (!m) return;
+      document.getElementById('askDrawer').close();
       const kb = Math.max(1, Math.round((m.size_bytes || 0) / 1024));
       document.getElementById('mediaLightboxBody').innerHTML = `
         <div style="text-align:center;background:var(--surface-alt);border-radius:12px;padding:10px;border:1px solid var(--border);">
@@ -11117,7 +11480,7 @@
       if (document.getElementById('panel-supervision').classList.contains('active')) loadSupervisionBoard();
       if (document.getElementById('panel-memories').classList.contains('active')) loadMemories();
       if (document.getElementById('panel-graph').classList.contains('active')) loadGraph();
-      if (document.getElementById('panel-ask').classList.contains('active')) loadTraces();
+      if (document.getElementById('panel-ask').classList.contains('active')) refreshAskTraces();
       if (document.getElementById('panel-admin').classList.contains('active')) loadAdminConsole();
     }
 
@@ -11125,6 +11488,8 @@
     (function initFromQuery() {
       const qShare = dashboardParams.get('share_token');
       if (qShare) activeShareToken = qShare.trim();
+      document.getElementById('workspaceFloats').hidden = Boolean(activeShareToken);
+      applyTaskCardDensity();
       const qTab = dashboardParams.get('tab');
       if (qTab && document.getElementById(`panel-${qTab}`)) {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -11140,6 +11505,7 @@
     let _syncCheckInFlight = false;
 
     function isAnyEditorModalOpen() {
+      if (document.getElementById('askDrawer').open) return true;
       if (_imagePickerActive || _imageUploadInFlight) return true;
       if (_inlineEditMemoId || _inlineEditJournalId) return true;
       const ids = [
@@ -11161,7 +11527,7 @@
 
     document.addEventListener('keydown', ev => {
       if (ev.key !== 'Escape') return;
-      if (document.getElementById('focusOverlay').open) return;
+      if (document.getElementById('focusOverlay').open || document.getElementById('askDrawer').open) return;
       if (document.getElementById('mediaLightboxModal')?.classList.contains('open')) {
         closeMediaLightbox();
         return;
