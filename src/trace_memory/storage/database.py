@@ -353,7 +353,6 @@ CREATE TABLE IF NOT EXISTS ingest_jobs (
     note_id TEXT NOT NULL,
     actor_id TEXT NOT NULL DEFAULT 'user',
     idempotency_key TEXT NOT NULL DEFAULT '',
-    requires_barrier INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'queued',
     attempts INTEGER NOT NULL DEFAULT 0,
     error_message TEXT NOT NULL DEFAULT '',
@@ -503,13 +502,6 @@ class Database:
         for col_name, ddl in migrations:
             if col_name not in existing_cols:
                 conn.execute(ddl)
-        job_cols = {
-            str(r[1]) for r in conn.execute("PRAGMA table_info(ingest_jobs)").fetchall()
-        }
-        if "requires_barrier" not in job_cols:
-            conn.execute(
-                "ALTER TABLE ingest_jobs ADD COLUMN requires_barrier INTEGER NOT NULL DEFAULT 0"
-            )
         conn.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_raw_notes_kind_pin

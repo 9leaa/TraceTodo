@@ -212,7 +212,6 @@ class AppContainer:
             job_repo=job_repo,
             processor=ingest_service.process_persisted_note,
             worker_count=cfg.ingest_worker_count,
-            max_parallel_per_space=cfg.ingest_space_concurrency,
             llm_max_concurrency=cfg.llm_max_concurrency,
             max_retries=cfg.ingest_max_retries,
             on_job_settled=lambda sp, st_name: sync_tracker.bump(sp, reason=f"ingest_{st_name}"),
