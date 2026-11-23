@@ -56,16 +56,19 @@ class TestAskTaskTool(unittest.TestCase):
 
         def answer(_url, _key, payload, **_options):
             payloads.append(payload)
+            if len(payloads) == 1:
+                return {"choices": [{"message": {"content": json.dumps({
+                    "questions": ["目前还有哪些任务没完成？"],
+                    "tool_calls": [{"question": 1, "name": "list_tasks", "arguments": {"status": "todo"}}],
+                })}}]}
             self.assertEqual(
                 [t["function"]["name"] for t in payload["tools"]],
                 ["list_tasks", "list_notes_by_date"],
             )
-            if len(payloads) == 1:
-                return {"choices": [{"message": {"content": None, "tool_calls": [{
-                    "id": "call_task", "type": "function",
-                    "function": {"name": "list_tasks", "arguments": '{"status":"todo"}'},
-                }]}}]}
-            observation = json.loads(payload["messages"][-1]["content"])
+            bundle = json.loads(payload["messages"][-1]["content"].split(
+                "按子问题组织的证据与首批工具结果：\n", 1
+            )[1])
+            observation = bundle["initial_tool_results"][0]
             self.assertEqual(observation["data"]["total"], 1)
             self.assertIsNone(observation["data"]["next_offset"])
             self.assertEqual([m["memory_id"] for m in observation["memories"]], [stale.memory_id])
@@ -84,6 +87,9 @@ class TestAskTaskTool(unittest.TestCase):
         self.assertEqual(result["citations"]["memories"][0]["memory_id"], stale.memory_id)
         self.assertEqual(self.app.memory_repo.get("qa", stale.memory_id), stale)
         self.assertEqual(len(payloads), 2)
+        trace = self.app.trace_repo.list_traces("qa")[0]["details"]["pipeline"]
+        self.assertEqual(trace["initial_tools"][0]["name"], "list_tasks")
+        self.assertEqual(trace["react"]["follow_up_tools"], [])
 
     def test_due_date_and_quadrants_are_filtered_before_paging(self):
         args = {"quadrants": ["Q1", "Q2"], "due_on": "2026-11-23", "limit": 1}
