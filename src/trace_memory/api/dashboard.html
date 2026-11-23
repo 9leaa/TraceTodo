@@ -1464,15 +1464,25 @@
       overflow-x: auto;
     }
     .cal-week-minw {
-      min-width: 780px;
+      min-width: 680px;
+      width: 100%;
     }
     .cal-week-hdr-row,
     .cal-week-allday-row,
     .cal-week-body-grid {
       display: grid;
-      grid-template-columns: 58px repeat(7, minmax(100px, 1fr));
+      grid-template-columns: 56px repeat(7, minmax(0, 1fr));
+      width: 100%;
+    }
+    .cal-week-hdr-row > *,
+    .cal-week-allday-row > *,
+    .cal-week-body-grid > * {
+      min-width: 0;
     }
     .cal-week-hdr-row {
+      position: sticky;
+      top: 0;
+      z-index: 12;
       border-bottom: 1px solid var(--border);
       background: var(--surface-alt);
     }
@@ -1481,6 +1491,7 @@
       border-left: 1px solid var(--border);
       text-align: center;
       cursor: pointer;
+      overflow: hidden;
       transition: background 0.14s ease;
     }
     .cal-week-hdr-cell:hover { background: var(--primary-soft); }
@@ -1499,11 +1510,12 @@
       flex-direction: column;
       gap: 3px;
       min-height: 34px;
+      overflow: hidden;
     }
     .cal-week-vscroll {
       max-height: calc(100vh - 220px);
       min-height: 440px;
-      overflow-y: auto;
+      overflow: auto;
       position: relative;
     }
     .cal-time-gutter {
@@ -1519,7 +1531,7 @@
       font-size: 10.5px;
       font-weight: 600;
       color: var(--muted);
-      transform: translateY(-7px);
+      transform: translateY(-50%);
       pointer-events: none;
       line-height: 1;
     }
@@ -1646,6 +1658,51 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    .pomo-preset-btn {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.14s ease;
+    }
+    .pomo-preset-btn:hover {
+      border-color: var(--primary);
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+    .pomo-preset-btn.active {
+      background: var(--primary);
+      color: #ffffff;
+      border-color: var(--primary);
+      font-weight: 700;
+      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.28);
+    }
+    .cal-dur-custom-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      transition: border-color 0.14s ease, background 0.14s ease;
+    }
+    .cal-dur-custom-wrap.active {
+      border-color: var(--primary);
+      background: var(--primary-soft);
+      box-shadow: 0 0 0 1px var(--primary);
+    }
+    .cal-dur-custom-wrap input,
+    .cal-dur-custom-wrap select {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
     }
 
     /* ---------------- Phase 3: Countdown & Anniversary Big-Number Card Wall ---------------- */
@@ -2004,13 +2061,13 @@
     /* Left rail TIP: never clip the tip card; hide it on short viewports instead */
     .left-rail > .tabs, .rail-tip-box { flex-shrink: 0; }
     @media (max-height: 760px) and (min-width: 769px) { .rail-tip-box { display: none; } }
-    /* Calendar: equal-width month columns (long titles truncate) and a narrower week minimum */
+    /* Calendar: equal-width month columns (long titles truncate) and unified week grid alignment */
     .cal-month-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
     .cal-day-cell { min-width: 0; overflow: hidden; }
-    .cal-week-minw { min-width: 680px; }
+    .cal-week-minw { min-width: 680px; width: 100%; }
     .cal-week-hdr-row,
     .cal-week-allday-row,
-    .cal-week-body-grid { grid-template-columns: 52px repeat(7, minmax(84px, 1fr)); }
+    .cal-week-body-grid { grid-template-columns: 56px repeat(7, minmax(0, 1fr)); }
     #panel-calendar { min-width: 0; max-width: 100%; }
     /* Memo masonry: size columns by container width (the notes pane is narrower than the viewport) */
     .memo-masonry { column-count: auto; column-width: 240px; }
@@ -2163,15 +2220,13 @@
           <div id="calSummaryStatsBar" style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--muted);"></div>
         </div>
 
-        <!-- Subview 1: Week 00:00-24:00 Macaron Timeline -->
+        <!-- Subview 1: Week 00:00-24:00 Macaron Timeline (single scroll container locks header & columns) -->
         <div id="calWeekContainer" class="cal-week-shell" style="margin-bottom:16px;">
-          <div class="cal-week-xscroll">
+          <div class="cal-week-vscroll" id="calWeekScrollBox">
             <div class="cal-week-minw">
               <div class="cal-week-hdr-row" id="calWeekHeaderRow"></div>
               <div class="cal-week-allday-row" id="calWeekAllDayRow"></div>
-              <div class="cal-week-vscroll" id="calWeekScrollBox">
-                <div class="cal-week-body-grid" id="calWeekBodyGrid"></div>
-              </div>
+              <div class="cal-week-body-grid" id="calWeekBodyGrid"></div>
             </div>
           </div>
         </div>
@@ -2712,9 +2767,10 @@
               <input type="checkbox" id="tsAllDay" checked onchange="toggleAllDayInput()" /> 全天
             </label>
             <span id="tsTimeRangeWrap" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;">
-              <input type="time" id="tsStartTime" value="" title="可选开始时间（留空则仅按截止时刻排入）" />
+              <input type="time" id="tsStartTime" value="" title="可选开始时间（留空则按截止时刻排入）" onchange="onTaskSheetStartTimeChange()" />
               <span style="font-size:12px;color:var(--muted);">至</span>
-              <input type="time" id="tsTime" value="18:00" title="结束/截止时间" />
+              <input type="time" id="tsTime" value="18:00" title="结束/截止时间" onchange="onTaskSheetEndTimeChange()" />
+              <span id="tsTimeDurationHint" style="font-size:11.5px;color:var(--primary);font-weight:600;"></span>
             </span>
           </div>
         </div>
@@ -3091,11 +3147,11 @@
       <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center;background:var(--surface-alt);padding:10px;border-radius:10px;">
         <label style="font-size:12px;display:grid;gap:4px;">
           <span style="color:var(--muted);">排期日期</span>
-          <input type="date" id="calSlotDateInput" />
+          <input type="date" id="calSlotDateInput" onchange="updateCalSlotRangePreview()" oninput="updateCalSlotRangePreview()" />
         </label>
         <label style="font-size:12px;display:grid;gap:4px;" id="calSlotTimeWrap">
           <span style="color:var(--muted);">开始时刻</span>
-          <input type="time" id="calSlotTimeInput" value="09:00" />
+          <input type="time" id="calSlotTimeInput" value="09:00" onchange="updateCalSlotRangePreview()" oninput="updateCalSlotRangePreview()" />
         </label>
         <label style="font-size:12.5px;display:flex;align-items:center;gap:6px;padding-top:16px;cursor:pointer;">
           <input type="checkbox" id="calSlotAllDayToggle" onchange="onCalSlotAllDayChange()" />
@@ -3112,6 +3168,17 @@
         <button type="button" class="pomo-preset-btn" data-dur="120" onclick="selectCalSlotDuration(120)">2h</button>
         <button type="button" class="pomo-preset-btn" data-dur="180" onclick="selectCalSlotDuration(180)">3h</button>
         <button type="button" class="pomo-preset-btn" data-dur="240" onclick="selectCalSlotDuration(240)">4h</button>
+        <button type="button" class="pomo-preset-btn" data-dur="360" onclick="selectCalSlotDuration(360)">6h</button>
+        <button type="button" class="pomo-preset-btn" data-dur="480" onclick="selectCalSlotDuration(480)">8h</button>
+        <div class="cal-dur-custom-wrap" id="calSlotCustomDurWrap">
+          <span style="font-size:11.5px;color:var(--muted);">自定义</span>
+          <input type="number" id="calSlotCustomDurInput" min="0.25" max="24" step="0.5" value="1" oninput="onCalSlotCustomDurationInput()" style="width:66px;padding:4px 6px;font-size:12px;" />
+          <select id="calSlotCustomDurUnit" onchange="onCalSlotCustomDurationUnitChange()" style="padding:4px 6px;font-size:12px;">
+            <option value="hours">小时</option>
+            <option value="minutes">分钟</option>
+          </select>
+        </div>
+        <div id="calSlotRangePreview" style="width:100%;font-size:11.5px;color:var(--primary);font-weight:600;margin-top:2px;"></div>
       </div>
 
       <div class="duodo-card" style="display:grid;gap:8px;">
@@ -3335,13 +3402,19 @@
       const pct = subs.length ? Math.round((doneSubs / subs.length) * 100) : 0;
 
       let dueLabel = '';
-      if (p.due_at) {
-        if (!p.is_all_day && p.start_at && p.start_at.length >= 16 && p.due_at.length >= 16) {
-          dueLabel = p.start_at.slice(0, 10) === p.due_at.slice(0, 10)
-            ? `${p.start_at.slice(0, 10)} ${p.start_at.slice(11, 16)}–${p.due_at.slice(11, 16)}`
-            : `${p.start_at.slice(0, 16).replace('T', ' ')} → ${p.due_at.slice(5, 16).replace('T', ' ')}`;
+      if (p.due_at || p.start_at) {
+        const stInfo = parseIsoYmdHhmm(p.start_at);
+        const duInfo = parseIsoYmdHhmm(p.due_at);
+        if (!p.is_all_day && stInfo && (duInfo || p.duration_minutes)) {
+          const fallbackDur = Math.max(15, Math.min(1440, Number(p.duration_minutes) || Math.max(30, Number(p.focus_minutes) || 60)));
+          const effEnd = (duInfo && duInfo.ms > stInfo.ms) ? duInfo : addMinutesToYmdHhmm(stInfo.ymd, stInfo.hhmm, fallbackDur);
+          dueLabel = stInfo.ymd === effEnd.ymd
+            ? `${stInfo.ymd} ${stInfo.hhmm}–${effEnd.hhmm}`
+            : `${stInfo.ymd} ${stInfo.hhmm} → ${effEnd.ymd.slice(5)} ${effEnd.hhmm}`;
+        } else if (duInfo) {
+          dueLabel = p.is_all_day ? duInfo.ymd : `${duInfo.ymd} ${duInfo.hhmm}`;
         } else {
-          dueLabel = p.due_at.slice(0, p.is_all_day ? 10 : 16).replace('T', ' ');
+          dueLabel = String(p.due_at || p.start_at).slice(0, p.is_all_day ? 10 : 16).replace('T', ' ');
         }
       }
       const dueBadge = dueLabel
@@ -3483,6 +3556,9 @@
       const c = data.summary_counts || {};
       const sorted = data.sorted_tasks || [];
       lastLoadedTasks = sorted;
+      for (const item of sorted) {
+        cachedTasksById[item.memory_id] = item;
+      }
 
       const totalAll = (c.total_todo ?? 0) + (c.total_done ?? 0);
       const pct = totalAll ? Math.round(((c.total_done ?? 0) / totalAll) * 100) : 0;
@@ -3790,6 +3866,127 @@
       }
     }
 
+    let _tsActiveDurationMin = 60;
+
+    function hhmmToMinutes(hhmm) {
+      const m = /^(\d{2}):(\d{2})$/.exec(String(hhmm || '').trim());
+      if (!m) return null;
+      const hh = Number(m[1]);
+      const mm = Number(m[2]);
+      if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+      return hh * 60 + mm;
+    }
+
+    function parseIsoYmdHhmm(rawIso) {
+      const raw = String(rawIso || '').trim();
+      if (!raw) return null;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        const ms = Date.parse(`${raw}T23:59:59+08:00`);
+        return Number.isNaN(ms) ? null : { ymd: raw, hhmm: '23:59', totalMin: 23 * 60 + 59, ms };
+      }
+      let norm = raw;
+      if (norm.endsWith('Z')) norm = norm.slice(0, -1) + '+00:00';
+      else if (!/[+-]\d{2}:?\d{2}$/.test(norm)) norm += '+08:00';
+      const ms = Date.parse(norm);
+      if (Number.isNaN(ms)) {
+        const m = raw.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+        if (!m) return null;
+        const tMin = hhmmToMinutes(m[2]);
+        if (tMin === null) return null;
+        return { ymd: m[1], hhmm: m[2], totalMin: tMin, ms: Date.parse(`${m[1]}T${m[2]}:00+08:00`) };
+      }
+      const bj = new Date(ms + 8 * 3600000);
+      const y = bj.getUTCFullYear();
+      const mo = String(bj.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(bj.getUTCDate()).padStart(2, '0');
+      const hhNum = bj.getUTCHours();
+      const mmNum = bj.getUTCMinutes();
+      const hh = String(hhNum).padStart(2, '0');
+      const mm = String(mmNum).padStart(2, '0');
+      return { ymd: `${y}-${mo}-${d}`, hhmm: `${hh}:${mm}`, totalMin: hhNum * 60 + mmNum, ms };
+    }
+
+    function addMinutesToYmdHhmm(ymd, hhmm, addMins) {
+      const parts = String(ymd || '').split('-').map(Number);
+      const startMin = hhmmToMinutes(hhmm);
+      if (parts.length !== 3 || startMin === null) return { ymd, hhmm, dayOffset: 0 };
+      const baseUtc = Date.UTC(parts[0], (parts[1] || 1) - 1, parts[2] || 1, Math.floor(startMin / 60), startMin % 60, 0);
+      const endUtc = new Date(baseUtc + Math.round(Number(addMins) || 0) * 60000);
+      const endYmd = `${endUtc.getUTCFullYear()}-${String(endUtc.getUTCMonth() + 1).padStart(2, '0')}-${String(endUtc.getUTCDate()).padStart(2, '0')}`;
+      const endHhmm = `${String(endUtc.getUTCHours()).padStart(2, '0')}:${String(endUtc.getUTCMinutes()).padStart(2, '0')}`;
+      const dayStartUtc = Date.UTC(parts[0], (parts[1] || 1) - 1, parts[2] || 1);
+      const endDayUtc = Date.UTC(endUtc.getUTCFullYear(), endUtc.getUTCMonth(), endUtc.getUTCDate());
+      const dayOffset = Math.round((endDayUtc - dayStartUtc) / 86400000);
+      return { ymd: endYmd, hhmm: endHhmm, dayOffset };
+    }
+
+    function formatMinsHuman(mins) {
+      const m = Math.max(0, Math.round(Number(mins) || 0));
+      const h = Math.floor(m / 60);
+      const rem = m % 60;
+      if (!h) return `${rem}分钟`;
+      if (!rem) return `${h}小时`;
+      return `${h}小时${rem}分`;
+    }
+
+    function updateTaskSheetTimeHint() {
+      const hintEl = document.getElementById('tsTimeDurationHint');
+      if (!hintEl) return;
+      const allDay = Boolean(document.getElementById('tsAllDay')?.checked);
+      const st = (document.getElementById('tsStartTime')?.value || '').trim();
+      const et = (document.getElementById('tsTime')?.value || '').trim();
+      if (allDay || !st || !et) {
+        hintEl.textContent = '';
+        hintEl.style.color = 'var(--primary)';
+        return;
+      }
+      const sm = hhmmToMinutes(st);
+      const em = hhmmToMinutes(et);
+      if (sm === null || em === null) {
+        hintEl.textContent = '';
+        return;
+      }
+      if (sm === em) {
+        hintEl.textContent = '⚠️ 开始与结束时刻不能相同';
+        hintEl.style.color = '#dc2626';
+        return;
+      }
+      const overnight = em < sm;
+      const dur = overnight ? (1440 - sm + em) : (em - sm);
+      hintEl.style.color = 'var(--primary)';
+      hintEl.textContent = overnight ? `次日 ${et} · 共 ${formatMinsHuman(dur)}` : `共 ${formatMinsHuman(dur)}`;
+    }
+
+    function onTaskSheetStartTimeChange() {
+      const st = (document.getElementById('tsStartTime')?.value || '').trim();
+      const etEl = document.getElementById('tsTime');
+      const ymd = document.getElementById('tsDate')?.value || fmtLocalYMD(new Date());
+      if (st && etEl) {
+        const sm = hhmmToMinutes(st);
+        const em = hhmmToMinutes(etEl.value);
+        const keepSpan = Math.max(15, Math.min(1380, _tsActiveDurationMin || 60));
+        if (em === null || sm === null || sm >= em) {
+          const nextEnd = addMinutesToYmdHhmm(ymd, st, keepSpan);
+          etEl.value = nextEnd.hhmm;
+          _tsActiveDurationMin = keepSpan;
+        } else {
+          _tsActiveDurationMin = Math.max(15, Math.min(1440, em - sm));
+        }
+      }
+      updateTaskSheetTimeHint();
+    }
+
+    function onTaskSheetEndTimeChange() {
+      const st = (document.getElementById('tsStartTime')?.value || '').trim();
+      const et = (document.getElementById('tsTime')?.value || '').trim();
+      const sm = hhmmToMinutes(st);
+      const em = hhmmToMinutes(et);
+      if (sm !== null && em !== null && sm !== em) {
+        _tsActiveDurationMin = em > sm ? (em - sm) : (1440 - sm + em);
+      }
+      updateTaskSheetTimeHint();
+    }
+
     function openTaskSheet(memId) {
       const t = memId ? cachedTasksById[memId] : null;
       editingMemoryId = t ? t.memory_id : null;
@@ -3808,13 +4005,50 @@
       document.getElementById('tsSupervision').checked = Boolean(p.supervision_enabled);
       updatePrivacyHint();
 
+      _tsActiveDurationMin = 60;
       if (p.due_at || p.start_at) {
-        const anchorDate = (p.start_at || p.due_at).slice(0, 10);
+        const startInfo = parseIsoYmdHhmm(p.start_at);
+        const dueInfo = parseIsoYmdHhmm(p.due_at);
+        const allDay = Boolean(p.is_all_day) || (!p.start_at && (!p.due_at || String(p.due_at).trim().length <= 10));
+        const anchorDate = (startInfo || dueInfo)?.ymd || String(p.start_at || p.due_at).slice(0, 10);
         document.getElementById('tsDate').value = anchorDate;
-        const allDay = p.is_all_day !== false;
         document.getElementById('tsAllDay').checked = allDay;
-        document.getElementById('tsStartTime').value = (!allDay && p.start_at && p.start_at.length >= 16) ? p.start_at.slice(11, 16) : '';
-        document.getElementById('tsTime').value = (p.due_at && p.due_at.length >= 16) ? p.due_at.slice(11, 16) : '18:00';
+
+        if (allDay) {
+          document.getElementById('tsStartTime').value = '';
+          document.getElementById('tsTime').value = dueInfo ? dueInfo.hhmm : '18:00';
+        } else {
+          const fallbackDur = (p.duration_minutes !== null && p.duration_minutes !== undefined && String(p.duration_minutes).trim() !== '')
+            ? Math.max(15, Math.min(1440, Number(p.duration_minutes) || 60))
+            : Math.max(30, Math.min(240, Number(p.focus_minutes) || 60));
+          if (startInfo && dueInfo && dueInfo.ms > startInfo.ms) {
+            const diffMin = Math.round((dueInfo.ms - startInfo.ms) / 60000);
+            const effDur = Math.max(15, Math.min(1440, diffMin));
+            _tsActiveDurationMin = effDur;
+            document.getElementById('tsDate').value = startInfo.ymd;
+            document.getElementById('tsStartTime').value = startInfo.hhmm;
+            if (diffMin <= 1440) {
+              document.getElementById('tsTime').value = dueInfo.hhmm;
+            } else {
+              document.getElementById('tsTime').value = addMinutesToYmdHhmm(startInfo.ymd, startInfo.hhmm, effDur).hhmm;
+            }
+          } else if (startInfo) {
+            const endCalc = addMinutesToYmdHhmm(startInfo.ymd, startInfo.hhmm, fallbackDur);
+            _tsActiveDurationMin = fallbackDur;
+            document.getElementById('tsDate').value = startInfo.ymd;
+            document.getElementById('tsStartTime').value = startInfo.hhmm;
+            document.getElementById('tsTime').value = endCalc.hhmm;
+          } else if (dueInfo) {
+            const endCalc = addMinutesToYmdHhmm(dueInfo.ymd, dueInfo.hhmm, fallbackDur);
+            _tsActiveDurationMin = fallbackDur;
+            document.getElementById('tsDate').value = dueInfo.ymd;
+            document.getElementById('tsStartTime').value = dueInfo.hhmm;
+            document.getElementById('tsTime').value = endCalc.hhmm;
+          } else {
+            document.getElementById('tsStartTime').value = '';
+            document.getElementById('tsTime').value = '18:00';
+          }
+        }
       } else {
         // Editing a dateless task must keep it dateless; only brand-new cards default to today.
         // (Pre-filling today silently set a deadline on save and inflated urgency/score.)
@@ -3824,6 +4058,7 @@
         document.getElementById('tsTime').value = '18:00';
       }
       toggleAllDayInput();
+      updateTaskSheetTimeHint();
 
       document.getElementById('tsRepeat').value = p.repeat_rule || 'never';
       document.getElementById('tsReminder').value = (p.reminder_offset_minutes !== null && p.reminder_offset_minutes !== undefined)
@@ -3854,13 +4089,8 @@
 
     function buildIsoDueAt(dateStr, allDay, timeStr) {
       if (!dateStr) return '';
-      const tzOffsetMin = -new Date().getTimezoneOffset();
-      const sign = tzOffsetMin >= 0 ? '+' : '-';
-      const absM = Math.abs(tzOffsetMin);
-      const hh = String(Math.floor(absM / 60)).padStart(2, '0');
-      const mm = String(absM % 60).padStart(2, '0');
       const tPart = allDay ? '23:59:59' : `${timeStr || '18:00'}:00`;
-      return `${dateStr}T${tPart}${sign}${hh}:${mm}`;
+      return `${dateStr}T${tPart}+08:00`;
     }
 
     async function submitTaskSheet() {
@@ -3869,15 +4099,30 @@
       const dateStr = document.getElementById('tsDate').value;
       const allDay = document.getElementById('tsAllDay').checked;
       const startTimeStr = (document.getElementById('tsStartTime')?.value || '').trim();
-      const timeStr = document.getElementById('tsTime').value;
+      const timeStr = (document.getElementById('tsTime').value || '').trim();
       const remRaw = document.getElementById('tsReminder').value;
       const quadVal = document.getElementById('tsQuadrant').value;
 
       let dueDateStr = dateStr;
-      if (!allDay && dateStr && startTimeStr && timeStr && timeStr <= startTimeStr) {
-        const parts = dateStr.split('-').map(Number);
-        const nextD = new Date(parts[0], (parts[1] || 1) - 1, (parts[2] || 1) + 1);
-        dueDateStr = fmtLocalYMD(nextD);
+      let computedDurationMin = undefined;
+      if (!allDay && dateStr && startTimeStr && timeStr) {
+        if (timeStr === startTimeStr) {
+          return showToast('开始时间与结束时间不能相同，如需全天请勾选「全天」', 'error');
+        }
+        const sm = hhmmToMinutes(startTimeStr);
+        const em = hhmmToMinutes(timeStr);
+        if (timeStr < startTimeStr) {
+          const parts = dateStr.split('-').map(Number);
+          const nextUtc = new Date(Date.UTC(parts[0], (parts[1] || 1) - 1, (parts[2] || 1) + 1));
+          dueDateStr = `${nextUtc.getUTCFullYear()}-${String(nextUtc.getUTCMonth() + 1).padStart(2, '0')}-${String(nextUtc.getUTCDate()).padStart(2, '0')}`;
+          if (sm !== null && em !== null) {
+            computedDurationMin = Math.max(15, Math.min(1440, 1440 - sm + em));
+          }
+        } else if (sm !== null && em !== null) {
+          computedDurationMin = Math.max(15, Math.min(1440, em - sm));
+        }
+      } else if (allDay) {
+        computedDurationMin = null;
       }
 
       const body = {
@@ -3903,12 +4148,18 @@
         lock_for_user: Boolean(quadVal),
         subtasks: sheetSubtasks.filter(s => s.title && s.title.trim()),
       };
+      if (computedDurationMin !== undefined) {
+        body.duration_minutes = computedDurationMin;
+      }
 
       const res = await apiPost('/api/tasks/save', body);
       if (res.error) return showToast(`保存失败: ${res.error}`, 'error');
+      if (res.memory?.memory_id) {
+        cachedTasksById[res.memory.memory_id] = res.memory;
+      }
       closeTaskSheet();
       showToast(editingMemoryId ? `✅ 任务已更新 (v${res.memory?.version})` : '🎉 新任务已创建并进入四象限');
-      reloadAll();
+      await reloadAll();
     }
 
     // ---------------- Focus Lock Screen ----------------
@@ -7017,6 +7268,7 @@
       selectCalSlotDuration(_calSlotDuration || 60);
       selectCalSlotColor(_calSlotColor || 'sky');
       renderSlotModalUnscheduledList();
+      updateCalSlotRangePreview();
       document.getElementById('calSlotModal').classList.add('open');
       setTimeout(() => document.getElementById('calSlotTitleInput')?.focus(), 40);
     }
@@ -7032,13 +7284,110 @@
       if (tw) tw.style.opacity = allDay ? '0.4' : '1';
       if (document.getElementById('calSlotTimeInput')) document.getElementById('calSlotTimeInput').disabled = allDay;
       if (dr) dr.style.display = allDay ? 'none' : 'flex';
+      updateCalSlotRangePreview();
     }
 
-    function selectCalSlotDuration(mins) {
-      _calSlotDuration = Number(mins) || 60;
+    function syncCalSlotCustomInputBounds(unit) {
+      const inp = document.getElementById('calSlotCustomDurInput');
+      if (!inp) return;
+      if (unit === 'minutes') {
+        inp.min = '15';
+        inp.max = '1440';
+        inp.step = '15';
+      } else {
+        inp.min = '0.25';
+        inp.max = '24';
+        inp.step = '0.5';
+      }
+    }
+
+    function selectCalSlotDuration(mins, opts = {}) {
+      const syncInput = opts.syncInput !== false;
+      const clamped = Math.max(15, Math.min(1440, Math.round(Number(mins) || 60)));
+      _calSlotDuration = clamped;
+      let matchedPreset = false;
       document.querySelectorAll('#calSlotDurationRow .pomo-preset-btn').forEach(btn => {
-        btn.classList.toggle('active', Number(btn.getAttribute('data-dur')) === _calSlotDuration);
+        const match = Number(btn.getAttribute('data-dur')) === clamped;
+        btn.classList.toggle('active', match);
+        if (match) matchedPreset = true;
       });
+      const inp = document.getElementById('calSlotCustomDurInput');
+      const unitSel = document.getElementById('calSlotCustomDurUnit');
+      if (syncInput && inp && unitSel) {
+        const preferHours = clamped >= 60 && (clamped % 30 === 0);
+        unitSel.value = preferHours ? 'hours' : 'minutes';
+        syncCalSlotCustomInputBounds(unitSel.value);
+        inp.value = preferHours ? String(clamped / 60) : String(clamped);
+      }
+      document.getElementById('calSlotCustomDurWrap')?.classList.toggle('active', !matchedPreset);
+      updateCalSlotRangePreview();
+    }
+
+    function onCalSlotCustomDurationInput() {
+      const inp = document.getElementById('calSlotCustomDurInput');
+      const unitSel = document.getElementById('calSlotCustomDurUnit');
+      if (!inp || !unitSel) return;
+      const rawVal = Number(inp.value);
+      const mins = unitSel.value === 'hours' ? Math.round(rawVal * 60) : Math.round(rawVal);
+      if (Number.isFinite(rawVal) && rawVal > 0 && mins >= 15 && mins <= 1440) {
+        selectCalSlotDuration(mins, { syncInput: false });
+      } else {
+        document.querySelectorAll('#calSlotDurationRow .pomo-preset-btn').forEach(btn => btn.classList.remove('active'));
+        document.getElementById('calSlotCustomDurWrap')?.classList.add('active');
+        updateCalSlotRangePreview('请输入 15 分钟 ~ 24 小时之间的时长');
+      }
+    }
+
+    function onCalSlotCustomDurationUnitChange() {
+      const inp = document.getElementById('calSlotCustomDurInput');
+      const unitSel = document.getElementById('calSlotCustomDurUnit');
+      if (!inp || !unitSel) return;
+      syncCalSlotCustomInputBounds(unitSel.value);
+      const curMins = Math.max(15, Math.min(1440, _calSlotDuration || 60));
+      inp.value = unitSel.value === 'hours'
+        ? String(Math.round((curMins / 60) * 100) / 100)
+        : String(curMins);
+      onCalSlotCustomDurationInput();
+    }
+
+    function resolveCalSlotDurationMinutes() {
+      const allDay = Boolean(document.getElementById('calSlotAllDayToggle')?.checked);
+      if (allDay) return _calSlotDuration || 60;
+      const inp = document.getElementById('calSlotCustomDurInput');
+      const unitSel = document.getElementById('calSlotCustomDurUnit');
+      if (inp && unitSel && String(inp.value).trim() !== '') {
+        const rawVal = Number(inp.value);
+        const mins = unitSel.value === 'hours' ? Math.round(rawVal * 60) : Math.round(rawVal);
+        if (!Number.isFinite(rawVal) || rawVal <= 0 || mins < 15 || mins > 1440) {
+          showToast('预计时长须在 15 分钟 ~ 24 小时（1440 分钟）之间', 'error');
+          return null;
+        }
+        _calSlotDuration = mins;
+        return mins;
+      }
+      return Math.max(15, Math.min(1440, Number(_calSlotDuration) || 60));
+    }
+
+    function updateCalSlotRangePreview(warningMsg = '') {
+      const el = document.getElementById('calSlotRangePreview');
+      if (!el) return;
+      const allDay = Boolean(document.getElementById('calSlotAllDayToggle')?.checked);
+      if (allDay) {
+        el.textContent = '';
+        return;
+      }
+      if (warningMsg) {
+        el.style.color = '#dc2626';
+        el.textContent = `⚠️ ${warningMsg}`;
+        return;
+      }
+      const dateVal = document.getElementById('calSlotDateInput')?.value || _calSelectedDate || fmtLocalYMD(new Date());
+      const timeVal = document.getElementById('calSlotTimeInput')?.value || '09:00';
+      const dur = Math.max(15, Math.min(1440, Number(_calSlotDuration) || 60));
+      const endCalc = addMinutesToYmdHhmm(dateVal, timeVal, dur);
+      const endText = endCalc.dayOffset > 0 ? `${endCalc.dayOffset === 1 ? '次日' : '+' + endCalc.dayOffset + '天'} ${endCalc.hhmm}` : endCalc.hhmm;
+      el.style.color = 'var(--primary)';
+      el.textContent = `预计时段：${timeVal} - ${endText}（共 ${formatMinsHuman(dur)}）`;
     }
 
     function selectCalSlotColor(c) {
@@ -7082,21 +7431,23 @@
       const dateVal = document.getElementById('calSlotDateInput')?.value || _calSelectedDate;
       const timeVal = document.getElementById('calSlotTimeInput')?.value || '09:00';
       const isAllDay = Boolean(document.getElementById('calSlotAllDayToggle')?.checked);
+      const durationMin = resolveCalSlotDurationMinutes();
+      if (durationMin === null) return;
       await withBtnBusy(btn, '⏳ 排期中', async () => {
         const res = await apiPost('/api/calendar/schedule', {
           title,
           date: dateVal,
           time: timeVal,
           is_all_day: isAllDay,
-          duration_minutes: _calSlotDuration,
+          duration_minutes: durationMin,
           color_theme: _calSlotColor,
         });
         if (res.error) return showToast(`排期失败: ${res.error}`, 'error');
+        if (res.memory?.memory_id) cachedTasksById[res.memory.memory_id] = res.memory;
         _calSelectedDate = dateVal;
         closeSlotScheduleModal();
         showToast(`✅ 已排入 ${dateVal}${isAllDay ? ' 全天' : ' ' + timeVal}`);
         await reloadAll();
-        await renderCalendarPanel();
       });
     }
 
@@ -7104,20 +7455,22 @@
       const dateVal = document.getElementById('calSlotDateInput')?.value || _calSelectedDate;
       const timeVal = document.getElementById('calSlotTimeInput')?.value || '09:00';
       const isAllDay = Boolean(document.getElementById('calSlotAllDayToggle')?.checked);
+      const durationMin = resolveCalSlotDurationMinutes();
+      if (durationMin === null) return;
       await withBtnBusy(btn, '⏳', async () => {
         const res = await apiPost('/api/calendar/schedule', {
           memory_id: memoryId,
           date: dateVal,
           time: timeVal,
           is_all_day: isAllDay,
-          duration_minutes: _calSlotDuration,
+          duration_minutes: durationMin,
         });
         if (res.error) return showToast(`排期失败: ${res.error}`, 'error');
+        if (res.memory?.memory_id) cachedTasksById[res.memory.memory_id] = res.memory;
         _calSelectedDate = dateVal;
         closeSlotScheduleModal();
         showToast(`✅ 已挂载至 ${dateVal}${isAllDay ? ' 全天' : ' ' + timeVal}`);
         await reloadAll();
-        await renderCalendarPanel();
       });
     }
 
@@ -7195,10 +7548,10 @@
         }
       };
       for (const t of (lastLoadedTasks || [])) {
-        const st = t.payload?.start_at ? t.payload.start_at.slice(0, 10) : '';
-        const due = t.payload?.due_at ? t.payload.due_at.slice(0, 10) : '';
-        pushTaskToDate(st, t);
-        pushTaskToDate(due, t);
+        const stInfo = parseIsoYmdHhmm(t.payload?.start_at);
+        const duInfo = parseIsoYmdHhmm(t.payload?.due_at);
+        if (stInfo?.ymd) pushTaskToDate(stInfo.ymd, t);
+        if (duInfo?.ymd) pushTaskToDate(duInfo.ymd, t);
       }
       const selDayObj = days.find(d => d.date === _calSelectedDate);
       const selTasks = byDateTasks[_calSelectedDate] || [];
@@ -7336,7 +7689,8 @@
         const showLabel = _calWeekDensity === 'uniform' || !isCompact || h === 0 || h === 3 || h === 6 || activeHours.has(h);
         if (showLabel) {
           const topPx = hourTop[h];
-          gutterHtml += `<div class="cal-time-label" style="top:${topPx === 0 ? 8 : topPx}px;${activeHours.has(h) ? 'color:var(--primary);font-weight:700;' : ''}">${String(h).padStart(2, '0')}:00</div>`;
+          const topStyle = topPx === 0 ? 'top:2px;transform:none;' : `top:${topPx}px;`;
+          gutterHtml += `<div class="cal-time-label" style="${topStyle}${activeHours.has(h) ? 'color:var(--primary);font-weight:700;' : ''}">${String(h).padStart(2, '0')}:00</div>`;
         }
       }
       gutterHtml += `</div>`;
@@ -7399,20 +7753,29 @@
 
       const scroller = document.getElementById('calWeekScrollBox');
       if (scroller && !_calWeekScrolledOnce) {
-        scroller.scrollTop = _calWeekDensity === 'uniform' ? Math.max(0, minuteToY(8 * 60) - 16) : 0;
+        const adHeight = allDayRow.offsetHeight || 0;
+        scroller.scrollTop = _calWeekDensity === 'uniform' ? Math.max(0, adHeight + minuteToY(8 * 60) - 12) : 0;
         _calWeekScrolledOnce = true;
       }
     }
 
-    function openCalendarTaskEditor(memoryId) {
-      const task = cachedTasksById[memoryId] || (lastLoadedTasks || []).find(t => t.memory_id === memoryId);
+    async function openCalendarTaskEditor(memoryId) {
+      let task = cachedTasksById[memoryId] || (lastLoadedTasks || []).find(t => t.memory_id === memoryId);
+      if (!task) {
+        try {
+          const data = await apiGet('/api/tasks/matrix?include_done=true');
+          for (const item of (data.sorted_tasks || [])) {
+            cachedTasksById[item.memory_id] = item;
+          }
+          task = cachedTasksById[memoryId] || null;
+        } catch (e) {}
+      }
       if (task) {
         openTaskSheet(task.memory_id);
       } else {
-        reloadAll().then(() => {
-          const found = cachedTasksById[memoryId] || (lastLoadedTasks || []).find(t => t.memory_id === memoryId);
-          if (found) openTaskSheet(found.memory_id);
-        });
+        await reloadAll();
+        const found = cachedTasksById[memoryId] || (lastLoadedTasks || []).find(t => t.memory_id === memoryId);
+        if (found) openTaskSheet(found.memory_id);
       }
     }
 
@@ -8218,7 +8581,7 @@
         loadCountdownsData().catch(() => {}),
       ]);
       checkTaskReminders();
-      if (document.getElementById('panel-calendar')?.classList.contains('active')) renderCalendarPanel();
+      if (document.getElementById('panel-calendar')?.classList.contains('active')) await renderCalendarPanel();
       if (document.getElementById('panel-focus')?.classList.contains('active') && typeof loadFocusCenter === 'function') loadFocusCenter();
       if (document.getElementById('panel-notes')?.classList.contains('active')) loadNotesPanel();
       if (document.getElementById('panel-supervision').classList.contains('active')) loadSupervisionBoard();

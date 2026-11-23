@@ -148,7 +148,8 @@ class TestPhase3CalendarTimeline(unittest.TestCase):
         )
         self.assertEqual(c_as, 200)
         self.assertEqual(r_as["memory"]["memory_id"], mem_id)
-        self.assertTrue(r_as["memory"]["payload"]["due_at"].startswith("2026-11-24T09:30:00"))
+        self.assertTrue(r_as["memory"]["payload"]["start_at"].startswith("2026-11-24T09:30:00"))
+        self.assertTrue(r_as["memory"]["payload"]["due_at"].startswith("2026-11-24T10:15:00"))
         self.assertEqual(r_as["memory"]["payload"]["duration_minutes"], 45)
 
         # Verify Month view also projects 42 cells & shows the scheduled task without creating duplicates

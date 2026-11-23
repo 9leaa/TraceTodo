@@ -534,8 +534,9 @@ class CalendarService:
                 dur_min = max(15, min(1440, int((end_dt - dt_bj).total_seconds() // 60)))
                 due_iso = end_dt.isoformat()
             else:
-                due_iso = dt_bj.isoformat()
                 dur_min = _parse_int_field(payload.get("duration_minutes"), 60, 15, 1440, "duration_minutes")
+                end_dt = dt_bj + timedelta(minutes=dur_min)
+                due_iso = end_dt.isoformat()
 
         card_data: dict[str, Any] = {
             "start_at": start_iso,

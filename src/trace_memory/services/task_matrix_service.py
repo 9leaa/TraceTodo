@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -230,17 +230,36 @@ class TaskMatrixService:
             if due_local.date() >= today_date:
                 continue
 
+            new_rc = int(p.get("rollover_count", 0) or 0) + 1
+            patch_start_at: str | None = None
             if p.get("is_all_day", True):
-                next_due = ref_now.replace(hour=23, minute=59, second=59, microsecond=0).isoformat()
+                next_due_dt = ref_now.replace(hour=23, minute=59, second=59, microsecond=0)
+                next_due = next_due_dt.isoformat()
             else:
-                next_due = ref_now.replace(
+                next_due_dt = ref_now.replace(
                     hour=due_local.hour,
                     minute=due_local.minute,
                     second=due_local.second,
                     microsecond=0,
-                ).isoformat()
+                )
+                next_due = next_due_dt.isoformat()
+                start_raw = str(p.get("start_at", "") or "").strip()
+                if start_raw:
+                    start_dt = parse_iso_datetime(start_raw)
+                    if start_dt is not None:
+                        start_local = start_dt.astimezone(ref_now.tzinfo)
+                        span = due_local - start_local
+                        if span.total_seconds() >= 0:
+                            next_start_dt = next_due_dt - span
+                        else:
+                            next_start_dt = ref_now.replace(
+                                hour=start_local.hour,
+                                minute=start_local.minute,
+                                second=start_local.second,
+                                microsecond=0,
+                            )
+                        patch_start_at = next_start_dt.replace(microsecond=0).isoformat()
 
-            new_rc = int(p.get("rollover_count", 0) or 0) + 1
             imp = int(p.get("importance", 3))
             urg = int(p.get("urgency", 3))
             _, auto_quad, auto_score = compute_effective_urgency_and_quadrant(
@@ -251,6 +270,8 @@ class TaskMatrixService:
                 "rollover_count": new_rc,
                 "last_rollover_date": today_str,
             }
+            if patch_start_at is not None:
+                patch["start_at"] = patch_start_at
             if not item.user_locked:
                 patch["quadrant"] = auto_quad
                 patch["priority_score"] = auto_score
@@ -696,10 +717,15 @@ class TaskMatrixService:
         )
         if is_all_day:
             start_at = ""
-        elif start_at:
-            parsed_start = parse_iso_datetime(start_at)
-            if parsed_start is not None:
-                start_at = to_beijing(parsed_start).replace(microsecond=0).isoformat()
+        else:
+            if start_at:
+                parsed_start = parse_iso_datetime(start_at)
+                if parsed_start is not None:
+                    start_at = to_beijing(parsed_start).replace(microsecond=0).isoformat()
+            if due_at and len(due_at.strip()) > 10:
+                parsed_due = parse_iso_datetime(due_at)
+                if parsed_due is not None:
+                    due_at = to_beijing(parsed_due).replace(microsecond=0).isoformat()
         color = str(data.get("color_theme", base_payload.get("color_theme", "sky")) or "sky")
         if color not in COLOR_THEMES:
             color = "sky"
@@ -756,11 +782,17 @@ class TaskMatrixService:
         else:
             duration_min = None
 
-        if not is_all_day and start_at and due_at and not explicit_dur:
+        if not is_all_day and start_at and due_at:
             st_dt = parse_iso_datetime(start_at)
             du_dt = parse_iso_datetime(due_at)
-            if st_dt is not None and du_dt is not None and du_dt > st_dt:
-                duration_min = max(15, min(1440, int((du_dt - st_dt).total_seconds() // 60)))
+            if st_dt is not None and du_dt is not None:
+                if du_dt > st_dt:
+                    if not explicit_dur:
+                        duration_min = max(15, min(1440, int((du_dt - st_dt).total_seconds() // 60)))
+                else:
+                    eff_dur = duration_min or max(30, focus_min or 60)
+                    due_at = (st_dt + timedelta(minutes=eff_dur)).replace(microsecond=0).isoformat()
+                    duration_min = eff_dur
         raw_subtasks = (
             data["subtasks"]
             if "subtasks" in data
