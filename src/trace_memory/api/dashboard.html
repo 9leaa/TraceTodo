@@ -1877,6 +1877,33 @@
     .memo-card.is-clickable {
       cursor: pointer;
     }
+    .memo-card.is-inline-editing {
+      cursor: default;
+      border: 2px solid var(--primary);
+      box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08);
+    }
+    .memo-card.is-inline-editing input,
+    .memo-card.is-inline-editing textarea {
+      min-width: 0;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    .inline-edit-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .inline-edit-mood-row {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .inline-edit-mood-row .mood-pill-btn {
+      padding: 3px 9px;
+      font-size: 11.5px;
+    }
     .memo-body-preview {
       max-height: 240px;
       overflow: hidden;
@@ -8134,7 +8161,10 @@
     let _cachedMemosById = {};
     let _cachedJournalsById = {};
     let _detailModalState = null;
-    const _existingEditMedia = { notes: [], journal: [] };
+    const _existingEditMedia = { notes: [], journal: [], memoInline: [], journalInline: [] };
+    let _inlineEditMemoId = '';
+    let _inlineEditJournalId = '';
+    let _inlineEditJournalMood = 'calm';
     let _journalDate = fmtLocalYMD(new Date());
     let _journalMood = 'calm';
     let _journalOverviewCache = null;
@@ -8286,6 +8316,11 @@
 
       _cachedMemosById = {};
       _memoLoadedItems.forEach(m => { _cachedMemosById[m.note_id] = m; });
+      if (!append) {
+        _inlineEditMemoId = '';
+        _existingEditMedia.memoInline = [];
+        _pendingMediaDrafts.memoInline = [];
+      }
 
       renderMemosStream();
     }
@@ -8300,9 +8335,42 @@
         ? (_memoLayout === 'masonry' ? 'memo-masonry' : 'memo-list-stack')
         : 'memo-list-stack';
       box.innerHTML = _memoLoadedItems.length ? _memoLoadedItems.map(n => {
+        if (n.note_id === _inlineEditMemoId) {
+          return `
+            <div class="memo-card is-inline-editing ${n.pinned ? 'is-pinned' : ''}" data-note-id="${esc(n.note_id)}" onclick="event.stopPropagation()" ondragover="event.preventDefault()" ondrop="onInlineCardDrop(event, 'memoInline')">
+              <div class="inline-edit-row" style="justify-content:space-between;">
+                <span class="tag" style="background:var(--primary);color:#fff;">✏️ 卡片内编辑</span>
+                <div class="inline-edit-row">
+                  <label style="font-size:12px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">
+                    <input type="checkbox" id="inlineMemoPinned" ${n.pinned ? 'checked' : ''} /> 📌 置顶
+                  </label>
+                  <label style="font-size:12px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;" title="开启后后台静默提炼长期偏好/事实/经历">
+                    <input type="checkbox" id="inlineMemoExtract" ${n.extract_memory ? 'checked' : ''} /> 🧠 记忆联动
+                  </label>
+                </div>
+              </div>
+              <div class="inline-edit-row">
+                <input id="inlineMemoTitle" value="${esc(n.title || '')}" placeholder="备忘标题（可选）..." style="flex:1;min-width:160px;font-weight:700;" />
+                <input id="inlineMemoTags" value="${esc((n.tags || []).join(' '))}" placeholder="#标签（空格分隔）" style="width:170px;" />
+              </div>
+              <textarea id="inlineMemoContent" rows="5" placeholder="Markdown 正文（支持粘贴/拖拽图片，Ctrl/Cmd+Enter 快速保存）..." onpaste="handleImagePaste(event, 'memoInline')" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();saveInlineMemoEdit(document.getElementById('inlineMemoSaveBtn'));}"></textarea>
+              <div id="inlineMemoMediaGrid" class="media-thumb-grid" style="display:none;"></div>
+              <div class="card-actions" style="justify-content:space-between;flex-wrap:wrap;gap:6px;">
+                <div class="btn-group">
+                  <button type="button" class="voice-mic-btn" style="font-size:11.5px;padding:4px 9px;" onclick="triggerImagePicker('memoInline')">📷 附图</button>
+                  <button type="button" class="voice-mic-btn" style="font-size:11.5px;padding:4px 9px;" onclick="onVoiceBtnClick(event, 'inlineMemoContent', false)">🎤 语音</button>
+                </div>
+                <div class="btn-group">
+                  <button type="button" style="font-size:11.5px;padding:4px 10px;" onclick="cancelInlineMemoEdit()">取消</button>
+                  <button type="button" id="inlineMemoSaveBtn" class="duodo-btn" style="font-size:11.5px;padding:4px 12px;" onclick="saveInlineMemoEdit(this)">💾 保存</button>
+                </div>
+              </div>
+            </div>
+          `;
+        }
         const tagsPills = (n.tags || []).map(t => `<span class="tag" style="cursor:pointer;" data-tag="${esc(t)}" onclick="event.stopPropagation(); filterMemosByTag(this.dataset.tag)">#${esc(t)}</span>`).join('');
         return `
-          <div class="memo-card is-clickable ${n.pinned ? 'is-pinned' : ''}" onclick="openNoteDetailModal('memo', '${esc(n.note_id)}')">
+          <div class="memo-card is-clickable ${n.pinned ? 'is-pinned' : ''}" data-note-id="${esc(n.note_id)}" onclick="openNoteDetailModal('memo', '${esc(n.note_id)}')">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
               <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
                 ${n.pinned ? `<span class="tag" style="background:var(--primary);color:#fff;">📌 置顶</span>` : ''}
@@ -8323,6 +8391,14 @@
           </div>
         `;
       }).join('') : `<div class="card-box memo-empty-card" style="color:var(--muted);">暂无匹配的备忘录，在上方写下第一条 Markdown 备忘或拖拽粘贴一张图片吧。</div>`;
+
+      if (_inlineEditMemoId) {
+        const editingItem = _cachedMemosById[_inlineEditMemoId];
+        const ta = document.getElementById('inlineMemoContent');
+        if (ta && editingItem) ta.value = editingItem.content || '';
+        renderPendingMediaDrafts('memoInline');
+      }
+
       renderLoadMoreBar(
         'memoLoadMoreBar',
         _memoLoadedItems.length,
@@ -8337,24 +8413,73 @@
     function startEditMemo(noteId) {
       const m = _cachedMemosById[noteId];
       if (!m) return;
-      document.getElementById('memoEditingNoteId').value = m.note_id;
-      document.getElementById('memoTitleInput').value = m.title || '';
-      document.getElementById('memoTagsInput').value = (m.tags || []).join(' ');
-      document.getElementById('memoPinnedCheck').checked = Boolean(m.pinned);
-      document.getElementById('memoExtractCheck').checked = Boolean(m.extract_memory);
-      const editorEl = document.getElementById('notesEditorInput');
-      if (editorEl) editorEl.value = m.content || '';
-      _existingEditMedia.notes = Array.isArray(m.media) ? m.media.slice() : [];
-      _pendingMediaDrafts.notes = [];
-      renderPendingMediaDrafts('notes');
-      document.getElementById('memoSaveBtn').textContent = '💾 保存修改';
-      document.getElementById('memoCancelEditBtn').style.display = '';
-      document.getElementById('notesComposeBox')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      _inlineEditMemoId = m.note_id;
+      _existingEditMedia.memoInline = Array.isArray(m.media) ? m.media.slice() : [];
+      _pendingMediaDrafts.memoInline = [];
+      renderMemosStream();
+      const card = document.querySelector(`#notesStreamList .memo-card.is-inline-editing[data-note-id="${CSS.escape(noteId)}"]`);
+      card?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      const editorEl = document.getElementById('inlineMemoContent');
       if (editorEl) {
         editorEl.focus({ preventScroll: true });
         const len = editorEl.value.length;
         try { editorEl.setSelectionRange(len, len); } catch (e) {}
       }
+    }
+
+    function cancelInlineMemoEdit() {
+      _inlineEditMemoId = '';
+      _existingEditMedia.memoInline = [];
+      _pendingMediaDrafts.memoInline = [];
+      renderMemosStream();
+    }
+
+    async function saveInlineMemoEdit(btn) {
+      const noteId = _inlineEditMemoId;
+      if (!noteId) return;
+      const prevItem = _cachedMemosById[noteId];
+      const wasPinned = Boolean(prevItem?.pinned);
+      const title = (document.getElementById('inlineMemoTitle')?.value || '').trim();
+      const tagsRaw = (document.getElementById('inlineMemoTags')?.value || '').trim();
+      const pinned = Boolean(document.getElementById('inlineMemoPinned')?.checked);
+      const extractMemory = Boolean(document.getElementById('inlineMemoExtract')?.checked);
+      const content = (document.getElementById('inlineMemoContent')?.value || '').trim();
+      const mediaIds = (_pendingMediaDrafts.memoInline || []).map(m => m.media_id);
+      if (!content && !title && !mediaIds.length && !(_existingEditMedia.memoInline || []).length) {
+        return showToast('请输入备忘内容、标题或附加图片');
+      }
+      await withBtnBusy(btn, '⏳ 保存中', async () => {
+        const res = await apiPost('/api/memos/save', {
+          note_id: noteId,
+          title,
+          content,
+          tags: tagsRaw,
+          pinned,
+          extract_memory: extractMemory,
+          media_ids: mediaIds,
+        });
+        if (res.error) return showToast(`保存失败: ${res.error}`, 'error');
+        const savedMemo = res.memo;
+        if (savedMemo) {
+          const idx = _memoLoadedItems.findIndex(item => item.note_id === noteId);
+          if (idx >= 0) {
+            _memoLoadedItems[idx] = savedMemo;
+          } else {
+            _memoLoadedItems.unshift(savedMemo);
+          }
+          if (wasPinned !== Boolean(savedMemo.pinned)) {
+            _memoLoadedItems.sort((a, b) => {
+              if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+              return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+            });
+          }
+        }
+        _inlineEditMemoId = '';
+        _existingEditMedia.memoInline = [];
+        _pendingMediaDrafts.memoInline = [];
+        renderMemosStream();
+        showToast(extractMemory ? '✅ 备忘已保存，后台静默提炼长期偏好与事实' : '✅ 备忘录已保存');
+      });
     }
 
     function resetMemoCompose() {
@@ -8492,8 +8617,12 @@
           ].filter(Boolean).join('');
         }
         if (actionsEl) {
+          const inTimeline = _journalTimelineItems.some(e => e.note_id === item.note_id);
+          const editOnClick = inTimeline
+            ? `const nid='${esc(item.note_id)}'; closeNoteDetailModal(); startInlineJournalEdit(nid);`
+            : `const d='${esc(item.journal_date)}'; closeNoteDetailModal(); editJournalByDate(d);`;
           actionsEl.innerHTML = `
-            <button type="button" class="primary" onclick="const d='${esc(item.journal_date)}'; closeNoteDetailModal(); editJournalByDate(d);">✏️ 编辑此篇日记</button>
+            <button type="button" class="primary" onclick="${editOnClick}">✏️ 编辑此篇日记</button>
             <button type="button" style="color:#b91c1c;" onclick="forgetNoteFromStream('${esc(item.note_id)}')">🗑️ 遗忘</button>
           `;
         }
@@ -8574,6 +8703,22 @@
     let _journalTimelineTotal = 0;
     let _journalTimelineHasMore = false;
 
+    function _renderJournalMoodPillsHtml(moods, activeMoodId, onClickFnName, withGroups = true) {
+      const renderButtons = items => items.map(m => `
+        <button type="button" class="mood-pill-btn ${m.id === activeMoodId ? 'active' : ''}" data-mood="${esc(m.id)}" style="--mood-color:${esc(m.color || 'var(--primary)')};" onclick="${onClickFnName}('${esc(m.id)}')">
+          ${esc(m.icon)} ${esc(m.label)}
+        </button>
+      `).join('');
+      if (withGroups && moods.some(m => m.group)) {
+        const groupLabels = { positive: '积极', neutral: '平和', negative: '低落' };
+        return ['positive', 'neutral', 'negative'].map(g => {
+          const items = moods.filter(m => (m.group || 'neutral') === g);
+          return items.length ? `<span class="mood-group-sep">${groupLabels[g] || g}</span>${renderButtons(items)}` : '';
+        }).join('');
+      }
+      return renderButtons(moods);
+    }
+
     function renderJournalTimeline() {
       _cachedJournalsById = {};
       if (_journalOverviewCache && _journalOverviewCache.current_entry && _journalOverviewCache.current_entry.note_id) {
@@ -8583,12 +8728,40 @@
         if (entry && entry.note_id) _cachedJournalsById[entry.note_id] = entry;
       });
 
+      const moodsCatalog = (_journalOverviewCache && _journalOverviewCache.mood_catalog) || _DEFAULT_MOOD_CATALOG;
       const histBox = document.getElementById('journalHistoryList');
       if (histBox) {
         histBox.innerHTML = _journalTimelineItems.length ? _journalTimelineItems.map(entry => {
+          if (entry.note_id === _inlineEditJournalId) {
+            return `
+              <div class="memo-card is-inline-editing" data-note-id="${esc(entry.note_id)}" onclick="event.stopPropagation()" ondragover="event.preventDefault()" ondrop="onInlineCardDrop(event, 'journalInline')">
+                <div class="inline-edit-row" style="justify-content:space-between;">
+                  <div class="inline-edit-row">
+                    <strong style="font-size:14.5px;color:var(--heading);">📅 ${esc(entry.journal_date)} (${esc(entry.weekday_label || '')})</strong>
+                    <span style="font-size:11.5px;color:var(--muted);">${esc(entry.lunar_label || '')}</span>
+                  </div>
+                  <span class="tag" style="background:var(--primary);color:#fff;">✏️ 原地编辑</span>
+                </div>
+                <div id="inlineJournalMoodRow" class="inline-edit-mood-row">${_renderJournalMoodPillsHtml(moodsCatalog, _inlineEditJournalMood, 'selectInlineJournalMood', false)}</div>
+                <textarea id="inlineJournalContent" rows="6" placeholder="修改当日日记正文（支持 Markdown 与粘贴/拖拽照片，Ctrl/Cmd+Enter 快速保存）..." onpaste="handleImagePaste(event, 'journalInline')" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();saveInlineJournalEdit(document.getElementById('inlineJournalSaveBtn'));}"></textarea>
+                <div id="inlineJournalMediaGrid" class="media-thumb-grid" style="display:none;"></div>
+                <div class="card-actions" style="justify-content:space-between;flex-wrap:wrap;gap:6px;">
+                  <label style="font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:5px;cursor:pointer;">
+                    <input type="checkbox" id="inlineJournalExtract" ${entry.extract_memory ? 'checked' : ''} /> 🧠 静默沉淀长期记忆
+                  </label>
+                  <div class="btn-group">
+                    <button type="button" class="voice-mic-btn" style="font-size:11.5px;padding:4px 9px;" onclick="triggerImagePicker('journalInline')">📷 贴照片</button>
+                    <button type="button" class="voice-mic-btn" style="font-size:11.5px;padding:4px 9px;" onclick="onVoiceBtnClick(event, 'inlineJournalContent', false)">🎤 语音</button>
+                    <button type="button" style="font-size:11.5px;padding:4px 10px;" onclick="cancelInlineJournalEdit()">取消</button>
+                    <button type="button" id="inlineJournalSaveBtn" class="primary" style="font-size:11.5px;padding:4px 12px;" onclick="saveInlineJournalEdit(this)">💾 保存 ${esc(entry.journal_date)} 日记</button>
+                  </div>
+                </div>
+              </div>
+            `;
+          }
           const mm = entry.mood_meta || { icon: '📖', label: '日记' };
           return `
-            <div class="memo-card is-clickable" style="${entry.journal_date === _journalDate ? 'border-color:var(--primary);' : ''}" onclick="openNoteDetailModal('journal', '${esc(entry.note_id)}')">
+            <div class="memo-card is-clickable" data-note-id="${esc(entry.note_id)}" style="${entry.journal_date === _journalDate ? 'border-color:var(--primary);' : ''}" onclick="openNoteDetailModal('journal', '${esc(entry.note_id)}')">
               <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                   <strong style="font-size:14.5px;color:var(--heading);">📅 ${esc(entry.journal_date)} (${esc(entry.weekday_label || '')})</strong>
@@ -8597,7 +8770,7 @@
                 </div>
                 <div style="display:flex;gap:6px;align-items:center;">
                   <button type="button" style="font-size:11.5px;padding:3px 9px;" onclick="event.stopPropagation(); openNoteDetailModal('journal', '${esc(entry.note_id)}')">🔍 详情</button>
-                  <button type="button" style="font-size:11.5px;padding:3px 9px;" onclick="event.stopPropagation(); editJournalByDate('${esc(entry.journal_date)}')">✏️ 编辑此页</button>
+                  <button type="button" style="font-size:11.5px;padding:3px 9px;" onclick="event.stopPropagation(); startInlineJournalEdit('${esc(entry.note_id)}')">✏️ 编辑此页</button>
                   <button type="button" style="color:#b91c1c;font-size:11.5px;padding:3px 9px;" onclick="event.stopPropagation(); forgetNoteFromStream('${esc(entry.note_id)}')">🗑️ 遗忘</button>
                 </div>
               </div>
@@ -8607,6 +8780,14 @@
           `;
         }).join('') : `<div style="color:var(--muted);font-size:13px;padding:12px 4px;">还没有日记记录，点击右上角「✨ AI 今日小结」开启第一篇一日一页日记吧。</div>`;
       }
+
+      if (_inlineEditJournalId) {
+        const editingEntry = _cachedJournalsById[_inlineEditJournalId];
+        const ta = document.getElementById('inlineJournalContent');
+        if (ta && editingEntry) ta.value = editingEntry.content || '';
+        renderPendingMediaDrafts('journalInline');
+      }
+
       renderLoadMoreBar(
         'journalLoadMoreBar',
         _journalTimelineItems.length,
@@ -8616,6 +8797,85 @@
         '篇日记',
         'loadJournalView({ append: true })'
       );
+    }
+
+    function startInlineJournalEdit(noteId) {
+      const entry = _cachedJournalsById[noteId];
+      if (!entry) return;
+      _inlineEditJournalId = entry.note_id;
+      _inlineEditJournalMood = entry.mood || 'calm';
+      _existingEditMedia.journalInline = Array.isArray(entry.media) ? entry.media.slice() : [];
+      _pendingMediaDrafts.journalInline = [];
+      renderJournalTimeline();
+      const card = document.querySelector(`#journalHistoryList .memo-card.is-inline-editing[data-note-id="${CSS.escape(noteId)}"]`);
+      card?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      const editorEl = document.getElementById('inlineJournalContent');
+      if (editorEl) {
+        editorEl.focus({ preventScroll: true });
+        const len = editorEl.value.length;
+        try { editorEl.setSelectionRange(len, len); } catch (e) {}
+      }
+    }
+
+    function selectInlineJournalMood(moodId) {
+      _inlineEditJournalMood = moodId || 'calm';
+      document.querySelectorAll('#inlineJournalMoodRow .mood-pill-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-mood') === _inlineEditJournalMood);
+      });
+    }
+
+    function cancelInlineJournalEdit() {
+      _inlineEditJournalId = '';
+      _existingEditMedia.journalInline = [];
+      _pendingMediaDrafts.journalInline = [];
+      renderJournalTimeline();
+    }
+
+    async function saveInlineJournalEdit(btn) {
+      const noteId = _inlineEditJournalId;
+      const entry = _cachedJournalsById[noteId];
+      if (!noteId || !entry) return;
+      const content = (document.getElementById('inlineJournalContent')?.value || '').trim();
+      const extractMemory = Boolean(document.getElementById('inlineJournalExtract')?.checked);
+      const mediaIds = (_pendingMediaDrafts.journalInline || []).map(m => m.media_id);
+      if (!content && !mediaIds.length && !(_existingEditMedia.journalInline || []).length) {
+        return showToast('请输入日记内容或粘贴图片');
+      }
+      await withBtnBusy(btn, '⏳ 保存中', async () => {
+        const res = await apiPost('/api/journal/save', {
+          note_id: entry.note_id,
+          journal_date: entry.journal_date,
+          mood: _inlineEditJournalMood,
+          content,
+          extract_memory: extractMemory,
+          media_ids: mediaIds,
+        });
+        if (res.error) return showToast(`保存日记失败: ${res.error}`, 'error');
+        const saved = res.journal;
+        if (saved) {
+          const idx = _journalTimelineItems.findIndex(item => item.note_id === noteId);
+          if (idx >= 0) _journalTimelineItems[idx] = saved;
+          if (saved.journal_date === _journalDate && _journalOverviewCache) {
+            _journalOverviewCache.current_entry = saved;
+            _journalMood = saved.mood || 'calm';
+            const topEditor = document.getElementById('journalEditorInput');
+            if (topEditor) topEditor.value = saved.content || '';
+            const topExt = document.getElementById('journalExtractCheck');
+            if (topExt) topExt.checked = Boolean(saved.extract_memory);
+            const moods = _journalOverviewCache.mood_catalog || _DEFAULT_MOOD_CATALOG;
+            const moodRow = document.getElementById('journalMoodRow');
+            if (moodRow) moodRow.innerHTML = `<span style="font-size:12px;color:var(--muted);">今日心情：</span>${_renderJournalMoodPillsHtml(moods, _journalMood, 'selectJournalMood', true)}`;
+            _existingEditMedia.journal = Array.isArray(saved.media) ? saved.media.slice() : [];
+            renderPendingMediaDrafts('journal');
+            updateJournalEditingUi(saved);
+          }
+        }
+        _inlineEditJournalId = '';
+        _existingEditMedia.journalInline = [];
+        _pendingMediaDrafts.journalInline = [];
+        renderJournalTimeline();
+        showToast(`📖 ${entry.journal_date} 日记已保存`);
+      });
     }
 
     async function loadJournalView(opts = {}) {
@@ -8652,33 +8912,15 @@
       }
 
       _journalOverviewCache = res;
+      _inlineEditJournalId = '';
+      _existingEditMedia.journalInline = [];
+      _pendingMediaDrafts.journalInline = [];
       document.getElementById('journalLunarLabel').textContent = `${res.lunar_label || ''} · ${res.weekday_label || ''}`;
 
       const moods = res.mood_catalog || _DEFAULT_MOOD_CATALOG;
       const cur = res.current_entry;
       _journalMood = cur?.mood || 'calm';
-      const groupLabels = { positive: '积极', neutral: '平和', negative: '低落' };
-      const groupsOrder = ['positive', 'neutral', 'negative'];
-      const hasGroups = moods.some(m => m.group);
-      let moodHtml = `<span style="font-size:12px;color:var(--muted);">今日心情：</span>`;
-      if (hasGroups) {
-        moodHtml += groupsOrder.map(g => {
-          const items = moods.filter(m => (m.group || 'neutral') === g);
-          if (!items.length) return '';
-          return `<span class="mood-group-sep">${groupLabels[g] || g}</span>` + items.map(m => `
-            <button type="button" class="mood-pill-btn ${m.id === _journalMood ? 'active' : ''}" data-mood="${esc(m.id)}" style="--mood-color:${esc(m.color || 'var(--primary)')};" onclick="selectJournalMood('${esc(m.id)}')">
-              ${esc(m.icon)} ${esc(m.label)}
-            </button>
-          `).join('');
-        }).join('');
-      } else {
-        moodHtml += moods.map(m => `
-          <button type="button" class="mood-pill-btn ${m.id === _journalMood ? 'active' : ''}" data-mood="${esc(m.id)}" style="--mood-color:${esc(m.color || 'var(--primary)')};" onclick="selectJournalMood('${esc(m.id)}')">
-            ${esc(m.icon)} ${esc(m.label)}
-          </button>
-        `).join('');
-      }
-      document.getElementById('journalMoodRow').innerHTML = moodHtml;
+      document.getElementById('journalMoodRow').innerHTML = `<span style="font-size:12px;color:var(--muted);">今日心情：</span>${_renderJournalMoodPillsHtml(moods, _journalMood, 'selectJournalMood', true)}`;
 
       document.getElementById('journalEditorInput').value = cur ? (cur.content || '') : '';
       document.getElementById('journalExtractCheck').checked = cur ? Boolean(cur.extract_memory) : true;
@@ -8747,8 +8989,12 @@
 
     // ---------------- Client-Side Image Compression (150~300KB + Thumb) & Media Gallery ----------------
     let _activeImageTarget = 'notes';
-    const _pendingMediaDrafts = { quick: [], notes: [], journal: [] };
+    const _pendingMediaDrafts = { quick: [], notes: [], journal: [], memoInline: [], journalInline: [] };
     const _mediaCacheById = {};
+
+    function normalizeMediaBucket(targetKey) {
+      return ['quick', 'notes', 'journal', 'memoInline', 'journalInline'].includes(targetKey) ? targetKey : 'notes';
+    }
 
     function renderMediaGridHtml(mediaList) {
       if (!Array.isArray(mediaList) || !mediaList.length) return '';
@@ -8800,7 +9046,7 @@
       }
       if (now - _imagePickerLastTriggerMs < 400) return;
       _imagePickerLastTriggerMs = now;
-      _activeImageTarget = (targetKey === 'quick' || targetKey === 'journal') ? targetKey : 'notes';
+      _activeImageTarget = normalizeMediaBucket(targetKey);
       const inp = document.getElementById('sharedImageFileInput');
       if (!inp) return;
       _imagePickerActive = true;
@@ -8847,6 +9093,13 @@
       document.getElementById('notesComposeBox')?.classList.remove('notes-drop-active');
       const files = Array.from(ev.dataTransfer?.files || []).filter(f => f.type && f.type.startsWith('image/'));
       if (files.length) uploadCompressedImages(files, 'notes');
+    }
+
+    function onInlineCardDrop(ev, bucket) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const files = Array.from(ev.dataTransfer?.files || []).filter(f => f.type && f.type.startsWith('image/'));
+      if (files.length) uploadCompressedImages(files, bucket);
     }
 
     function canvasToJpegDataUrlAsync(canvas, quality) {
@@ -8964,7 +9217,7 @@
         showToast('正在处理上一批图片，请稍候...');
         return;
       }
-      const bucket = (targetKey === 'quick' || targetKey === 'journal') ? targetKey : 'notes';
+      const bucket = normalizeMediaBucket(targetKey);
       const batch = Array.from(files || []).slice(0, 6);
       if (!batch.length) return;
       _imageUploadInFlight = true;
@@ -9023,17 +9276,17 @@
           note.media = note.media.filter(m => m.media_id !== mediaId);
         }
       };
-      if (bucket === 'notes') {
+      if (bucket === 'notes' || bucket === 'memoInline') {
         _memoLoadedItems.forEach(stripMedia);
         Object.values(_cachedMemosById).forEach(stripMedia);
-        renderMemosStream();
-      } else if (bucket === 'journal') {
+        if (bucket === 'notes') renderMemosStream();
+      } else if (bucket === 'journal' || bucket === 'journalInline') {
         _journalTimelineItems.forEach(stripMedia);
         Object.values(_cachedJournalsById).forEach(stripMedia);
         if (_journalOverviewCache && _journalOverviewCache.current_entry) {
           stripMedia(_journalOverviewCache.current_entry);
         }
-        renderJournalTimeline();
+        if (bucket === 'journal') renderJournalTimeline();
       }
       showToast('🗑️ 已删除附图');
     }
@@ -9055,8 +9308,14 @@
           `;
         }).join('');
       } else {
+        const gridMap = {
+          journal: 'journalMediaDraftGrid',
+          memoInline: 'inlineMemoMediaGrid',
+          journalInline: 'inlineJournalMediaGrid',
+          notes: 'notesMediaDraftGrid',
+        };
         const savedList = _existingEditMedia[bucket] || [];
-        const gridId = bucket === 'journal' ? 'journalMediaDraftGrid' : 'notesMediaDraftGrid';
+        const gridId = gridMap[bucket] || 'notesMediaDraftGrid';
         const grid = document.getElementById(gridId);
         if (!grid) return;
         const total = savedList.length + list.length;
@@ -9091,6 +9350,16 @@
       if (res.error) return showToast(`遗忘失败: ${res.error}`, 'error');
       if (_detailModalState && _detailModalState.noteId === noteId) {
         closeNoteDetailModal();
+      }
+      if (_inlineEditMemoId === noteId) {
+        _inlineEditMemoId = '';
+        _existingEditMedia.memoInline = [];
+        _pendingMediaDrafts.memoInline = [];
+      }
+      if (_inlineEditJournalId === noteId) {
+        _inlineEditJournalId = '';
+        _existingEditMedia.journalInline = [];
+        _pendingMediaDrafts.journalInline = [];
       }
       showToast('🧹 已遗忘该随记并级联清理派生记忆');
       await loadNotesPanel();
@@ -9321,6 +9590,7 @@
 
     function isAnyEditorModalOpen() {
       if (_imagePickerActive || _imageUploadInFlight) return true;
+      if (_inlineEditMemoId || _inlineEditJournalId) return true;
       const ids = [
         'taskSheetModal',
         'detailModal',
@@ -9346,6 +9616,14 @@
       }
       if (document.getElementById('noteDetailModal')?.classList.contains('open')) {
         closeNoteDetailModal();
+        return;
+      }
+      if (_inlineEditMemoId) {
+        cancelInlineMemoEdit();
+        return;
+      }
+      if (_inlineEditJournalId) {
+        cancelInlineJournalEdit();
       }
     });
 

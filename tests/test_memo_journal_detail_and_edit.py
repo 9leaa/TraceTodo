@@ -204,6 +204,14 @@ class TestMemoJournalDetailAndEdit(unittest.TestCase):
             "updateJournalEditingUi",
             "removeExistingNoteMedia",
             "_existingEditMedia",
+            "_inlineEditMemoId",
+            "saveInlineMemoEdit",
+            "cancelInlineMemoEdit",
+            "_inlineEditJournalId",
+            "startInlineJournalEdit",
+            "saveInlineJournalEdit",
+            "cancelInlineJournalEdit",
+            "is-inline-editing",
             'id="mediaLightboxModal" style="z-index: 75;"',
         ):
             self.assertIn(marker, html, f"Missing UI marker: {marker}")
