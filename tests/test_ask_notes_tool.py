@@ -103,6 +103,40 @@ class TestAskNotesTool(unittest.TestCase):
         trace = self.app.trace_repo.list_traces("qa")[0]
         self.assertEqual(trace["details"]["tool_calls"][0]["name"], "list_notes_by_date")
 
+    def test_colloquial_date_question_can_plan_tool_before_react(self):
+        question = "我昨天说啥内容了？"
+        yesterday = "2026-11-22"
+        self.note("note_today", "2026-11-23T11:00:00+08:00")
+
+        def reply(_url, _key, payload, **_options):
+            model_input = payload["messages"][-1]["content"]
+            if "tools" not in payload:
+                self.assertIn("2026-11-23", model_input)
+                self.assertIn(question, model_input)
+                self.assertIn("list_notes_by_date", model_input)
+                data = {"questions": [question], "tool_calls": [{
+                    "question": 1, "name": "list_notes_by_date", "arguments": {"start_date": yesterday},
+                }]}
+            else:
+                bundle = json.loads(model_input.split("按子问题组织的证据与首批工具结果：\n")[1])
+                tool = bundle["initial_tool_results"][0]
+                self.assertEqual(tool["data"]["start_date"], yesterday)
+                self.assertEqual(tool["data"]["total"], 0)
+                self.assertIsNone(tool["data"]["next_offset"])
+                data = {"answer": "昨天没有录入原话。", "cited_memory_ids": [],
+                        "cited_note_ids": [], "has_sufficient_evidence": True}
+            return {"choices": [{"message": {"content": json.dumps(data)}}]}
+
+        with patch("trace_memory.llm.openai_compat.format_beijing_prompt_clock", return_value="2026-11-23"), \
+             patch("trace_memory.llm.openai_compat._post_json_with_retry", side_effect=reply) as chat:
+            self.app.ask_service.ask("qa", question)
+
+        self.assertEqual(chat.call_count, 2)
+        pipeline = self.app.trace_repo.list_traces("qa")[0]["details"]["pipeline"]
+        self.assertEqual(pipeline["planning"]["status"], "planned")
+        self.assertEqual(pipeline["initial_tools"][0]["status"], "ok")
+        self.assertEqual(pipeline["react"]["follow_up_tools"], [])
+
     def test_invalid_dates_and_filters(self):
         for args in (
             {}, {"start_date": None}, {"start_date": "2026-02-30"},

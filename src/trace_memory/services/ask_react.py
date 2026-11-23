@@ -17,7 +17,7 @@ from trace_memory.llm.protocol import AskSynthesis, AskToolModel
 
 
 _LOGGER = logging.getLogger(__name__)
-_MAX_TOOL_CALLS = 3
+_MAX_TOOL_CALLS = 1
 
 
 @dataclass(frozen=True)
