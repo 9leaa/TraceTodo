@@ -192,6 +192,12 @@ class TestFrontendPerfAndFloatingAsk(unittest.TestCase):
             "setTaskQuickScope(",
             "_applyOptimisticTaskTransition(",
             "actionLabel: '↩ 撤销'",
+            # Memory rail opens Star Graph by default + button hover specificity protection + week idle folding
+            'data-tab="memories" onclick="switchTab(\'graph\', this)"',
+            ":where(button):hover",
+            "toggleCalIdleBand(",
+            "cal-fold-band-pill",
+            "is-idle-fold",
             # Existing element contracts must remain intact
             'id="todoOverviewSection"',
             'id="taskKpis"',

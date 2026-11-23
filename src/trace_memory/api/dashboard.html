@@ -36,6 +36,8 @@
       --muted: #64748b;
       --primary: #3b82f6;
       --primary-hover: #2563eb;
+      --primary-fill: var(--primary);
+      --primary-fill-hover: var(--primary-hover);
       --primary-soft: #eff6ff;
       --header-bg: #ffffff;
       --rail-active-bg: #f1f5f9;
@@ -64,7 +66,7 @@
       --header-bg: linear-gradient(90deg, #ffffff 0%, #f0fdfa 60%, #e0f2fe 100%);
       --rail-active-bg: #e6f7f4;
       --rail-active-ico: #0f766e;
-      --tl-header-grad: linear-gradient(135deg, #14b8a6 0%, #0284c7 100%);
+      --tl-header-grad: linear-gradient(135deg, #0d9488 0%, #0284c7 100%);
     }
     [data-theme="autumn"] {
       --bg: #fdf6f0;
@@ -77,7 +79,7 @@
       --header-bg: linear-gradient(90deg, #ffffff 0%, #fff7ed 60%, #fef3c7 100%);
       --rail-active-bg: #ffedd5;
       --rail-active-ico: #c2410c;
-      --tl-header-grad: linear-gradient(135deg, #f97316 0%, #d97706 100%);
+      --tl-header-grad: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
     }
     [data-theme="golden_gate"] {
       --bg: #fef4f4;
@@ -103,7 +105,7 @@
       --header-bg: linear-gradient(90deg, #ffffff 0%, #f0f9ff 60%, #e0e7ff 100%);
       --rail-active-bg: #e0f2fe;
       --rail-active-ico: #0369a1;
-      --tl-header-grad: linear-gradient(135deg, #0ea5e9 0%, #4f46e5 100%);
+      --tl-header-grad: linear-gradient(135deg, #0284c7 0%, #4f46e5 100%);
     }
     [data-theme="deep_forest"] {
       --bg: #0b1512;
@@ -115,10 +117,12 @@
       --muted: #8caea3;
       --primary: #10b981;
       --primary-hover: #059669;
+      --primary-fill: #059669;
+      --primary-fill-hover: #047857;
       --primary-soft: #16382d;
       --header-bg: linear-gradient(90deg, #101e1a 0%, #132721 65%, #0f292e 100%);
       --rail-active-bg: #1b352d;
-      --rail-active-ico: #10b981;
+      --rail-active-ico: #059669;
       --tl-header-grad: linear-gradient(135deg, #059669 0%, #0284c7 100%);
       --q1-bg: #2c1519; --q1-border: #7f1d1d; --q1-badge: #f87171;
       --q2-bg: #132338; --q2-border: #1e3a8a; --q2-badge: #60a5fa;
@@ -155,11 +159,13 @@
       --muted: #7fa3ad;
       --primary: #06b6d4;
       --primary-hover: #0891b2;
+      --primary-fill: #0e7490;
+      --primary-fill-hover: #155e75;
       --primary-soft: #0e3742;
       --header-bg: linear-gradient(90deg, #071520 0%, #0c2431 65%, #131b33 100%);
       --rail-active-bg: #0e3742;
-      --rail-active-ico: #22d3ee;
-      --tl-header-grad: linear-gradient(135deg, #06b6d4 0%, #d946ef 100%);
+      --rail-active-ico: #0e7490;
+      --tl-header-grad: linear-gradient(135deg, #0891b2 0%, #a21caf 100%);
       --q1-bg: #251019; --q1-border: #9f1239; --q1-badge: #fb7185;
       --q2-bg: #0c2431; --q2-border: #155e75; --q2-badge: #22d3ee;
       --q3-bg: #241a2e; --q3-border: #86198f; --q3-badge: #e879f9;
@@ -175,11 +181,13 @@
       --muted: #86aeb0;
       --primary: #2dd4bf;
       --primary-hover: #14b8a6;
+      --primary-fill: #0d9488;
+      --primary-fill-hover: #0f766e;
       --primary-soft: #113c3c;
       --header-bg: linear-gradient(90deg, #0b1d24 0%, #0f2a30 65%, #12303a 100%);
       --rail-active-bg: #113c3c;
-      --rail-active-ico: #5eead4;
-      --tl-header-grad: linear-gradient(135deg, #14b8a6 0%, #818cf8 100%);
+      --rail-active-ico: #0d9488;
+      --tl-header-grad: linear-gradient(135deg, #0d9488 0%, #4f46e5 100%);
       --q1-bg: #251418; --q1-border: #7f1d1d; --q1-badge: #f87171;
       --q2-bg: #10263a; --q2-border: #1e40af; --q2-badge: #818cf8;
       --q3-bg: #262112; --q3-border: #78350f; --q3-badge: #fbbf24;
@@ -288,12 +296,13 @@
     .capture-feedback span {
       margin-top: 4px;
       padding: 3px 8px;
-      border: 1px solid #c7d2fe;
+      border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border));
       border-radius: 8px;
-      background: #eef2ff;
-      color: #3730a3;
+      background: var(--primary-soft);
+      color: var(--primary);
       white-space: nowrap;
       font-size: 11.5px;
+      font-weight: 600;
     }
     .top-actions { grid-area: actions; justify-self: end; display: flex; align-items: center; gap: 5px; }
     .control-icon {
@@ -306,20 +315,23 @@
       padding: 8px 10px;
       border: 1px solid transparent;
       border-radius: 8px;
-      color: #334155;
+      background: transparent;
+      color: var(--text);
       font-size: 13px;
       font-weight: 500;
       white-space: nowrap;
     }
     .top-actions > button:hover, .header-account:hover {
-      background: #f1f5f9;
+      background: var(--surface-alt);
+      border-color: var(--border);
+      color: var(--heading);
     }
-    .header-account { grid-area: account; border-color: var(--border); }
+    .header-account { grid-area: account; border-color: var(--border); background: var(--surface); }
     input.main-input {
       min-width: 0;
-      background: #fff;
-      border-color: #c3cfe3;
-      color: #172554;
+      background: var(--surface);
+      border-color: var(--border);
+      color: var(--text);
     }
     input.main-input:focus { outline: none; }
     @media (max-width: 850px) {
@@ -333,7 +345,7 @@
       .top-actions > button, .header-account { padding: 6px 8px; }
       .capture-form input { font-size: 16px; }
     }
-    input, select, button, textarea {
+    :where(input, select, button, textarea) {
       font: inherit;
       border-radius: 10px;
       border: 1px solid var(--border);
@@ -342,7 +354,7 @@
       background: var(--surface);
       color: var(--text);
     }
-    button {
+    :where(button) {
       cursor: pointer;
       background: var(--surface);
       color: var(--text);
@@ -351,9 +363,9 @@
       touch-action: manipulation;
     }
     button:disabled { opacity: 0.62; cursor: wait; }
-    button:hover { border-color: var(--primary); background: var(--surface-alt); }
-    button.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
-    button.primary:hover { background: var(--primary-hover); }
+    :where(button):hover { border-color: var(--primary); background: var(--surface-alt); color: var(--heading); }
+    button.primary { background: var(--primary-fill, var(--primary)); color: #fff; border-color: var(--primary-fill, var(--primary)); }
+    button.primary:hover { background: var(--primary-fill-hover, var(--primary-hover)); color: #fff; border-color: var(--primary-fill-hover, var(--primary-hover)); }
     button.duodo-btn {
       background: var(--tl-header-grad);
       color: #fff;
@@ -363,7 +375,7 @@
       padding: 8px 15px;
       box-shadow: 0 4px 12px rgba(15,23,42,0.16);
     }
-    button.duodo-btn:hover { filter: brightness(1.06); }
+    button.duodo-btn:hover { background: var(--tl-header-grad); color: #fff; filter: brightness(1.06); }
     button.ai-pill {
       background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
       color: #fff;
@@ -374,6 +386,7 @@
       padding: 6px 14px;
       box-shadow: 0 2px 10px rgba(168,85,247,0.28);
     }
+    button.ai-pill:hover { background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%); color: #fff; filter: brightness(1.06); }
     button.ai-pill:disabled { opacity: 0.6; cursor: wait; }
     button.ghost-dark {
       background: var(--surface-alt);
@@ -522,7 +535,7 @@
         border-radius: 0;
         padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
         z-index: 40;
-        border-top: 1px solid #e2e8f0;
+        border-top: 1px solid var(--border);
         box-shadow: 0 -4px 16px rgba(15,23,42,0.06);
       }
       .rail-tip-box { display: none; }
@@ -543,9 +556,9 @@
     .summary-header .duodo-btn { flex-shrink: 0; }
     .summary-title {
       font-size: 15px;
-      font-weight: 500;
+      font-weight: 600;
       letter-spacing: 2.2px;
-      color: #475569;
+      color: var(--heading);
     }
     .kpi-grid {
       display: grid;
@@ -640,7 +653,8 @@
     }
     @media (max-width: 768px) { .analytics-row { grid-template-columns: 1fr; } }
     .analytic-card {
-      background: #ffffff;
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 12px;
       padding: 18px 20px;
       box-shadow: 0 6px 20px rgba(15,23,42,0.05);
@@ -650,7 +664,7 @@
       font-size: 12px;
       font-weight: 600;
       letter-spacing: 1.4px;
-      color: #64748b;
+      color: var(--muted);
       margin-bottom: 12px;
     }
     .focus-row {
@@ -658,12 +672,12 @@
       align-items: center;
       justify-content: space-between;
       padding: 9px 0;
-      border-bottom: 1px solid #f1f5f9;
+      border-bottom: 1px solid var(--border);
       font-size: 13.5px;
       cursor: pointer;
     }
     .focus-row:last-child { border-bottom: none; }
-    .focus-row:hover { color: #3b82f6; }
+    .focus-row:hover { color: var(--primary); }
     .donut-wrap { display: flex; align-items: center; gap: 22px; padding-top: 6px; }
     .donut-legend { display: grid; gap: 10px; font-size: 12.5px; }
     .legend-item { display: flex; align-items: center; gap: 8px; }
@@ -698,7 +712,7 @@
       gap: 10px;
     }
     .btn-group { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-    .btn-group button.active { background: #1e293b; color: #fff; border-color: #1e293b; }
+    .btn-group button.active { background: var(--primary-fill, var(--primary)); color: #fff; border-color: var(--primary-fill, var(--primary)); }
 
     /* 2x2 Eisenhower Matrix */
     .matrix-grid {
@@ -797,7 +811,7 @@
     }
     .chk-progress-bar {
       height: 5px;
-      background: #e2e8f0;
+      background: var(--border);
       border-radius: 999px;
       overflow: hidden;
       margin-bottom: 4px;
@@ -839,7 +853,8 @@
     .card-box h3 { font-size: 15px; margin-bottom: 12px; }
     .answer-box {
       font-family: inherit;
-      background: #f8fafc;
+      background: var(--surface-alt);
+      color: var(--text);
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 14px 16px;
@@ -847,9 +862,9 @@
       line-height: 1.65;
       margin-top: 10px;
     }
-    .answer-box h4 { font-size: 14px; font-weight: 700; margin: 8px 0 4px; color: #0f172a; }
+    .answer-box h4 { font-size: 14px; font-weight: 700; margin: 8px 0 4px; color: var(--heading); }
     .answer-box ul, .answer-box ol { padding-left: 20px; margin: 6px 0; display: grid; gap: 4px; }
-    .answer-box code { background: #e2e8f0; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+    .answer-box code { background: color-mix(in srgb, var(--primary) 14%, var(--surface)); color: var(--heading); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
     pre.answer-box { white-space: pre-wrap; }
 
     /* DuoDo Bottom-Sheet / Modal */
@@ -882,7 +897,9 @@
       gap: 12px;
     }
     .duodo-sheet {
-      background: #f5f5f7;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
       border-radius: 26px;
       max-width: 520px;
       width: 100%;
@@ -948,7 +965,9 @@
     }
 
     .duodo-card {
-      background: #ffffff;
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
       border-radius: 18px;
       padding: 12px 16px;
       box-shadow: 0 2px 8px rgba(15,23,42,0.03);
@@ -959,7 +978,8 @@
     .seg-tabs {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      background: #f1f5f9;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
       border-radius: 12px;
       padding: 3px;
       gap: 4px;
@@ -971,16 +991,21 @@
       padding: 7px 10px;
       font-weight: 600;
       font-size: 13.5px;
-      color: #64748b;
+      color: var(--muted);
+    }
+    .seg-tab:hover {
+      background: transparent;
+      color: var(--heading);
     }
     .seg-tab.active {
-      background: #ffffff;
-      color: #0f172a;
-      box-shadow: 0 1px 4px rgba(15,23,42,0.08);
+      background: var(--surface);
+      color: var(--heading);
+      box-shadow: 0 1px 4px rgba(15,23,42,0.12);
     }
     .privacy-pill {
-      background: #f1f5f9;
-      color: #475569;
+      background: var(--surface-alt);
+      color: var(--muted);
+      border: 1px solid var(--border);
       border-radius: 999px;
       padding: 6px 12px;
       font-size: 12px;
@@ -992,7 +1017,7 @@
       justify-content: space-between;
       gap: 10px;
       padding: 4px 0;
-      border-bottom: 1px solid #f1f5f9;
+      border-bottom: 1px solid var(--border);
       font-size: 13.5px;
     }
     .setting-row:last-child { border-bottom: none; }
@@ -1003,10 +1028,12 @@
       padding: 4px 10px;
       font-size: 12px;
       border-radius: 999px;
-      background: #f1f5f9;
-      border: 1px solid transparent;
+      background: var(--surface-alt);
+      color: var(--text);
+      border: 1px solid var(--border);
     }
-    .chip-btn.active { background: #ede9fe; color: #6d28d9; border-color: #c4b5fd; font-weight: 600; }
+    .chip-btn:hover { background: var(--primary-soft); color: var(--primary); border-color: var(--primary); }
+    .chip-btn.active { background: var(--primary-soft); color: var(--primary); border-color: var(--primary); font-weight: 600; }
 
     /* iOS-style switch */
     .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
@@ -1026,7 +1053,8 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      background: #f8fafc;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
       border-radius: 10px;
       padding: 6px 10px;
     }
@@ -1145,10 +1173,16 @@
       transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
     }
     .ask-fab-btn:hover {
+      background: var(--tl-header-grad, linear-gradient(135deg, #4b91f7 0%, #2563eb 100%));
+      color: #fff;
+      border-color: rgba(255, 255, 255, 0.5);
+      filter: brightness(1.06);
       transform: translateY(-2px);
       box-shadow: 0 14px 30px rgba(37, 99, 235, 0.42), 0 4px 10px rgba(15, 23, 42, 0.18);
     }
     .ask-fab-btn.active {
+      background: var(--tl-header-grad, linear-gradient(135deg, #4b91f7 0%, #2563eb 100%));
+      color: #fff;
       box-shadow: 0 0 0 3px var(--primary-soft), 0 10px 24px rgba(37, 99, 235, 0.32);
     }
     .ask-fab-btn[hidden] { display: none !important; }
@@ -1240,7 +1274,7 @@
     .ask-turn-q {
       align-self: flex-end;
       max-width: 86%;
-      background: var(--primary);
+      background: var(--primary-fill, var(--primary));
       color: #fff;
       padding: 8px 12px;
       border-radius: 14px 14px 4px 14px;
@@ -1303,10 +1337,12 @@
     .auth-sheet {
       width: 100%;
       max-width: 420px;
-      background: linear-gradient(165deg, #f3f5ff 0%, #ffffff 48%);
+      background: linear-gradient(165deg, var(--primary-soft) 0%, var(--surface) 48%);
+      color: var(--text);
+      border: 1px solid var(--border);
       border-radius: 24px;
       padding: 28px 26px 24px;
-      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22), 0 0 0 1px rgba(255,255,255,0.8) inset;
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
       position: relative;
       display: grid;
       gap: 16px;
@@ -1318,9 +1354,9 @@
       width: 30px;
       height: 30px;
       border-radius: 999px;
-      border: none;
-      background: rgba(15,23,42,0.06);
-      color: #475569;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      color: var(--muted);
       font-size: 14px;
       font-weight: 700;
       padding: 0;
@@ -1329,7 +1365,7 @@
       justify-content: center;
       cursor: pointer;
     }
-    .auth-close-circle:hover { background: rgba(15,23,42,0.11); }
+    .auth-close-circle:hover { background: var(--primary-soft); color: var(--heading); border-color: var(--primary); }
     .auth-hero {
       text-align: center;
       display: grid;
@@ -1347,13 +1383,13 @@
       margin: 2px 0 0;
       font-size: 20px;
       font-weight: 800;
-      color: #0f172a;
+      color: var(--heading);
       letter-spacing: -0.01em;
     }
     .auth-hero p {
       margin: 0;
       font-size: 12.5px;
-      color: #64748b;
+      color: var(--muted);
     }
     .auth-field {
       display: flex;
@@ -1361,15 +1397,15 @@
       gap: 10px;
       height: 46px;
       padding: 0 14px;
-      background: #f8fafc;
-      border: 1.2px solid #e2e8f0;
+      background: var(--surface-alt);
+      border: 1.2px solid var(--border);
       border-radius: 12px;
       transition: all 0.16s ease;
     }
     .auth-field:focus-within {
-      background: #ffffff;
-      border-color: #4f46e5;
-      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+      background: var(--surface);
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-soft);
     }
     .auth-field input {
       border: none !important;
@@ -1379,7 +1415,7 @@
       flex: 1;
       padding: 0 !important;
       font-size: 14px;
-      color: #0f172a;
+      color: var(--heading);
     }
     .auth-cta-btn {
       width: 100%;
@@ -1392,9 +1428,15 @@
       font-weight: 700;
       cursor: pointer;
       box-shadow: 0 10px 22px rgba(79, 70, 229, 0.26);
-      transition: transform 0.12s ease, box-shadow 0.12s ease;
+      transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
     }
-    .auth-cta-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 26px rgba(79, 70, 229, 0.34); }
+    .auth-cta-btn:hover {
+      background: linear-gradient(92deg, #3879f9 0%, #7c4dff 100%);
+      color: #fff;
+      filter: brightness(1.06);
+      transform: translateY(-1px);
+      box-shadow: 0 12px 26px rgba(79, 70, 229, 0.34);
+    }
 
     /* Memory graph */
     #panel-graph.active {
@@ -1403,8 +1445,8 @@
       min-height: calc(100dvh - var(--header-h) - 40px);
     }
     .graph-toolbar-card {
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 14px;
       padding: 12px 14px;
       margin-bottom: 12px;
@@ -1425,17 +1467,17 @@
     .graph-local-controls[hidden] { display: none; }
     #graphTypeSelect { display: none; }
     .graph-relations { position: relative; font-size: 12px; z-index: 10; }
-    .graph-relations > summary { cursor: pointer; color: #334155; padding: 4px; }
+    .graph-relations > summary { cursor: pointer; color: var(--text); padding: 4px; }
     .graph-relation-options {
       position: absolute;
       top: calc(100% + 4px);
       right: 0;
       width: min(310px, calc(100vw - 54px));
       padding: 12px;
-      background: #fff;
-      border: 1px solid #e2e8f0;
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 12px;
-      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
     }
     @media (max-width: 930px) {
       #graphTypeChips { display: none; }
@@ -1452,28 +1494,29 @@
       border-radius: 999px;
       font-size: 12px;
       font-weight: 600;
-      border: 1px solid #e2e8f0;
-      background: #f8fafc;
-      color: #475569;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      color: var(--muted);
       cursor: pointer;
     }
+    .graph-chip:hover { border-color: var(--primary); color: var(--heading); background: var(--primary-soft); }
     .graph-chip.active {
-      background: #1e293b;
+      background: var(--primary-fill, var(--primary));
       color: #ffffff;
-      border-color: #1e293b;
+      border-color: var(--primary-fill, var(--primary));
     }
     .graph-layer-toggle {
       display: inline-flex;
       align-items: center;
       gap: 5px;
       font-size: 12px;
-      color: #475569;
+      color: var(--text);
       cursor: pointer;
       user-select: none;
       padding: 3px 8px;
       border-radius: 8px;
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
     }
     .graph-stage {
       position: relative;
@@ -1694,7 +1737,7 @@
     }
     .seg-pill-btn:hover { color: var(--heading); background: transparent; border-color: transparent; }
     .seg-pill-btn.active {
-      background: var(--primary);
+      background: var(--primary-fill, var(--primary));
       color: #ffffff;
       box-shadow: 0 2px 8px rgba(15,23,42,0.12);
     }
@@ -1863,8 +1906,8 @@
       overflow: hidden;
     }
     .cal-week-vscroll {
-      max-height: calc(100vh - 220px);
-      min-height: 440px;
+      max-height: calc(100vh - 210px);
+      min-height: 320px;
       overflow: auto;
       position: relative;
     }
@@ -1885,6 +1928,31 @@
       pointer-events: none;
       line-height: 1;
     }
+    .cal-fold-band-pill {
+      position: absolute;
+      left: 3px;
+      right: 3px;
+      transform: translateY(-50%);
+      padding: 2px 3px;
+      border-radius: 6px;
+      border: 1px dashed var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 9.5px;
+      font-weight: 700;
+      line-height: 1.1;
+      text-align: center;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      z-index: 4;
+    }
+    .cal-fold-band-pill:hover {
+      border-color: var(--primary);
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
     .cal-day-col {
       position: relative;
       border-left: 1px solid var(--border);
@@ -1902,6 +1970,19 @@
     }
     .cal-hour-slot.is-rest {
       background: rgba(148, 163, 184, 0.055);
+    }
+    .cal-hour-slot.is-idle-fold {
+      border-bottom: 1px dotted rgba(148, 163, 184, 0.12);
+      background: repeating-linear-gradient(
+        -45deg,
+        transparent,
+        transparent 5px,
+        rgba(148, 163, 184, 0.05) 5px,
+        rgba(148, 163, 184, 0.05) 10px
+      );
+    }
+    .cal-hour-slot.is-idle-band-end {
+      border-bottom: 1px dashed rgba(148, 163, 184, 0.34);
     }
     .cal-hour-slot:hover {
       background: var(--primary-soft);
@@ -2047,9 +2128,9 @@
       color: var(--primary);
     }
     .pomo-preset-btn.active {
-      background: var(--primary);
+      background: var(--primary-fill, var(--primary));
       color: #ffffff;
-      border-color: var(--primary);
+      border-color: var(--primary-fill, var(--primary));
       font-weight: 700;
       box-shadow: 0 2px 8px rgba(59, 130, 246, 0.28);
     }
@@ -2302,8 +2383,8 @@
       cursor: pointer;
     }
     .tag-filter-pill.active {
-      background: var(--primary);
-      border-color: var(--primary);
+      background: var(--primary-fill, var(--primary));
+      border-color: var(--primary-fill, var(--primary));
       color: #fff;
     }
     .mood-pill-btn {
@@ -2549,6 +2630,7 @@
       align-items: center;
       justify-content: center;
     }
+    .media-thumb-del:hover { background: rgba(220, 38, 38, 0.92); color: #fff; }
     .notes-drop-active {
       outline: 2px dashed var(--primary);
       background: var(--primary-soft) !important;
@@ -2961,7 +3043,7 @@
       color: #e2e8f0;
       transition: border-color 0.15s ease, transform 0.15s ease;
     }
-    .fs-scene-btn:hover { transform: translateY(-1px); border-color: rgba(255, 255, 255, 0.45); }
+    .fs-scene-btn:hover { background: rgba(255, 255, 255, 0.14); color: #fff; transform: translateY(-1px); border-color: rgba(255, 255, 255, 0.45); }
     .fs-scene-btn.selected { border-color: var(--scene-acc, #a855f7); box-shadow: 0 0 0 2px color-mix(in srgb, var(--scene-acc, #a855f7) 45%, transparent); }
     .fs-scene-btn .fs-thumb {
       height: 44px;
@@ -3032,11 +3114,16 @@
       cursor: pointer;
       transition: all 0.18s ease;
     }
+    .fs-toggle:hover { background: rgba(255, 255, 255, 0.16); color: #f8fafc; border-color: rgba(255, 255, 255, 0.4); }
     .fs-toggle.on {
       background: color-mix(in srgb, var(--scene-acc, #a855f7) 30%, transparent);
       border-color: var(--scene-acc, #a855f7);
       color: #fff;
       box-shadow: 0 0 10px color-mix(in srgb, var(--scene-acc, #a855f7) 40%, transparent);
+    }
+    .fs-toggle.on:hover {
+      background: color-mix(in srgb, var(--scene-acc, #a855f7) 42%, transparent);
+      color: #fff;
     }
     .fs-action-btn {
       border: 1px solid rgba(255, 255, 255, 0.25);
@@ -3108,7 +3195,7 @@
         <button type="button" class="tab-btn" data-tab="calendar" data-module-toggle="calendar" onclick="switchTab('calendar', this)"><span class="tab-ico">📅</span><span>日历</span></button>
         <button type="button" class="tab-btn" data-tab="focus" data-module-toggle="focus" onclick="switchTab('focus', this)"><span class="tab-ico">🍅</span><span>专注</span></button>
         <button type="button" class="tab-btn" data-tab="notes" data-module-toggle="notes" onclick="switchTab('notes', this)"><span class="tab-ico">📝</span><span>随记</span></button>
-        <button type="button" class="tab-btn" data-tab="memories" onclick="switchTab('memories', this)"><span class="tab-ico">🧠</span><span>记忆</span></button>
+        <button type="button" class="tab-btn" data-tab="memories" onclick="switchTab('graph', this)"><span class="tab-ico">🧠</span><span>记忆</span></button>
         <button type="button" class="tab-btn" id="adminTabBtn" data-tab="admin" style="display:none;" onclick="switchTab('admin', this)"><span class="tab-ico">🛡️</span><span>后台</span></button>
       </div>
       <div class="rail-tip-box">
@@ -3483,8 +3570,8 @@
     <section id="panel-memories" class="panel">
       <div class="summary-header" style="flex-wrap:wrap;gap:10px;margin-bottom:14px;">
         <div class="seg-pill-bar">
-          <button type="button" class="seg-pill-btn active" data-tab="memories" onclick="switchTab('memories')">🗂️ 记忆库</button>
           <button type="button" class="seg-pill-btn" data-tab="graph" onclick="switchTab('graph')">🕸️ 双链星图</button>
+          <button type="button" class="seg-pill-btn active" data-tab="memories" onclick="switchTab('memories')">🗂️ 记忆库</button>
           <button type="button" class="seg-pill-btn" data-tab="ask" onclick="switchTab('ask')">💬 证据问答</button>
         </div>
         <div class="btn-group">
@@ -3519,8 +3606,8 @@
     <section id="panel-graph" class="panel">
       <div class="summary-header" style="flex-wrap:wrap;gap:10px;margin-bottom:14px;">
         <div class="seg-pill-bar">
-          <button type="button" class="seg-pill-btn" data-tab="memories" onclick="switchTab('memories')">🗂️ 记忆库</button>
           <button type="button" class="seg-pill-btn active" data-tab="graph" onclick="switchTab('graph')">🕸️ 双链星图</button>
+          <button type="button" class="seg-pill-btn" data-tab="memories" onclick="switchTab('memories')">🗂️ 记忆库</button>
           <button type="button" class="seg-pill-btn" data-tab="ask" onclick="switchTab('ask')">💬 证据问答</button>
         </div>
         <div class="btn-group">
@@ -3627,8 +3714,8 @@
     <section id="panel-ask" class="panel">
       <div class="summary-header" style="flex-wrap:wrap;gap:10px;margin-bottom:14px;">
         <div class="seg-pill-bar">
-          <button type="button" class="seg-pill-btn" data-tab="memories" onclick="switchTab('memories')">🗂️ 记忆库</button>
           <button type="button" class="seg-pill-btn" data-tab="graph" onclick="switchTab('graph')">🕸️ 双链星图</button>
+          <button type="button" class="seg-pill-btn" data-tab="memories" onclick="switchTab('memories')">🗂️ 记忆库</button>
           <button type="button" class="seg-pill-btn active" data-tab="ask" onclick="switchTab('ask')">💬 证据问答</button>
         </div>
         <div class="btn-group">
@@ -3893,7 +3980,7 @@
       </div>
 
       <details class="duodo-card" style="padding:10px 16px;">
-        <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#475569;">🎯 四象限重要/紧急度微调</summary>
+        <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--muted);">🎯 四象限重要/紧急度微调</summary>
         <div style="display:grid;gap:8px;margin-top:10px;">
           <div class="setting-row">
             <span>重要度 (1-5)</span>
@@ -4059,7 +4146,7 @@
       </div>
 
       <div id="authProfilePane" style="display:none;gap:12px;padding-top:4px;">
-        <div style="font-size:17px;font-weight:800;color:#0f172a;">👤 我的账号与今日配额</div>
+        <div style="font-size:17px;font-weight:800;color:var(--heading);">👤 我的账号与今日配额</div>
         <div class="duodo-card" style="display:grid;gap:6px;font-size:13px;">
           <div><strong>账号</strong>：<span id="profUsername"></span> <span class="tag" id="profRole"></span></div>
           <div><strong>隔离空间 Space</strong>：<code id="profSpace"></code></div>
@@ -4073,7 +4160,7 @@
             <button type="button" onclick="copyCurrentToken()">复制 Token</button>
           </div>
           <div style="font-size:12.5px;font-weight:700;margin-top:4px;">🤖 云端 MCP 接入配置（同步电脑端 Agent）</div>
-          <textarea id="profMcpConfigBox" readonly rows="5" style="width:100%;font-family:monospace;font-size:11px;background:#f8fafc;"></textarea>
+          <textarea id="profMcpConfigBox" readonly rows="5" style="width:100%;font-family:monospace;font-size:11px;background:var(--surface-alt);color:var(--text);"></textarea>
           <button type="button" onclick="copyMcpConfig()">📋 复制 MCP 接入配置 JSON</button>
         </div>
         <div class="duodo-card" style="display:grid;gap:8px;">
@@ -4742,7 +4829,7 @@
 
       const checklistHtml = subs.length ? `
         <div class="card-checklist" data-checklist-for="${esc(t.memory_id)}">
-          <div style="display:flex;justify-content:space-between;font-size:11.5px;color:#475569;font-weight:600;">
+          <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);font-weight:600;">
             <span>📋 子步骤清单</span>
             <span data-chk-count>${doneSubs}/${subs.length} 已完成</span>
           </div>
@@ -4759,7 +4846,7 @@
       const cleanTitle = String(t.title || '').trim();
       const cleanSummary = String(t.summary || '').trim();
       const summaryHtml = (cleanSummary && cleanSummary !== cleanTitle)
-        ? `<div style="font-size:12.5px;color:#475569;line-height:1.45;">${esc(cleanSummary)}</div>`
+        ? `<div style="font-size:12.5px;color:var(--muted);line-height:1.45;">${esc(cleanSummary)}</div>`
         : '';
       const reasonTip = p.priority_reason ? String(p.priority_reason) : (p.quadrant_label || '');
 
@@ -4831,8 +4918,8 @@
         <div class="legend-item">
           <span class="legend-dot" style="background:${s.color}"></span>
           <div>
-            <div style="color:#64748b;font-size:11.5px;">${s.label}</div>
-            <strong style="font-size:15px;color:#0f172a;">${s.val}</strong>
+            <div style="color:var(--muted);font-size:11.5px;">${s.label}</div>
+            <strong style="font-size:15px;color:var(--heading);">${s.val}</strong>
           </div>
         </div>
       `).join('');
@@ -4840,10 +4927,10 @@
       return `
         <div class="donut-wrap">
           <svg width="124" height="124" viewBox="0 0 124 124">
-            <circle cx="62" cy="62" r="${r}" fill="none" stroke="#e2e8f0" stroke-width="12" />
+            <circle cx="62" cy="62" r="${r}" fill="none" stroke="var(--border)" stroke-width="12" />
             ${arcs}
-            <text x="62" y="59" text-anchor="middle" font-size="23" font-weight="700" fill="#0f172a">${total}</text>
-            <text x="62" y="76" text-anchor="middle" font-size="10.5" fill="#64748b">总记录事项</text>
+            <text x="62" y="59" text-anchor="middle" font-size="23" font-weight="700" fill="var(--heading)">${total}</text>
+            <text x="62" y="76" text-anchor="middle" font-size="10.5" fill="var(--muted)">总记录事项</text>
           </svg>
           <div class="donut-legend">${legend}</div>
         </div>
@@ -6101,7 +6188,7 @@
         const doneSubs = subs.filter(x => x.done).length;
         const nudges = Array.isArray(p.nudges) ? p.nudges : [];
         const nudgeHtml = nudges.slice(-3).reverse().map(n => `
-          <div style="font-size:12px;background:#f8fafc;padding:5px 9px;border-radius:8px;color:#334155;">
+          <div style="font-size:12px;background:var(--surface-alt);border:1px solid var(--border);padding:5px 9px;border-radius:8px;color:var(--text);">
             <strong>${esc(n.from_user)}</strong>：${esc(n.message)}
           </div>
         `).join('');
@@ -7935,7 +8022,7 @@
             <div><label style="font-size:12px;color:var(--muted);">记忆摘要 Summary</label><textarea id="meSummary" rows="3" style="width:100%;margin-top:4px;">${esc(m.summary)}</textarea></div>
             ${extraFields}
             <div><label style="font-size:12px;color:var(--muted);">追加标签（逗号分隔）</label><input id="meTags" value="${esc((m.tags || []).join(', '))}" style="width:100%;margin-top:4px;" /></div>
-            <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:#475569;cursor:pointer;">
+            <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);cursor:pointer;">
               <input type="checkbox" id="meLock" ${m.user_locked ? 'checked' : ''} /> 🔒 启用用户锁定保护（防止后续 Dream / AI 抽取自动覆盖此手工修订）
             </label>
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;">
@@ -9685,15 +9772,33 @@
     let _calOverviewCache = null;
     let _calWeekScrolledOnce = false;
     let _calWeekDensity = localStorage.getItem('tracetodo_cal_week_density') || 'adaptive'; // 'adaptive' | 'uniform'
+    let _calExpandedIdleHours = new Set();
     let _calSlotDuration = 60;
     let _calSlotColor = 'sky';
 
     function setCalWeekDensity(mode) {
       _calWeekDensity = mode === 'uniform' ? 'uniform' : 'adaptive';
+      _calExpandedIdleHours.clear();
       localStorage.setItem('tracetodo_cal_week_density', _calWeekDensity);
       document.getElementById('calDensityAdaptiveBtn')?.classList.toggle('active', _calWeekDensity === 'adaptive');
       document.getElementById('calDensityUniformBtn')?.classList.toggle('active', _calWeekDensity === 'uniform');
       _calWeekScrolledOnce = false;
+      if (_calOverviewCache && _calSubView === 'week') {
+        paintCalendarOverview(_calOverviewCache);
+      }
+    }
+
+    function toggleCalIdleBand(startH, endH) {
+      const s = Math.max(0, Math.min(23, Number(startH) || 0));
+      const e = Math.max(s, Math.min(23, Number(endH) || s));
+      let allExpanded = true;
+      for (let h = s; h <= e; h++) {
+        if (!_calExpandedIdleHours.has(h)) { allExpanded = false; break; }
+      }
+      for (let h = s; h <= e; h++) {
+        if (allExpanded) _calExpandedIdleHours.delete(h);
+        else _calExpandedIdleHours.add(h);
+      }
       if (_calOverviewCache && _calSubView === 'week') {
         paintCalendarOverview(_calOverviewCache);
       }
@@ -9730,6 +9835,7 @@
     }
 
     function shiftCalendarPeriod(delta) {
+      _calExpandedIdleHours.clear();
       if (delta === 0) {
         _calSelectedDate = fmtLocalYMD(new Date());
       } else {
@@ -10140,13 +10246,17 @@
       }
       allDayRow.innerHTML = adHtml;
 
-      // 3. Adaptive 00:00 - 24:00 Gutter + 7 Day Columns
+      // 3. Adaptive 00:00 - 24:00 Gutter + 7 Day Columns (Sleep + Full-Week Statistical Idle-Band Folding)
+      const busyCount = new Array(24).fill(0);
       const activeHours = new Set();
       for (const d of days) {
         for (const blk of [...(d.timed_blocks || []), ...(d.focus_blocks || [])]) {
           const sH = Math.max(0, Math.min(23, Math.floor((blk.start_minute || 0) / 60)));
           const eH = Math.max(sH, Math.min(23, Math.floor(Math.max(blk.start_minute || 0, (blk.end_minute || 0) - 1) / 60)));
-          for (let h = sH; h <= eH; h++) activeHours.add(h);
+          for (let h = sH; h <= eH; h++) {
+            busyCount[h] += 1;
+            activeHours.add(h);
+          }
         }
       }
 
@@ -10154,25 +10264,157 @@
       document.getElementById('calDensityUniformBtn')?.classList.toggle('active', _calWeekDensity === 'uniform');
 
       const hourHeights = new Array(24).fill(48);
+      const foldedBands = [];
+      const foldedHourSet = new Set();
+      const bandEndHourSet = new Set();
+
       if (_calWeekDensity !== 'uniform') {
-        const targetH = Math.max(440, Math.min(640, (window.innerHeight || 820) - 270));
-        const weights = [];
-        for (let h = 0; h < 24; h++) {
-          if (activeHours.has(h)) weights.push(64);
-          else if (h >= 7 && h <= 22) weights.push(20);
-          else weights.push(10);
-        }
-        const weightSum = weights.reduce((a, b) => a + b, 0) || 1;
-        const rawScale = targetH / weightSum;
-        for (let h = 0; h < 24; h++) {
-          const isSleep = h <= 6 || h === 23;
-          if (activeHours.has(h)) {
-            hourHeights[h] = Math.max(54, Math.min(96, Math.round(weights[h] * rawScale)));
-          } else if (isSleep) {
-            hourHeights[h] = Math.max(9, Math.min(15, Math.round(weights[h] * rawScale)));
-          } else {
-            hourHeights[h] = Math.max(17, Math.min(28, Math.round(weights[h] * rawScale)));
+        if (activeHours.size === 0) {
+          // Empty week: fold sleep windows (00-08, 22-24), keep 08-22 open in single screen
+          const sleepRuns = [[0, 7], [22, 23]];
+          for (const [s, e] of sleepRuns) {
+            let anyExp = false;
+            for (let h = s; h <= e; h++) if (_calExpandedIdleHours.has(h)) anyExp = true;
+            if (!anyExp) {
+              foldedBands.push({ start: s, end: e, isSleepOnly: true });
+              for (let h = s; h <= e; h++) foldedHourSet.add(h);
+              bandEndHourSet.add(e);
+            }
           }
+        } else {
+          // Active week: statistically detect all >=2h contiguous week-wide empty runs (both sleep & daytime like 12-15)
+          let h = 0;
+          while (h < 24) {
+            if (busyCount[h] === 0 && !_calExpandedIdleHours.has(h)) {
+              const s = h;
+              while (h + 1 < 24 && busyCount[h + 1] === 0 && !_calExpandedIdleHours.has(h + 1)) {
+                h++;
+              }
+              const e = h;
+              if (e - s + 1 >= 2) {
+                const isSleepOnly = e <= 7 || s >= 22;
+                foldedBands.push({ start: s, end: e, isSleepOnly });
+                for (let k = s; k <= e; k++) foldedHourSet.add(k);
+                bandEndHourSet.add(e);
+              }
+            }
+            h++;
+          }
+        }
+
+        const vscrollMaxH = Math.max(380, (window.innerHeight || 820) - 212);
+        const fixedRowsH = (hdrRow.offsetHeight || 64) + (allDayRow.offsetHeight || 36) + 4;
+        const availGridH = Math.max(296, vscrollMaxH - fixedRowsH);
+
+        const raw = new Array(24).fill(24);
+        const floors = new Array(24).fill(12);
+        const caps = new Array(24).fill(48);
+
+        for (let h = 0; h < 24; h++) {
+          if (busyCount[h] > 0) {
+            raw[h] = 52 + Math.min(12, (busyCount[h] - 1) * 3);
+            floors[h] = 34;
+            caps[h] = 70;
+          } else if (_calExpandedIdleHours.has(h)) {
+            raw[h] = 30;
+            floors[h] = 22;
+            caps[h] = 40;
+          } else if (foldedHourSet.has(h)) {
+            const isSlp = h <= 7 || h >= 22;
+            raw[h] = isSlp ? 5.5 : 8;
+            floors[h] = isSlp ? 4.5 : 6;
+            caps[h] = isSlp ? 8 : 12;
+          } else if (h === 0 || h === 23) {
+            raw[h] = 9;
+            floors[h] = 6;
+            caps[h] = 14;
+          } else {
+            raw[h] = activeHours.size === 0 ? 26 : 18;
+            floors[h] = 13;
+            caps[h] = 32;
+          }
+        }
+
+        // Ensure each folded band has at least 18px combined height so its pill label is legible
+        for (const b of foldedBands) {
+          const len = b.end - b.start + 1;
+          let sumB = 0;
+          for (let h = b.start; h <= b.end; h++) sumB += raw[h];
+          if (sumB < 18) {
+            const perH = 18 / len;
+            for (let h = b.start; h <= b.end; h++) {
+              raw[h] = perH;
+              floors[h] = Math.max(floors[h], perH);
+            }
+          }
+        }
+
+        let sumRaw = raw.reduce((a, b) => a + b, 0);
+        if (sumRaw > availGridH) {
+          const excess = sumRaw - availGridH;
+          const slacks = raw.map((v, i) => Math.max(0, v - floors[i]));
+          const totalSlack = slacks.reduce((a, b) => a + b, 0);
+          if (totalSlack > 0) {
+            for (let i = 0; i < 24; i++) {
+              raw[i] -= Math.min(slacks[i], excess * (slacks[i] / totalSlack));
+            }
+          }
+        } else if (sumRaw < availGridH - 8) {
+          const room = availGridH - 4 - sumRaw;
+          const heads = raw.map((v, i) => {
+            const eligible = busyCount[i] > 0 || _calExpandedIdleHours.has(i) || (activeHours.size === 0 && i >= 8 && i < 22);
+            return eligible ? Math.max(0, caps[i] - v) : 0;
+          });
+          const totalHead = heads.reduce((a, b) => a + b, 0);
+          if (totalHead > 0) {
+            for (let i = 0; i < 24; i++) {
+              raw[i] += Math.min(heads[i], room * (heads[i] / totalHead));
+            }
+          }
+        }
+
+        for (let i = 0; i < 24; i++) {
+          hourHeights[i] = Math.max(4, Math.round(raw[i]));
+        }
+        // Trim integer rounding overflow so grid fits availGridH with zero scrollbar whenever possible
+        let intSum = hourHeights.reduce((a, b) => a + b, 0);
+        while (intSum > availGridH) {
+          let bestIdx = -1;
+          let bestMargin = 0;
+          for (let i = 0; i < 24; i++) {
+            const margin = hourHeights[i] - Math.ceil(floors[i]);
+            if (margin > bestMargin) {
+              bestMargin = margin;
+              bestIdx = i;
+            }
+          }
+          if (bestIdx < 0) break;
+          hourHeights[bestIdx] -= 1;
+          intSum -= 1;
+        }
+      }
+
+      // Surface week-wide idle folding summary pill in stats bar
+      const statsEl = document.getElementById('calSummaryStatsBar');
+      if (statsEl && _calWeekDensity !== 'uniform') {
+        const oldFoldTag = statsEl.querySelector('[data-cal-fold-summary]');
+        if (oldFoldTag) oldFoldTag.remove();
+        if (foldedBands.length) {
+          const bandLabels = foldedBands.map(b => `${String(b.start).padStart(2, '0')}–${String(b.end + 1).padStart(2, '0')}`);
+          const span = document.createElement('span');
+          span.className = 'tag';
+          span.setAttribute('data-cal-fold-summary', '1');
+          span.title = '点击左侧时间轴上的折叠区间胶囊可临时展开对应时段';
+          span.textContent = `📐 已缩减全周空闲：${bandLabels.join('、')}`;
+          statsEl.appendChild(span);
+        } else if (_calExpandedIdleHours.size > 0) {
+          const btnReset = document.createElement('button');
+          btnReset.type = 'button';
+          btnReset.className = 'chip-btn';
+          btnReset.setAttribute('data-cal-fold-summary', '1');
+          btnReset.textContent = '↺ 重新收起空闲时段';
+          btnReset.onclick = () => setCalWeekDensity('adaptive');
+          statsEl.appendChild(btnReset);
         }
       }
 
@@ -10189,14 +10431,20 @@
       };
 
       let gutterHtml = `<div class="cal-time-gutter" style="height:${totalGridH}px;">`;
+      for (const b of foldedBands) {
+        const midY = Math.round((hourTop[b.start] + hourTop[b.end + 1]) / 2);
+        const sLbl = String(b.start).padStart(2, '0');
+        const eLbl = String(b.end + 1).padStart(2, '0');
+        gutterHtml += `<button type="button" class="cal-fold-band-pill" style="top:${midY}px;" title="本周 ${sLbl}:00–${eLbl}:00 全周无排期，点击展开" onclick="toggleCalIdleBand(${b.start}, ${b.end})">${sLbl}–${eLbl}</button>`;
+      }
+      let lastLabelY = -999;
       for (let h = 0; h < 24; h++) {
-        const isCompact = _calWeekDensity !== 'uniform' && hourHeights[h] < 16 && !activeHours.has(h);
-        const showLabel = _calWeekDensity === 'uniform' || !isCompact || h === 0 || h === 3 || h === 6 || activeHours.has(h);
-        if (showLabel) {
-          const topPx = hourTop[h];
-          const topStyle = topPx === 0 ? 'top:2px;transform:none;' : `top:${topPx}px;`;
-          gutterHtml += `<div class="cal-time-label" style="${topStyle}${activeHours.has(h) ? 'color:var(--primary);font-weight:700;' : ''}">${String(h).padStart(2, '0')}:00</div>`;
-        }
+        if (foldedHourSet.has(h)) continue;
+        const topPx = hourTop[h];
+        if (topPx - lastLabelY < 13 && !activeHours.has(h)) continue;
+        lastLabelY = topPx;
+        const topStyle = topPx === 0 ? 'top:2px;transform:none;' : `top:${topPx}px;`;
+        gutterHtml += `<div class="cal-time-label" style="${topStyle}${activeHours.has(h) ? 'color:var(--primary);font-weight:700;' : ''}">${String(h).padStart(2, '0')}:00</div>`;
       }
       gutterHtml += `</div>`;
 
@@ -10205,9 +10453,11 @@
         let slotsHtml = '';
         for (let h = 0; h < 24; h++) {
           const isRest = h < 8 || h >= 22;
+          const isFolded = foldedHourSet.has(h);
+          const isBandEnd = bandEndHourSet.has(h);
           const isCompact = hourHeights[h] < 20;
           const hhLabel = `${String(h).padStart(2, '0')}:00`;
-          slotsHtml += `<div class="cal-hour-slot ${isRest ? 'is-rest' : ''} ${isCompact ? 'is-compact' : ''}" style="height:${hourHeights[h]}px;" data-slot-hint="+ ${hhLabel} 排期" onclick="openSlotScheduleModal('${d.date}', ${h}, false)"></div>`;
+          slotsHtml += `<div class="cal-hour-slot ${isRest ? 'is-rest' : ''} ${isFolded ? 'is-idle-fold' : ''} ${isBandEnd ? 'is-idle-band-end' : ''} ${isCompact ? 'is-compact' : ''}" style="height:${hourHeights[h]}px;" data-slot-hint="+ ${hhLabel} 排期" onclick="openSlotScheduleModal('${d.date}', ${h}, false)"></div>`;
         }
 
         // Timed Macaron Task Blocks
