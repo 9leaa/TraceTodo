@@ -78,6 +78,10 @@ class TestAskNotesTool(unittest.TestCase):
         }
 
         def reply(_url, _key, payload, **_options):
+            if "tools" not in payload:
+                return {"choices": [{"message": {"content": json.dumps({
+                    "questions": ["11月19日我说了什么？"], "tool_calls": [],
+                })}}]}
             if payload["messages"][-1]["role"] == "user":
                 return {"choices": [{"message": {"content": None, "tool_calls": [call]}}]}
             observation = json.loads(payload["messages"][-1]["content"])
