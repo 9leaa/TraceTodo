@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import inspect
 import re
 import threading
 import time
-from typing import Any
+from typing import Any, Callable
 
 from trace_memory.domain.memories import MemoryEvidence, MemoryItem, parse_iso_datetime
 from trace_memory.domain.notes import (
@@ -36,7 +36,11 @@ from trace_memory.storage.repositories import (
     RelationRepository,
     TraceRepository,
 )
-from trace_memory.storage.vector_store import VectorLifecycleService
+from trace_memory.storage.vector_store import (
+    MEMORIES_COLLECTION,
+    NOTES_COLLECTION,
+    VectorLifecycleService,
+)
 
 
 @dataclass(frozen=True)
@@ -47,6 +51,9 @@ class IngestResult:
     error_message: str = ""
     trace_id: str = ""
     job_id: str = ""
+    deferred_vector_sync: Callable[[], None] | None = field(
+        default=None, repr=False, compare=False
+    )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -262,6 +269,7 @@ class IngestService:
         count_note_in_quota: bool = True,
         llm_semaphore: threading.Semaphore | None = None,
         raise_on_transient_llm_error: bool = False,
+        defer_embeddings: bool = False,
     ) -> IngestResult:
         """Run LLM extraction, double-check forget/revision race guard, and commit memory changes."""
         t0 = time.perf_counter()
@@ -297,35 +305,54 @@ class IngestService:
         if not note.extract_memory:
             embed_calls = 0
             vector_error = ""
+            deferred_pure_fn: Callable[[], None] | None = None
             fresh_pure = self.note_repo.get(space_id, note_id, include_forgotten=True)
             if fresh_pure is not None and not fresh_pure.is_forgotten and fresh_pure.revision == start_revision:
-                try:
-                    vec_note = (
-                        RawNote(
-                            note_id=fresh_pure.note_id,
-                            space_id=fresh_pure.space_id,
-                            content=extract_input,
-                            source_type=fresh_pure.source_type,
-                            actor_id=fresh_pure.actor_id,
-                            revision=fresh_pure.revision,
-                            event_time=fresh_pure.event_time,
-                            created_at=fresh_pure.created_at,
-                            updated_at=fresh_pure.updated_at,
-                            note_kind=fresh_pure.note_kind,
-                            title=fresh_pure.title,
-                            pinned=fresh_pure.pinned,
-                            tags=fresh_pure.tags,
-                            mood=fresh_pure.mood,
-                            journal_date=fresh_pure.journal_date,
-                            extract_memory=fresh_pure.extract_memory,
-                        )
-                        if (visual_text or fresh_pure.title)
-                        else fresh_pure
+                vec_note = (
+                    RawNote(
+                        note_id=fresh_pure.note_id,
+                        space_id=fresh_pure.space_id,
+                        content=extract_input,
+                        source_type=fresh_pure.source_type,
+                        actor_id=fresh_pure.actor_id,
+                        revision=fresh_pure.revision,
+                        event_time=fresh_pure.event_time,
+                        created_at=fresh_pure.created_at,
+                        updated_at=fresh_pure.updated_at,
+                        note_kind=fresh_pure.note_kind,
+                        title=fresh_pure.title,
+                        pinned=fresh_pure.pinned,
+                        tags=fresh_pure.tags,
+                        mood=fresh_pure.mood,
+                        journal_date=fresh_pure.journal_date,
+                        extract_memory=fresh_pure.extract_memory,
                     )
-                    self.vector_lifecycle.sync_note(vec_note)
-                    embed_calls += 1
-                except Exception as exc:
-                    vector_error = f"Note embedding degraded: {exc}"
+                    if (visual_text or fresh_pure.title)
+                    else fresh_pure
+                )
+                if defer_embeddings:
+                    def _run_pure_vec(target_note: RawNote = vec_note) -> None:
+                        def _pure_guard(n_obj: RawNote) -> bool:
+                            cur = self.note_repo.get(space_id, n_obj.note_id, include_forgotten=True)
+                            if cur is None or cur.is_forgotten:
+                                self.vector_lifecycle.vector_store.delete(NOTES_COLLECTION, n_obj.note_id)
+                                return False
+                            return cur.revision == start_revision
+
+                        try:
+                            cnt = self.vector_lifecycle.sync_batch(notes=(target_note,), note_guard=_pure_guard)
+                            if cnt and self.quota_service is not None:
+                                self.quota_service.record_usage(f"space:{space_id}", embed_calls=cnt)
+                        except Exception:
+                            pass
+
+                    deferred_pure_fn = _run_pure_vec
+                else:
+                    try:
+                        self.vector_lifecycle.sync_note(vec_note)
+                        embed_calls += 1
+                    except Exception as exc:
+                        vector_error = f"Note embedding degraded: {exc}"
             if self.quota_service is not None:
                 self.quota_service.record_usage(
                     f"space:{space_id}",
@@ -350,6 +377,7 @@ class IngestService:
                 changes=(),
                 error_message=vector_error,
                 trace_id=trace_id,
+                deferred_vector_sync=deferred_pure_fn,
             )
 
         # 3. Extract structured candidates via LLMProvider (passing existing active memories for reconciliation)
@@ -468,41 +496,37 @@ class IngestService:
             and not visual_text
             and fresh_note.note_kind == "note"
         )
+        note_for_vec: RawNote | None = None
         if not note_vector_skipped:
-            try:
-                note_for_vec = (
-                    RawNote(
-                        note_id=fresh_note.note_id,
-                        space_id=fresh_note.space_id,
-                        content=extract_input,
-                        source_type=fresh_note.source_type,
-                        actor_id=fresh_note.actor_id,
-                        revision=fresh_note.revision,
-                        event_time=fresh_note.event_time,
-                        created_at=fresh_note.created_at,
-                        updated_at=fresh_note.updated_at,
-                        note_kind=fresh_note.note_kind,
-                        title=fresh_note.title,
-                        pinned=fresh_note.pinned,
-                        tags=fresh_note.tags,
-                        mood=fresh_note.mood,
-                        journal_date=fresh_note.journal_date,
-                        extract_memory=fresh_note.extract_memory,
-                    )
-                    if visual_text
-                    else fresh_note
+            note_for_vec = (
+                RawNote(
+                    note_id=fresh_note.note_id,
+                    space_id=fresh_note.space_id,
+                    content=extract_input,
+                    source_type=fresh_note.source_type,
+                    actor_id=fresh_note.actor_id,
+                    revision=fresh_note.revision,
+                    event_time=fresh_note.event_time,
+                    created_at=fresh_note.created_at,
+                    updated_at=fresh_note.updated_at,
+                    note_kind=fresh_note.note_kind,
+                    title=fresh_note.title,
+                    pinned=fresh_note.pinned,
+                    tags=fresh_note.tags,
+                    mood=fresh_note.mood,
+                    journal_date=fresh_note.journal_date,
+                    extract_memory=fresh_note.extract_memory,
                 )
-                self.vector_lifecycle.sync_note(note_for_vec)
-                embed_calls += 1
-            except Exception as exc:
-                # C10: Record embedding degradation honestly without losing the RawNote
-                vector_error = f"Note embedding degraded: {exc}"
+                if visual_text
+                else fresh_note
+            )
 
-        # 4. Calibrate candidates against existing memories & user preferences, then commit via ChangeService
+        # 4. Calibrate candidates against existing memories & user preferences, then commit to SQLite BEFORE vector embedding
         active_prefs = self.memory_repo.list_memories(
             space_id=space_id, memory_type="preference", status="active", limit=30
         )
         results: list[ChangeResult] = []
+        memories_for_vec: list[MemoryItem] = []
         aborted_mid_commit = False
         for cand in batch.candidates:
             # Silent extraction for memos/journals distills ONLY long-term preferences/facts/experiences, never transient tasks
@@ -513,22 +537,26 @@ class IngestService:
             if still_alive is None or still_alive.is_forgotten or still_alive.revision != start_revision:
                 aborted_mid_commit = True
                 break
-            res = self._adjudicate_candidate(fresh_note, cand, active_prefs)
-            results.append(res)
-            if res.memory is not None and res.status in ("created", "updated", "applied"):
-                embed_calls += 1
-
-        if self.quota_service is not None:
-            self.quota_service.record_usage(
-                f"space:{space_id}",
-                notes=1 if count_note_in_quota else 0,
-                llm_calls=batch.llm_calls + vlm_calls,
-                embed_calls=embed_calls,
-                tokens_used=batch.tokens_used + vlm_tokens,
+            res = self._adjudicate_candidate(
+                fresh_note, cand, active_prefs, defer_active_vector_sync=True
             )
+            results.append(res)
+            if (
+                res.memory is not None
+                and res.memory.status == "active"
+                and res.status in ("created", "updated", "applied", "skipped_older_event")
+            ):
+                memories_for_vec.append(res.memory)
 
-        duration = (time.perf_counter() - t0) * 1000.0
         if aborted_mid_commit:
+            if self.quota_service is not None:
+                self.quota_service.record_usage(
+                    f"space:{space_id}",
+                    notes=1 if count_note_in_quota else 0,
+                    llm_calls=batch.llm_calls + vlm_calls,
+                    tokens_used=batch.tokens_used + vlm_tokens,
+                )
+            duration = (time.perf_counter() - t0) * 1000.0
             if self.media_service is not None:
                 self.media_service.purge_for_notes(space_id, [note_id])
             trace_id = self.trace_repo.record_trace(
@@ -547,6 +575,63 @@ class IngestService:
                 error_message="Source note was forgotten or modified during candidate commit",
                 trace_id=trace_id,
             )
+
+        notes_for_vec: tuple[RawNote, ...] = (note_for_vec,) if note_for_vec is not None else ()
+        mems_for_vec_tuple: tuple[MemoryItem, ...] = tuple(memories_for_vec)
+        deferred_vec_fn: Callable[[], None] | None = None
+
+        def _note_guard(n_obj: RawNote) -> bool:
+            cur = self.note_repo.get(space_id, n_obj.note_id, include_forgotten=True)
+            if cur is None or cur.is_forgotten:
+                self.vector_lifecycle.vector_store.delete(NOTES_COLLECTION, n_obj.note_id)
+                return False
+            return cur.revision == start_revision
+
+        def _mem_guard(m_obj: MemoryItem) -> bool:
+            cur = self.memory_repo.get(space_id, m_obj.memory_id, include_forgotten=True)
+            if cur is None or cur.status != "active":
+                self.vector_lifecycle.vector_store.delete(MEMORIES_COLLECTION, m_obj.memory_id)
+                return False
+            return True
+
+        if notes_for_vec or mems_for_vec_tuple:
+            if defer_embeddings:
+                def _run_deferred_vectors() -> None:
+                    try:
+                        cnt = self.vector_lifecycle.sync_batch(
+                            notes=notes_for_vec,
+                            memories=mems_for_vec_tuple,
+                            note_guard=_note_guard,
+                            memory_guard=_mem_guard,
+                        )
+                        if cnt and self.quota_service is not None:
+                            self.quota_service.record_usage(f"space:{space_id}", embed_calls=cnt)
+                    except Exception:
+                        pass
+
+                deferred_vec_fn = _run_deferred_vectors
+            else:
+                try:
+                    embed_calls += self.vector_lifecycle.sync_batch(
+                        notes=notes_for_vec,
+                        memories=mems_for_vec_tuple,
+                        note_guard=_note_guard,
+                        memory_guard=_mem_guard,
+                    )
+                except Exception as exc:
+                    # C10: Record embedding degradation honestly without losing the RawNote or committed memories
+                    vector_error = f"Note embedding degraded: {exc}"
+
+        if self.quota_service is not None:
+            self.quota_service.record_usage(
+                f"space:{space_id}",
+                notes=1 if count_note_in_quota else 0,
+                llm_calls=batch.llm_calls + vlm_calls,
+                embed_calls=embed_calls,
+                tokens_used=batch.tokens_used + vlm_tokens,
+            )
+
+        duration = (time.perf_counter() - t0) * 1000.0
         status = "degraded_error" if vector_error else "completed"
         trace_id = self.trace_repo.record_trace(
             space_id=space_id,
@@ -557,6 +642,7 @@ class IngestService:
                 "candidate_count": len(batch.candidates),
                 "applied_statuses": [r.status for r in results],
                 "note_vector_skipped": note_vector_skipped,
+                "vector_deferred": bool(deferred_vec_fn is not None),
                 "vector_error": vector_error,
             },
             llm_calls=batch.llm_calls,
@@ -569,6 +655,7 @@ class IngestService:
             changes=tuple(results),
             error_message=vector_error,
             trace_id=trace_id,
+            deferred_vector_sync=deferred_vec_fn,
         )
         if idempotency_key:
             self.trace_repo.save_idempotent_result(
@@ -678,6 +765,8 @@ class IngestService:
         note: RawNote,
         cand: ExtractedCandidate,
         active_prefs: list[MemoryItem],
+        *,
+        defer_active_vector_sync: bool = False,
     ) -> ChangeResult:
         ev = MemoryEvidence(
             note_id=note.note_id,
@@ -804,7 +893,9 @@ class IngestService:
                 event_time=cand.event_time or note.event_time,
                 reason=f"Extracted from {note.note_id} rev {note.revision}",
             )
-            return self.change_service.apply(proposal)
+            return self.change_service.apply(
+                proposal, defer_active_vector_sync=defer_active_vector_sync
+            )
 
         # Updating an existing memory card
         if effective_hint in ("complete_task", "cancel_task", "reopen_task"):
@@ -835,7 +926,9 @@ class IngestService:
                 reason=f"Adjudicated from {note.note_id} rev {note.revision}",
             )
             try:
-                return self.change_service.apply(proposal)
+                return self.change_service.apply(
+                    proposal, defer_active_vector_sync=defer_active_vector_sync
+                )
             except VersionConflictError:
                 if attempt >= 1:
                     raise

@@ -279,6 +279,8 @@ struct UnifiedTodoHostView: View {
 
             Divider()
 
+            OptimisticIngestBannerStackView()
+
             switch submode {
             case .overview:
                 DashboardOverviewView()
@@ -314,6 +316,61 @@ struct UnifiedTodoHostView: View {
 struct CalendarPreviewHostView: View {
     var body: some View {
         CalendarTimelineView()
+    }
+}
+
+/// Instant 0ms optimistic pending task cards shown while background AI extraction is running.
+struct OptimisticIngestBannerStackView: View {
+    @EnvironmentObject var store: TodoStore
+
+    var body: some View {
+        if !store.optimisticIngestItems.isEmpty {
+            VStack(spacing: 8) {
+                ForEach(store.optimisticIngestItems) { item in
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(store.activeTheme.primaryColor)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.text)
+                                .font(.system(size: 13.5, weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Text("✨ 原话已秒存，AI 正在解析时间与四象限优先级…")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+
+                        Spacer()
+
+                        Text("AI 解析中")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(store.activeTheme.primaryColor)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(store.activeTheme.primaryColor.opacity(0.12))
+                            .clipShape(Capsule())
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(store.activeTheme.surfaceBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(
+                                store.activeTheme.primaryColor.opacity(0.45),
+                                style: StrokeStyle(lineWidth: 1.1, dash: [5, 4])
+                            )
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 4)
+        }
     }
 }
 

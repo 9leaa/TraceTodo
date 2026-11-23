@@ -173,6 +173,20 @@ struct MainContentView: View {
 
                             VoiceMicButton(text: $topCaptureText, compact: true)
 
+                            let activePending = max(store.pendingIngestCount, store.optimisticIngestItems.count)
+                            if activePending > 0 {
+                                HStack(spacing: 4) {
+                                    ProgressView().controlSize(.mini)
+                                    Text("AI 整理中(\(activePending))")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(store.activeTheme.primaryColor)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(store.activeTheme.primaryColor.opacity(0.10))
+                                .clipShape(Capsule())
+                            }
+
                             if store.isBusy {
                                 ProgressView().controlSize(.small)
                             } else if !topCaptureText.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -570,6 +584,20 @@ struct MenuBarQuickView: View {
             }
 
             Divider()
+
+            ForEach(store.optimisticIngestItems.prefix(2)) { opt in
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.mini)
+                    Text(opt.text)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                    Spacer()
+                    Text("解析中")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.purple)
+                }
+                .padding(.vertical, 2)
+            }
 
             let topTasks = Array((store.matrix?.sortedTasks ?? []).filter { !$0.payload.isDone }.prefix(5))
             if topTasks.isEmpty {

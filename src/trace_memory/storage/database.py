@@ -545,6 +545,19 @@ class Database:
     def query_one(self, sql: str, params: tuple = ()) -> sqlite3.Row | None:
         return self._get_conn().execute(sql, params).fetchone()
 
+    def close_thread_connection(self) -> None:
+        """Close only the calling thread's SQLite connection without tearing down other threads."""
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            return
+        self._local.conn = None
+        with self._conns_lock:
+            self._all_conns.discard(conn)
+        try:
+            conn.close()
+        except sqlite3.Error:
+            pass
+
     def close(self) -> None:
         with self._conns_lock:
             conns = list(self._all_conns)

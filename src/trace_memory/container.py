@@ -214,6 +214,7 @@ class AppContainer:
             worker_count=cfg.ingest_worker_count,
             llm_max_concurrency=cfg.llm_max_concurrency,
             max_retries=cfg.ingest_max_retries,
+            on_job_settled=lambda sp, st_name: sync_tracker.bump(sp, reason=f"ingest_{st_name}"),
         )
         retrieval_service = RetrievalService(
             note_repo=note_repo,

@@ -214,4 +214,4 @@ class DailyTaskMaintenanceScheduler:
                 except Exception:
                     pass
         finally:
-            self.db.close()
+            self.db.close_thread_connection()

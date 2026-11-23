@@ -23,6 +23,10 @@ struct DashboardOverviewView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                #if os(iOS)
+                QuickCaptureBar()
+                #endif
+
                 if let banner = store.statusBanner {
                     HStack(spacing: 8) {
                         Image(systemName: "sparkles")

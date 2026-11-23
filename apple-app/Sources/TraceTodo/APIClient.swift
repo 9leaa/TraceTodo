@@ -202,7 +202,11 @@ struct TraceMemoryAPIClient {
         }
         let data = try await postRaw("/api/notes/record", body: payload)
         return (try? JSONDecoder().decode(NoteRecordResponse.self, from: data))
-            ?? NoteRecordResponse(extractionStatus: "completed", filtered: false, filterReason: nil, errorMessage: nil, jobId: nil)
+            ?? NoteRecordResponse(note: nil, extractionStatus: "completed", filtered: false, filterReason: nil, errorMessage: nil, jobId: nil)
+    }
+
+    func fetchBootstrap() async throws -> BootstrapResponse {
+        try await get("/api/bootstrap")
     }
 
     func uploadMedia(
@@ -227,8 +231,75 @@ struct TraceMemoryAPIClient {
         try await postRaw("/api/media/delete", body: ["media_id": mediaId])
     }
 
-    func fetchIngestStatus() async throws -> IngestStatusResponse {
-        try await get("/api/notes/ingest-status")
+    func fetchIngestStatus(jobId: String = "", waitMs: Int = 0, sinceVersion: Int = -1) async throws -> IngestStatusResponse {
+        var items: [URLQueryItem] = []
+        if !jobId.isEmpty {
+            items.append(URLQueryItem(name: "job_id", value: jobId))
+        }
+        if waitMs > 0 {
+            items.append(URLQueryItem(name: "wait_ms", value: String(waitMs)))
+        }
+        if sinceVersion >= 0 {
+            items.append(URLQueryItem(name: "since_version", value: String(sinceVersion)))
+        }
+        return try await get("/api/notes/ingest-status", queryItems: items)
+    }
+
+    func streamSyncEvents(
+        sinceVersion: Int,
+        onEvent: @escaping (_ eventName: String, _ state: SyncStateResponse) async -> Void
+    ) async throws {
+        let url = try makeURL(
+            path: "/api/sync/stream",
+            queryItems: [URLQueryItem(name: "since", value: String(max(0, sinceVersion)))]
+        )
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 300
+        req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        let cleanTok = authToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanTok.isEmpty {
+            req.setValue("Bearer \(cleanTok)", forHTTPHeaderField: "Authorization")
+        }
+
+        let (bytes, resp) = try await URLSession.shared.bytes(for: req)
+        if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw APIError.serverError(http.statusCode, "", "SSE HTTP \(http.statusCode)")
+        }
+
+        var currentEvent = "message"
+        var dataLines: [String] = []
+        let decoder = JSONDecoder()
+
+        for try await line in bytes.lines {
+            if Task.isCancelled { break }
+            if line.isEmpty {
+                if !dataLines.isEmpty {
+                    let jsonText = dataLines.joined(separator: "\n")
+                    if let payloadData = jsonText.data(using: .utf8),
+                       let parsed = try? decoder.decode(SyncStateResponse.self, from: payloadData) {
+                        await onEvent(currentEvent, parsed)
+                    }
+                    dataLines.removeAll(keepingCapacity: true)
+                }
+                currentEvent = "message"
+                continue
+            }
+            if line.hasPrefix(":") {
+                continue
+            }
+            if line.hasPrefix("event:") {
+                currentEvent = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
+            } else if line.hasPrefix("data:") {
+                dataLines.append(line.dropFirst(5).trimmingCharacters(in: .whitespaces))
+            }
+        }
+        if !Task.isCancelled && !dataLines.isEmpty {
+            let jsonText = dataLines.joined(separator: "\n")
+            if let payloadData = jsonText.data(using: .utf8),
+               let parsed = try? decoder.decode(SyncStateResponse.self, from: payloadData) {
+                await onEvent(currentEvent, parsed)
+            }
+        }
     }
 
     func fetchSyncState() async throws -> SyncStateResponse {
