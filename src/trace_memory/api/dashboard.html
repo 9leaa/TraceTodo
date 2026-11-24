@@ -2661,10 +2661,190 @@
     }
     .md-rendered p { margin: 0 0 6px; line-height: 1.65; }
     .md-rendered p:last-child { margin-bottom: 0; }
-    .md-rendered ul { margin: 4px 0 6px 18px; padding: 0; }
+    .md-rendered ul, .md-rendered ol { margin: 4px 0 6px 18px; padding: 0; }
     .md-rendered li { margin-bottom: 3px; line-height: 1.55; }
-    .md-rendered h3, .md-rendered h4 { margin: 6px 0 4px; font-size: 14px; color: var(--heading); }
-    .md-rendered code { background: var(--surface-alt); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+    .md-rendered li.md-task-li { list-style: none; margin-left: -14px; display: flex; align-items: flex-start; gap: 6px; }
+    .md-rendered li.md-task-li.is-checked { color: var(--muted); text-decoration: line-through; }
+    .md-rendered h2 { margin: 8px 0 5px; font-size: 16.5px; font-weight: 800; color: var(--heading); line-height: 1.35; }
+    .md-rendered h3 { margin: 7px 0 4px; font-size: 15px; font-weight: 750; color: var(--heading); line-height: 1.4; }
+    .md-rendered h4 { margin: 6px 0 4px; font-size: 13.8px; font-weight: 700; color: var(--heading); line-height: 1.4; }
+    .md-rendered blockquote {
+      margin: 5px 0 7px;
+      padding: 5px 11px;
+      border-left: 3px solid var(--primary);
+      background: color-mix(in srgb, var(--primary) 7%, var(--surface-alt));
+      border-radius: 0 8px 8px 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .md-rendered code { background: var(--surface-alt); padding: 1px 5px; border-radius: 5px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .md-rendered pre {
+      margin: 6px 0;
+      padding: 9px 11px;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .md-rendered pre code { background: transparent; padding: 0; }
+
+    /* Live WYSIWYG Markdown Editor for Memos & Journals */
+    .tm-live-md-wrap {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+      overflow: hidden;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+    .tm-live-md-wrap:focus-within {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+    }
+    .tm-live-md-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      flex-wrap: wrap;
+      padding: 5px 8px;
+      background: var(--surface-alt);
+      border-bottom: 1px solid var(--border);
+    }
+    .tm-live-md-tools {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      flex-wrap: wrap;
+    }
+    .tm-md-tool-btn {
+      appearance: none;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text);
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 3px 7px;
+      border-radius: 6px;
+      cursor: pointer;
+      line-height: 1.3;
+    }
+    .tm-md-tool-btn:hover {
+      background: color-mix(in srgb, var(--primary) 12%, transparent);
+      color: var(--primary);
+    }
+    .tm-live-md-modes {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--text) 6%, transparent);
+    }
+    .tm-md-mode-btn {
+      appearance: none;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2.5px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .tm-md-mode-btn.active {
+      background: var(--surface);
+      color: var(--primary);
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.09);
+    }
+    .tm-live-md-body {
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+    .tm-live-md-wrap[data-mode="split"] .tm-live-md-body {
+      grid-template-columns: 1fr 1fr;
+    }
+    @media (max-width: 680px) {
+      .tm-live-md-wrap[data-mode="split"] .tm-live-md-body {
+        grid-template-columns: 1fr;
+      }
+    }
+    .tm-live-md-wrap textarea.tm-md-raw-ta {
+      border: none !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      outline: none !important;
+      margin: 0 !important;
+      width: 100%;
+      resize: vertical;
+      background: transparent;
+      padding: 10px 12px;
+      font-size: 13.5px;
+      line-height: 1.65;
+    }
+    .tm-live-md-surface {
+      min-height: 92px;
+      padding: 10px 13px;
+      outline: none;
+      font-size: 14px;
+      line-height: 1.68;
+      color: var(--text);
+      cursor: text;
+      word-break: break-word;
+    }
+    .tm-live-md-surface.is-empty::before {
+      content: attr(data-placeholder);
+      color: var(--muted);
+      opacity: 0.72;
+      pointer-events: none;
+      display: block;
+    }
+    .tm-live-md-surface .tm-md-task-line {
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+      margin: 3px 0;
+      line-height: 1.6;
+    }
+    .tm-live-md-surface .tm-md-task-line input[type="checkbox"] {
+      width: 15px;
+      height: 15px;
+      margin: 4px 0 0;
+      cursor: pointer;
+      accent-color: var(--primary);
+      flex-shrink: 0;
+    }
+    .tm-live-md-surface .tm-md-task-line[data-checked="1"] .tm-md-task-text {
+      color: var(--muted);
+      text-decoration: line-through;
+    }
+    .tm-live-md-surface .tm-md-task-text {
+      flex: 1;
+      min-width: 1px;
+      outline: none;
+    }
+    .tm-live-md-preview-pane {
+      display: none;
+      padding: 10px 13px;
+      border-left: 1px dashed var(--border);
+      background: color-mix(in srgb, var(--surface-alt) 55%, var(--surface));
+      font-size: 13.5px;
+      overflow-y: auto;
+      max-height: 360px;
+    }
+    @media (max-width: 680px) {
+      .tm-live-md-preview-pane {
+        border-left: none;
+        border-top: 1px dashed var(--border);
+      }
+    }
+    .tm-live-md-wrap[data-mode="wysiwyg"] textarea.tm-md-raw-ta { display: none !important; }
+    .tm-live-md-wrap[data-mode="wysiwyg"] .tm-live-md-surface { display: block; }
+    .tm-live-md-wrap[data-mode="source"] .tm-live-md-surface { display: none !important; }
+    .tm-live-md-wrap[data-mode="split"] .tm-live-md-surface { display: none !important; }
+    .tm-live-md-wrap[data-mode="split"] .tm-live-md-preview-pane { display: block; }
 
     :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) :is(.analytic-card, .tl-card, .card-box, .modal, .duodo-sheet, .duodo-card, .auth-sheet, .graph-toolbar-card, .graph-relation-options) {
       background: var(--surface);
@@ -3394,7 +3574,7 @@
         <span class="capture-icon" aria-hidden="true">🔍</span>
         <input id="quickNoteInput" aria-label="记录待办或记忆" placeholder="极速录入待办或记忆（支持 🎤 语音 / Ctrl+V 粘贴截图）..." onpaste="handleImagePaste(event, 'quick')" />
         <button type="button" id="quickImageBtn" class="voice-mic-btn" title="附加/拍照图片（端侧自动压缩提取视觉记忆）" onclick="triggerImagePicker('quick')">🖼️</button>
-        <button type="button" id="quickVoiceBtn" class="voice-mic-btn" title="点按流式听写 / 按住说话松手即入队" onpointerdown="onVoiceBtnDown(event, 'quickNoteInput', true)" onpointerup="onVoiceBtnUp(event)" onclick="onVoiceBtnClick(event, 'quickNoteInput', true)">🎤</button>
+        <button type="button" id="quickVoiceBtn" class="voice-mic-btn" title="点按开启/结束实时语音听写" onclick="onVoiceBtnClick(event, 'quickNoteInput', false)">🎤</button>
         <button type="submit" id="quickNoteBtn" class="primary">AI 录入</button>
       </form>
       <div class="capture-feedback" role="status">
@@ -3704,7 +3884,7 @@
               <div class="btn-group">
                 <button type="button" id="memoCancelEditBtn" style="display:none;" onclick="resetMemoCompose()">取消编辑</button>
                 <button type="button" id="notesImageBtn" class="voice-mic-btn" title="拖拽/粘贴/选择拍照附图（自动压缩至 150~300KB）" onclick="triggerImagePicker('notes')">📷 附图</button>
-                <button type="button" id="notesVoiceBtn" class="voice-mic-btn" title="点按语音听写 / 按住说话松手即保存" onpointerdown="onVoiceBtnDown(event, 'notesEditorInput', true)" onpointerup="onVoiceBtnUp(event)" onclick="onVoiceBtnClick(event, 'notesEditorInput', false)">🎤 语音</button>
+                <button type="button" id="notesVoiceBtn" class="voice-mic-btn" title="点按开启/结束实时语音听写" onclick="onVoiceBtnClick(event, 'notesEditorInput', false)">🎤 语音</button>
                 <button type="button" class="duodo-btn" id="memoSaveBtn" onclick="submitNoteFromNotesTab(this)">✍️ 保存备忘</button>
               </div>
             </div>
@@ -4262,6 +4442,7 @@
     <div class="focus-topbar">
       <span class="focus-mode-chip" id="focusModeChip">番茄专注</span>
       <div class="focus-top-actions">
+        <button type="button" class="focus-sound-btn" onclick="closeFocusLockOverlay()" title="暂时收起锁屏返回工作台，计时继续进行">↙ 收起悬浮</button>
         <button type="button" class="focus-sound-btn" id="focusSoundBtn" onclick="toggleSoundMuted()">🔊 环境音开</button>
         <button type="button" class="focus-sound-btn" id="focusSceneToggle" aria-controls="focusSceneDock" aria-expanded="false" onclick="setFocusSceneDockOpen(document.getElementById('focusSceneDock').hidden)">氛围设置</button>
       </div>
@@ -4709,6 +4890,11 @@
       </div>
     </div>
   </div>
+
+  <!-- Floating Focus Mini Capsule (when focus is active & lock overlay is minimized) -->
+  <button type="button" id="focusMiniFabBtn" onclick="enterFocusLockOverlay()" title="点击重新进入全屏沉浸专注锁屏" style="display:none;position:fixed;right:156px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:115;align-items:center;gap:6px;padding:10px 15px;border-radius:999px;border:1px solid rgba(168,85,247,0.55);background:rgba(15,23,42,0.92);color:#fff;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;box-shadow:0 8px 24px rgba(15,23,42,0.28);cursor:pointer;">
+    <span id="focusMiniFabText">🍅 25:00 · 🔒 沉浸锁屏</span>
+  </button>
 
   <!-- Floating Evidence Q&A Button & Copilot Drawer -->
   <button type="button" id="askFabBtn" class="ask-fab-btn" onclick="toggleAskFloatPanel()" title="随手问记忆 (⌘K / Ctrl+K)" aria-expanded="false" aria-controls="askFloatPanel">
@@ -6153,6 +6339,8 @@
       const act = document.getElementById('fcActiveControls');
       if (idle) idle.style.display = 'flex';
       if (act) act.style.display = 'none';
+      const miniFab = document.getElementById('focusMiniFabBtn');
+      if (miniFab) miniFab.style.display = 'none';
     }
 
     function startUnifiedFocus(openLockOverlay = false, explicitMemId = null) {
@@ -6258,6 +6446,8 @@
         overlay.close();
       }
       if (typeof syncAskFabVisibility === 'function') syncAskFabVisibility();
+      const miniFab = document.getElementById('focusMiniFabBtn');
+      if (miniFab) miniFab.style.display = (focusState && !overlay.open) ? 'inline-flex' : 'none';
       stopAmbience();
       ensureFxLoop();
     }
@@ -6319,6 +6509,13 @@
       const act = document.getElementById('fcActiveControls');
       if (idle) idle.style.display = 'none';
       if (act) act.style.display = 'flex';
+      const miniFab = document.getElementById('focusMiniFabBtn');
+      const miniTxt = document.getElementById('focusMiniFabText');
+      if (miniFab && miniTxt) {
+        const lockOpen = Boolean(document.getElementById('focusOverlay')?.open);
+        miniFab.style.display = lockOpen ? 'none' : 'inline-flex';
+        miniTxt.textContent = `${focusState.paused ? '⏸' : '🍅'} ${clockTxt} · 🔒 沉浸锁屏`;
+      }
     }
 
     async function finishFocusSession(markDone) {
@@ -11435,35 +11632,706 @@
     function renderSimpleMarkdown(raw) {
       const lines = String(raw || '').split('\n');
       const out = [];
-      let inList = false;
+      let inUl = false;
+      let inOl = false;
+      let inCode = false;
+      let codeBuf = [];
+      const closeLists = () => {
+        if (inUl) { out.push('</ul>'); inUl = false; }
+        if (inOl) { out.push('</ol>'); inOl = false; }
+      };
       const fmtInline = s => esc(s)
         .replace(/`([^`]+)`/g, '<code>$1</code>')
         .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
         .replace(/(^|\s)#([\w\u4e00-\u9fff-]{1,24})/g, '$1<span class="tag" style="padding:1px 6px;font-size:11px;">#$2</span>');
 
       for (const rawLine of lines) {
         const line = rawLine.trimEnd();
+        if (line.trim().startsWith('```')) {
+          closeLists();
+          if (!inCode) {
+            inCode = true;
+            codeBuf = [];
+          } else {
+            out.push(`<pre><code>${esc(codeBuf.join('\n'))}</code></pre>`);
+            inCode = false;
+            codeBuf = [];
+          }
+          continue;
+        }
+        if (inCode) {
+          codeBuf.push(rawLine);
+          continue;
+        }
         if (!line.trim()) {
-          if (inList) { out.push('</ul>'); inList = false; }
+          closeLists();
           continue;
         }
         if (line.startsWith('### ')) {
-          if (inList) { out.push('</ul>'); inList = false; }
+          closeLists();
           out.push(`<h4>${fmtInline(line.slice(4))}</h4>`);
-        } else if (line.startsWith('## ') || line.startsWith('# ')) {
-          if (inList) { out.push('</ul>'); inList = false; }
-          out.push(`<h3>${fmtInline(line.replace(/^#+\s*/, ''))}</h3>`);
+        } else if (line.startsWith('## ')) {
+          closeLists();
+          out.push(`<h3>${fmtInline(line.slice(3))}</h3>`);
+        } else if (line.startsWith('# ')) {
+          closeLists();
+          out.push(`<h2>${fmtInline(line.slice(2))}</h2>`);
+        } else if (line.startsWith('> ')) {
+          closeLists();
+          out.push(`<blockquote>${fmtInline(line.slice(2))}</blockquote>`);
+        } else if (/^[-*•]\s+\[([ xX])\]\s*/.test(line)) {
+          if (inOl) { out.push('</ol>'); inOl = false; }
+          if (!inUl) { out.push('<ul>'); inUl = true; }
+          const checked = /^[-*•]\s+\[[xX]\]/.test(line);
+          const body = line.replace(/^[-*•]\s+\[[ xX]\]\s*/, '');
+          out.push(`<li class="md-task-li ${checked ? 'is-checked' : ''}"><span>${checked ? '☑️' : '⬜'}</span><span>${fmtInline(body)}</span></li>`);
         } else if (/^[-*•]\s+/.test(line)) {
-          if (!inList) { out.push('<ul>'); inList = true; }
+          if (inOl) { out.push('</ol>'); inOl = false; }
+          if (!inUl) { out.push('<ul>'); inUl = true; }
           out.push(`<li>${fmtInline(line.replace(/^[-*•]\s+/, ''))}</li>`);
+        } else if (/^\d+[.、]\s+/.test(line)) {
+          if (inUl) { out.push('</ul>'); inUl = false; }
+          if (!inOl) { out.push('<ol>'); inOl = true; }
+          out.push(`<li>${fmtInline(line.replace(/^\d+[.、]\s+/, ''))}</li>`);
         } else {
-          if (inList) { out.push('</ul>'); inList = false; }
+          closeLists();
           out.push(`<p>${fmtInline(line)}</p>`);
         }
       }
-      if (inList) out.push('</ul>');
+      if (inCode && codeBuf.length) {
+        out.push(`<pre><code>${esc(codeBuf.join('\n'))}</code></pre>`);
+      }
+      closeLists();
       return `<div class="md-rendered">${out.join('')}</div>`;
     }
+
+    // ---------------- Live WYSIWYG Markdown Editor Engine (Memos & Journals) ----------------
+    const _NATIVE_TA_VAL_DESC = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+    const _liveMdEditors = {};
+
+    function _getPreferredMdEditMode() {
+      try {
+        const saved = localStorage.getItem('tm_md_edit_mode');
+        if (saved === 'wysiwyg' || saved === 'split' || saved === 'source') return saved;
+      } catch (e) {}
+      return 'wysiwyg';
+    }
+
+    function _fmtEditableInlineHtml(raw) {
+      return esc(raw)
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+    }
+
+    function markdownToEditableHtml(md) {
+      const text = String(md || '').replace(/\r\n/g, '\n');
+      if (!text.trim()) return '<p><br></p>';
+      const lines = text.split('\n');
+      const out = [];
+      let inUl = false;
+      let inOl = false;
+      let inCode = false;
+      let codeBuf = [];
+      const closeLists = () => {
+        if (inUl) { out.push('</ul>'); inUl = false; }
+        if (inOl) { out.push('</ol>'); inOl = false; }
+      };
+      for (const rawLine of lines) {
+        const line = rawLine.trimEnd();
+        if (line.trim().startsWith('```')) {
+          closeLists();
+          if (!inCode) {
+            inCode = true;
+            codeBuf = [];
+          } else {
+            out.push(`<pre><code>${esc(codeBuf.join('\n')) || '<br>'}</code></pre>`);
+            inCode = false;
+            codeBuf = [];
+          }
+          continue;
+        }
+        if (inCode) {
+          codeBuf.push(rawLine);
+          continue;
+        }
+        if (!line.trim()) {
+          closeLists();
+          out.push('<p><br></p>');
+          continue;
+        }
+        if (line.startsWith('### ')) {
+          closeLists();
+          out.push(`<h4>${_fmtEditableInlineHtml(line.slice(4)) || '<br>'}</h4>`);
+        } else if (line.startsWith('## ')) {
+          closeLists();
+          out.push(`<h3>${_fmtEditableInlineHtml(line.slice(3)) || '<br>'}</h3>`);
+        } else if (line.startsWith('# ')) {
+          closeLists();
+          out.push(`<h2>${_fmtEditableInlineHtml(line.slice(2)) || '<br>'}</h2>`);
+        } else if (line.startsWith('> ')) {
+          closeLists();
+          out.push(`<blockquote>${_fmtEditableInlineHtml(line.slice(2)) || '<br>'}</blockquote>`);
+        } else if (/^[-*•]\s+\[([ xX])\]\s*/.test(line)) {
+          closeLists();
+          const checked = /^[-*•]\s+\[[xX]\]/.test(line);
+          const body = line.replace(/^[-*•]\s+\[[ xX]\]\s*/, '');
+          out.push(`<div class="tm-md-task-line" data-checked="${checked ? '1' : '0'}"><input type="checkbox" contenteditable="false" ${checked ? 'checked' : ''} /><span class="tm-md-task-text">${_fmtEditableInlineHtml(body) || '<br>'}</span></div>`);
+        } else if (/^[-*•]\s+/.test(line)) {
+          if (inOl) { out.push('</ol>'); inOl = false; }
+          if (!inUl) { out.push('<ul>'); inUl = true; }
+          out.push(`<li>${_fmtEditableInlineHtml(line.replace(/^[-*•]\s+/, '')) || '<br>'}</li>`);
+        } else if (/^\d+[.、]\s+/.test(line)) {
+          if (inUl) { out.push('</ul>'); inUl = false; }
+          if (!inOl) { out.push('<ol>'); inOl = true; }
+          out.push(`<li>${_fmtEditableInlineHtml(line.replace(/^\d+[.、]\s+/, '')) || '<br>'}</li>`);
+        } else {
+          closeLists();
+          out.push(`<p>${_fmtEditableInlineHtml(line)}</p>`);
+        }
+      }
+      if (inCode && codeBuf.length) {
+        out.push(`<pre><code>${esc(codeBuf.join('\n'))}</code></pre>`);
+      }
+      closeLists();
+      return out.join('') || '<p><br></p>';
+    }
+
+    function _serializeInlineNodes(node) {
+      let res = '';
+      node.childNodes.forEach(ch => {
+        if (ch.nodeType === Node.TEXT_NODE) {
+          res += ch.nodeValue.replace(/\u200B/g, '');
+        } else if (ch.nodeType === Node.ELEMENT_NODE) {
+          const tag = ch.tagName.toUpperCase();
+          if (tag === 'BR') {
+            res += '\n';
+          } else if (tag === 'INPUT') {
+            // checkbox handled at block level
+          } else if (tag === 'STRONG' || tag === 'B') {
+            const inner = _serializeInlineNodes(ch);
+            res += inner ? `**${inner}**` : '';
+          } else if (tag === 'EM' || tag === 'I') {
+            const inner = _serializeInlineNodes(ch);
+            res += inner ? `*${inner}*` : '';
+          } else if (tag === 'CODE') {
+            const inner = (ch.textContent || '').replace(/\u200B/g, '');
+            res += inner ? `\`${inner}\`` : '';
+          } else {
+            res += _serializeInlineNodes(ch);
+          }
+        }
+      });
+      return res.replace(/\n+$/, '');
+    }
+
+    function editableDomToMarkdown(surface) {
+      const blocks = [];
+      const walkChildren = parent => {
+        parent.childNodes.forEach(node => {
+          if (node.nodeType === Node.TEXT_NODE) {
+            const t = node.nodeValue.replace(/\u200B/g, '');
+            if (t.trim()) blocks.push(t);
+            return;
+          }
+          if (node.nodeType !== Node.ELEMENT_NODE) return;
+          const tag = node.tagName.toUpperCase();
+          if (node.classList && node.classList.contains('tm-md-task-line')) {
+            const cb = node.querySelector('input[type="checkbox"]');
+            const checked = cb ? cb.checked : node.getAttribute('data-checked') === '1';
+            const span = node.querySelector('.tm-md-task-text') || node;
+            const body = _serializeInlineNodes(span).trim();
+            blocks.push(`- [${checked ? 'x' : ' '}] ${body}`);
+          } else if (tag === 'H1' || tag === 'H2') {
+            blocks.push(`# ${_serializeInlineNodes(node).trim()}`);
+          } else if (tag === 'H3') {
+            blocks.push(`## ${_serializeInlineNodes(node).trim()}`);
+          } else if (tag === 'H4' || tag === 'H5' || tag === 'H6') {
+            blocks.push(`### ${_serializeInlineNodes(node).trim()}`);
+          } else if (tag === 'BLOCKQUOTE') {
+            const lines = _serializeInlineNodes(node).split('\n');
+            lines.forEach(l => blocks.push(`> ${l}`));
+          } else if (tag === 'PRE') {
+            const codeText = (node.textContent || '').replace(/\n$/, '');
+            blocks.push(`\`\`\`\n${codeText}\n\`\`\``);
+          } else if (tag === 'UL') {
+            Array.from(node.children).forEach(li => {
+              if (li.tagName && li.tagName.toUpperCase() === 'LI') {
+                blocks.push(`- ${_serializeInlineNodes(li).trim()}`);
+              }
+            });
+          } else if (tag === 'OL') {
+            Array.from(node.children).forEach((li, idx) => {
+              if (li.tagName && li.tagName.toUpperCase() === 'LI') {
+                blocks.push(`${idx + 1}. ${_serializeInlineNodes(li).trim()}`);
+              }
+            });
+          } else if (tag === 'P' || tag === 'DIV') {
+            const line = _serializeInlineNodes(node);
+            blocks.push(line);
+          } else if (tag === 'BR') {
+            blocks.push('');
+          } else {
+            blocks.push(_serializeInlineNodes(node));
+          }
+        });
+      };
+      walkChildren(surface);
+      // Trim trailing blank lines while keeping intentional internal blank lines
+      while (blocks.length > 0 && !String(blocks[blocks.length - 1]).trim()) {
+        blocks.pop();
+      }
+      return blocks.join('\n');
+    }
+
+    function _placeCaretAtStart(el) {
+      try {
+        const sel = window.getSelection();
+        if (!sel) return;
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch (e) {}
+    }
+
+    function _placeCaretAtEnd(el) {
+      try {
+        const sel = window.getSelection();
+        if (!sel) return;
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch (e) {}
+    }
+
+    function _tryLiveMarkdownAutoTransform(surface) {
+      const sel = window.getSelection();
+      if (!sel || !sel.isCollapsed || !sel.rangeCount) return false;
+      const range = sel.getRangeAt(0);
+      const node = range.startContainer;
+      if (!node || node.nodeType !== Node.TEXT_NODE) return false;
+      if (!surface.contains(node)) return false;
+
+      // Find enclosing direct block inside surface
+      let block = node.parentElement;
+      while (block && block.parentElement && block.parentElement !== surface) {
+        block = block.parentElement;
+      }
+      const textBefore = node.nodeValue.slice(0, range.startOffset);
+      const textAfter = node.nodeValue.slice(range.startOffset);
+
+      // 1) Block-level Markdown prefix shortcuts when typing in plain P / DIV / text root
+      const blockTag = block && block !== surface ? block.tagName.toUpperCase() : 'ROOT';
+      const isPlainBlock = blockTag === 'P' || blockTag === 'DIV' || blockTag === 'ROOT';
+      if (isPlainBlock && (!block || !block.classList.contains('tm-md-task-line')) && node === (block === surface ? node : block.firstChild)) {
+        const blockRules = [
+          { re: /^###\s$/, tag: 'H4' },
+          { re: /^##\s$/, tag: 'H3' },
+          { re: /^#\s$/, tag: 'H2' },
+          { re: /^>\s$/, tag: 'BLOCKQUOTE' },
+          { re: /^[-*]\s$/, list: 'UL' },
+          { re: /^1\.\s$/, list: 'OL' },
+          { re: /^(?:[-*]\s)?\[([ xX]?)\]\s$/, task: true },
+        ];
+        for (const rule of blockRules) {
+          const m = textBefore.match(rule.re);
+          if (!m) continue;
+          const restHtml = esc(textAfter) || '<br>';
+          let focusTarget = null;
+          if (rule.task) {
+            const checked = (m[1] || '').toLowerCase() === 'x';
+            const taskDiv = document.createElement('div');
+            taskDiv.className = 'tm-md-task-line';
+            taskDiv.setAttribute('data-checked', checked ? '1' : '0');
+            taskDiv.innerHTML = `<input type="checkbox" contenteditable="false" ${checked ? 'checked' : ''} /><span class="tm-md-task-text">${restHtml}</span>`;
+            if (block && block !== surface) block.replaceWith(taskDiv);
+            else node.replaceWith(taskDiv);
+            focusTarget = taskDiv.querySelector('.tm-md-task-text');
+          } else if (rule.list) {
+            const listEl = document.createElement(rule.list.toLowerCase());
+            const li = document.createElement('li');
+            li.innerHTML = restHtml;
+            listEl.appendChild(li);
+            if (block && block !== surface) block.replaceWith(listEl);
+            else node.replaceWith(listEl);
+            focusTarget = li;
+          } else if (rule.tag) {
+            const newBlock = document.createElement(rule.tag.toLowerCase());
+            newBlock.innerHTML = restHtml;
+            if (block && block !== surface) block.replaceWith(newBlock);
+            else node.replaceWith(newBlock);
+            focusTarget = newBlock;
+          }
+          if (focusTarget) _placeCaretAtStart(focusTarget);
+          return true;
+        }
+      }
+
+      // 2) Inline Markdown transforms (**bold**, `code`, *italic*) right at caret
+      const inlineRules = [
+        { re: /\*\*([^*\n]+)\*\*$/, tag: 'strong' },
+        { re: /`([^`\n]+)`$/, tag: 'code' },
+        { re: /(?:^|[^*])\*([^*\n]+)\*$/, tag: 'em', keepLeadChar: true },
+      ];
+      for (const ir of inlineRules) {
+        const m = textBefore.match(ir.re);
+        if (!m) continue;
+        let matchStart = textBefore.length - m[0].length;
+        if (ir.keepLeadChar && !textBefore.slice(matchStart).startsWith('*')) {
+          matchStart += 1;
+        }
+        const leadText = textBefore.slice(0, matchStart);
+        const innerText = m[1];
+        const frag = document.createDocumentFragment();
+        if (leadText) frag.appendChild(document.createTextNode(leadText));
+        const styledEl = document.createElement(ir.tag);
+        styledEl.textContent = innerText;
+        frag.appendChild(styledEl);
+        const spacerNode = document.createTextNode('\u200B' + textAfter);
+        frag.appendChild(spacerNode);
+        node.replaceWith(frag);
+        try {
+          const r2 = document.createRange();
+          r2.setStart(spacerNode, 1);
+          r2.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(r2);
+        } catch (e) {}
+        return true;
+      }
+      return false;
+    }
+
+    function initLiveMarkdownEditor(textareaId, opts = {}) {
+      const ta = document.getElementById(textareaId);
+      if (!ta) return null;
+      if (ta.dataset.liveMdBound === '1' && _liveMdEditors[textareaId]?.ta === ta) {
+        _liveMdEditors[textareaId].syncFromTextarea();
+        return _liveMdEditors[textareaId];
+      }
+
+      const mediaBucket = opts.mediaBucket || 'notes';
+      const minHeight = opts.minHeight || 96;
+      const placeholder = ta.getAttribute('placeholder') || '支持 Markdown 实时渲染（输入 # 标题、**加粗**、- 列表、[] 待办、> 引用即刻生效）...';
+
+      const wrap = document.createElement('div');
+      wrap.className = 'tm-live-md-wrap';
+      const initMode = _getPreferredMdEditMode();
+      wrap.setAttribute('data-mode', initMode);
+
+      const toolbar = document.createElement('div');
+      toolbar.className = 'tm-live-md-toolbar';
+      toolbar.innerHTML = `
+        <div class="tm-live-md-tools">
+          <button type="button" class="tm-md-tool-btn" data-cmd="h1" title="一级标题 (# )">H1</button>
+          <button type="button" class="tm-md-tool-btn" data-cmd="h2" title="二级标题 (## )">H2</button>
+          <button type="button" class="tm-md-tool-btn" data-cmd="bold" title="加粗 (**文字**)"><strong>B</strong></button>
+          <button type="button" class="tm-md-tool-btn" data-cmd="italic" title="斜体 (*文字*)"><em>I</em></button>
+          <button type="button" class="tm-md-tool-btn" data-cmd="ul" title="无序列表 (- )">• 列表</button>
+          <button type="button" class="tm-md-tool-btn" data-cmd="task" title="清单勾选 (- [ ] )">☑ 清单</button>
+          <button type="button" class="tm-md-tool-btn" data-cmd="quote" title="引用 (> )">❝ 引用</button>
+          <button type="button" class="tm-md-tool-btn" data-cmd="code" title="行内代码 (\`code\`)">&lt;/&gt; 代码</button>
+        </div>
+        <div class="tm-live-md-modes">
+          <button type="button" class="tm-md-mode-btn ${initMode === 'wysiwyg' ? 'active' : ''}" data-mode="wysiwyg" title="边写边渲染所见即所得">✨ 实时渲染</button>
+          <button type="button" class="tm-md-mode-btn ${initMode === 'split' ? 'active' : ''}" data-mode="split" title="左侧 Markdown 源码 + 右侧实时渲染">📝 分栏</button>
+          <button type="button" class="tm-md-mode-btn ${initMode === 'source' ? 'active' : ''}" data-mode="source" title="纯 Markdown 源码编辑">⌨️ 源码</button>
+        </div>
+      `;
+
+      const body = document.createElement('div');
+      body.className = 'tm-live-md-body';
+
+      const surface = document.createElement('div');
+      surface.className = 'tm-live-md-surface md-rendered is-empty';
+      surface.setAttribute('contenteditable', 'true');
+      surface.setAttribute('spellcheck', 'false');
+      surface.setAttribute('data-placeholder', placeholder);
+      surface.style.minHeight = `${minHeight}px`;
+
+      const previewPane = document.createElement('div');
+      previewPane.className = 'tm-live-md-preview-pane';
+      previewPane.style.minHeight = `${minHeight}px`;
+
+      ta.parentNode.insertBefore(wrap, ta);
+      ta.classList.add('tm-md-raw-ta');
+      ta.style.minHeight = `${minHeight}px`;
+      body.appendChild(surface);
+      body.appendChild(ta);
+      body.appendChild(previewPane);
+      wrap.appendChild(toolbar);
+      wrap.appendChild(body);
+      ta.dataset.liveMdBound = '1';
+
+      const state = {
+        ta,
+        wrap,
+        surface,
+        previewPane,
+        composing: false,
+        syncingFromSurface: false,
+        mode: initMode,
+        getRawValue() {
+          return _NATIVE_TA_VAL_DESC ? _NATIVE_TA_VAL_DESC.get.call(ta) : ta.value;
+        },
+        setRawValue(v) {
+          if (_NATIVE_TA_VAL_DESC) _NATIVE_TA_VAL_DESC.set.call(ta, v);
+          else ta.value = v;
+        },
+        refreshEmptyState() {
+          const hasStructure = Boolean(surface.querySelector('ul, ol, blockquote, pre, h2, h3, h4, .tm-md-task-line'));
+          const plain = (surface.textContent || '').replace(/\u200B/g, '').trim();
+          surface.classList.toggle('is-empty', !plain && !hasStructure);
+        },
+        refreshPreviewPane() {
+          const val = state.getRawValue();
+          previewPane.innerHTML = val.trim()
+            ? renderSimpleMarkdown(val)
+            : `<div style="color:var(--muted);font-size:12.5px;">实时渲染预览区…</div>`;
+        },
+        syncFromTextarea() {
+          const val = state.getRawValue();
+          surface.innerHTML = markdownToEditableHtml(val);
+          state.refreshEmptyState();
+          state.refreshPreviewPane();
+        },
+        syncFromSurface(allowTransform = true) {
+          if (!state.composing && allowTransform) {
+            _tryLiveMarkdownAutoTransform(surface);
+          }
+          state.syncingFromSurface = true;
+          try {
+            const md = editableDomToMarkdown(surface);
+            state.setRawValue(md);
+            state.refreshEmptyState();
+            state.refreshPreviewPane();
+          } finally {
+            state.syncingFromSurface = false;
+          }
+        },
+        setMode(nextMode) {
+          if (state.mode === 'wysiwyg' && nextMode !== 'wysiwyg') {
+            state.syncFromSurface(false);
+          } else if (state.mode !== 'wysiwyg' && nextMode === 'wysiwyg') {
+            state.syncFromTextarea();
+          }
+          state.mode = nextMode;
+          wrap.setAttribute('data-mode', nextMode);
+          toolbar.querySelectorAll('.tm-md-mode-btn').forEach(b => {
+            b.classList.toggle('active', b.getAttribute('data-mode') === nextMode);
+          });
+          try { localStorage.setItem('tm_md_edit_mode', nextMode); } catch (e) {}
+          state.refreshPreviewPane();
+        }
+      };
+
+      // Hook programmatic ta.value assignments (reset, load, AI summary, voice dictation)
+      if (_NATIVE_TA_VAL_DESC) {
+        Object.defineProperty(ta, 'value', {
+          configurable: true,
+          get() {
+            return _NATIVE_TA_VAL_DESC.get.call(ta);
+          },
+          set(v) {
+            _NATIVE_TA_VAL_DESC.set.call(ta, v);
+            if (!state.syncingFromSurface) {
+              state.syncFromTextarea();
+            }
+          }
+        });
+      }
+
+      // Hook ta.focus() so focusing a hidden textarea in wysiwyg mode focuses the rich surface
+      const origFocus = ta.focus.bind(ta);
+      ta.focus = function(focusOpts) {
+        if (state.mode === 'wysiwyg') {
+          surface.focus(focusOpts);
+          _placeCaretAtEnd(surface);
+        } else {
+          origFocus(focusOpts);
+        }
+      };
+
+      // Composition events for 100% Chinese Pinyin IME safety
+      surface.addEventListener('compositionstart', () => { state.composing = true; });
+      surface.addEventListener('compositionend', () => {
+        state.composing = false;
+        state.syncFromSurface(true);
+      });
+      surface.addEventListener('input', ev => {
+        if (ev.isComposing || state.composing) {
+          state.refreshEmptyState();
+          return;
+        }
+        state.syncFromSurface(true);
+      });
+
+      // Checkbox clicks inside live WYSIWYG task lines
+      surface.addEventListener('change', ev => {
+        const cb = ev.target;
+        if (cb && cb.tagName === 'INPUT' && cb.type === 'checkbox') {
+          const row = cb.closest('.tm-md-task-line');
+          if (row) row.setAttribute('data-checked', cb.checked ? '1' : '0');
+          state.syncFromSurface(false);
+        }
+      });
+
+      // Enter / Backspace / Ctrl+Enter inside rich surface
+      surface.addEventListener('keydown', ev => {
+        if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
+          if (typeof opts.onCtrlEnter === 'function') {
+            ev.preventDefault();
+            state.syncFromSurface(false);
+            opts.onCtrlEnter();
+          }
+          return;
+        }
+        if (ev.isComposing || state.composing) return;
+        if (ev.key === 'Enter' && !ev.shiftKey) {
+          const sel = window.getSelection();
+          const anchorEl = sel?.anchorNode?.nodeType === Node.ELEMENT_NODE ? sel.anchorNode : sel?.anchorNode?.parentElement;
+          const taskRow = anchorEl?.closest?.('.tm-md-task-line');
+          if (taskRow) {
+            ev.preventDefault();
+            const textSpan = taskRow.querySelector('.tm-md-task-text');
+            const curBody = (textSpan?.textContent || '').replace(/\u200B/g, '').trim();
+            if (!curBody) {
+              const p = document.createElement('p');
+              p.innerHTML = '<br>';
+              taskRow.replaceWith(p);
+              _placeCaretAtStart(p);
+            } else {
+              const nextTask = document.createElement('div');
+              nextTask.className = 'tm-md-task-line';
+              nextTask.setAttribute('data-checked', '0');
+              nextTask.innerHTML = '<input type="checkbox" contenteditable="false" /><span class="tm-md-task-text"><br></span>';
+              taskRow.after(nextTask);
+              _placeCaretAtStart(nextTask.querySelector('.tm-md-task-text'));
+            }
+            state.syncFromSurface(false);
+          }
+        }
+      });
+
+      // Forward image paste on WYSIWYG surface + sanitize rich HTML paste to clean text/Markdown
+      surface.addEventListener('paste', ev => {
+        const items = Array.from(ev.clipboardData?.items || []);
+        if (items.some(it => it.type && it.type.startsWith('image/'))) {
+          handleImagePaste(ev, mediaBucket);
+          return;
+        }
+        const plain = ev.clipboardData?.getData('text/plain');
+        if (plain) {
+          ev.preventDefault();
+          if (/^(#{1,3}\s|[-*]\s|>\s|\d+\.\s)/m.test(plain) || /\*\*[^*]+\*\*|`[^`]+`/.test(plain)) {
+            const curMd = editableDomToMarkdown(surface);
+            const nextMd = curMd.trim() ? `${curMd}\n${plain}` : plain;
+            state.setRawValue(nextMd);
+            state.syncFromTextarea();
+            _placeCaretAtEnd(surface);
+          } else {
+            document.execCommand('insertText', false, plain);
+          }
+          state.syncFromSurface(false);
+        }
+      });
+
+      // Keep split-view preview updated when typing in raw textarea
+      ta.addEventListener('input', () => {
+        if (!state.syncingFromSurface && state.mode !== 'wysiwyg') {
+          state.refreshPreviewPane();
+        }
+      });
+
+      // Toolbar button actions
+      toolbar.querySelectorAll('.tm-md-tool-btn').forEach(btn => {
+        btn.addEventListener('mousedown', ev => ev.preventDefault());
+        btn.addEventListener('click', () => {
+          const cmd = btn.getAttribute('data-cmd');
+          if (state.mode === 'wysiwyg') {
+            surface.focus();
+            if (cmd === 'bold') {
+              document.execCommand('bold');
+            } else if (cmd === 'italic') {
+              document.execCommand('italic');
+            } else if (cmd === 'ul') {
+              document.execCommand('insertUnorderedList');
+            } else if (cmd === 'h1' || cmd === 'h2') {
+              const targetTag = cmd === 'h1' ? 'H2' : 'H3';
+              const sel = window.getSelection();
+              const curEl = sel?.anchorNode?.nodeType === Node.ELEMENT_NODE ? sel.anchorNode : sel?.anchorNode?.parentElement;
+              const inSame = curEl?.closest?.(targetTag.toLowerCase());
+              document.execCommand('formatBlock', false, inSame ? 'P' : targetTag);
+            } else if (cmd === 'quote') {
+              const sel = window.getSelection();
+              const curEl = sel?.anchorNode?.nodeType === Node.ELEMENT_NODE ? sel.anchorNode : sel?.anchorNode?.parentElement;
+              const inQuote = curEl?.closest?.('blockquote');
+              document.execCommand('formatBlock', false, inQuote ? 'P' : 'BLOCKQUOTE');
+            } else if (cmd === 'code') {
+              const sel = window.getSelection();
+              const selected = sel ? sel.toString() : '';
+              document.execCommand('insertHTML', false, `<code>${esc(selected || 'code')}</code>\u200B`);
+            } else if (cmd === 'task') {
+              const sel = window.getSelection();
+              const selected = sel ? sel.toString().trim() : '';
+              const html = `<div class="tm-md-task-line" data-checked="0"><input type="checkbox" contenteditable="false" /><span class="tm-md-task-text">${esc(selected) || '<br>'}</span></div>`;
+              document.execCommand('insertHTML', false, html);
+            }
+            state.syncFromSurface(false);
+          } else {
+            ta.focus();
+            const start = ta.selectionStart || 0;
+            const end = ta.selectionEnd || 0;
+            const val = state.getRawValue();
+            const selText = val.slice(start, end);
+            let replacement = selText;
+            let cursorOffset = 0;
+            if (cmd === 'bold') { replacement = `**${selText || '加粗文字'}**`; cursorOffset = selText ? replacement.length : 2; }
+            else if (cmd === 'italic') { replacement = `*${selText || '斜体文字'}*`; cursorOffset = selText ? replacement.length : 1; }
+            else if (cmd === 'code') { replacement = `\`${selText || 'code'}\``; cursorOffset = selText ? replacement.length : 1; }
+            else if (cmd === 'h1') { replacement = `\n# ${selText || '一级标题'}`; cursorOffset = replacement.length; }
+            else if (cmd === 'h2') { replacement = `\n## ${selText || '二级标题'}`; cursorOffset = replacement.length; }
+            else if (cmd === 'ul') { replacement = `\n- ${selText || '列表项'}`; cursorOffset = replacement.length; }
+            else if (cmd === 'task') { replacement = `\n- [ ] ${selText || '待办事项'}`; cursorOffset = replacement.length; }
+            else if (cmd === 'quote') { replacement = `\n> ${selText || '引用内容'}`; cursorOffset = replacement.length; }
+            const nextVal = val.slice(0, start) + replacement + val.slice(end);
+            state.setRawValue(nextVal);
+            state.refreshPreviewPane();
+            try { ta.setSelectionRange(start + cursorOffset, start + replacement.length); } catch (e) {}
+          }
+        });
+      });
+
+      toolbar.querySelectorAll('.tm-md-mode-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const m = btn.getAttribute('data-mode') || 'wysiwyg';
+          state.setMode(m);
+        });
+      });
+
+      state.syncFromTextarea();
+      _liveMdEditors[textareaId] = state;
+      return state;
+    }
+
+    function ensureStaticLiveMarkdownEditors() {
+      initLiveMarkdownEditor('notesEditorInput', {
+        mediaBucket: 'notes',
+        minHeight: 88,
+        onCtrlEnter: () => submitNoteFromNotesTab(document.getElementById('memoSaveBtn')),
+      });
+      initLiveMarkdownEditor('journalEditorInput', {
+        mediaBucket: 'journal',
+        minHeight: 158,
+        onCtrlEnter: () => saveCurrentJournal(document.getElementById('journalSaveBtn')),
+      });
+    }
+    setTimeout(ensureStaticLiveMarkdownEditors, 0);
 
     function switchNotesHubMode(mode) {
       if (mode === 'journal' && appPreferences.enabled_modules?.journal !== false) {
@@ -11501,6 +12369,7 @@
     }
 
     async function loadNotesPanel() {
+      ensureStaticLiveMarkdownEditors();
       if (_notesHubMode === 'journal' && appPreferences.enabled_modules?.journal !== false) {
         await loadJournalView();
       } else {
@@ -11644,6 +12513,11 @@
         const editingItem = _cachedMemosById[_inlineEditMemoId];
         const ta = document.getElementById('inlineMemoContent');
         if (ta && editingItem) ta.value = editingItem.content || '';
+        initLiveMarkdownEditor('inlineMemoContent', {
+          mediaBucket: 'memoInline',
+          minHeight: 112,
+          onCtrlEnter: () => saveInlineMemoEdit(document.getElementById('inlineMemoSaveBtn')),
+        });
         renderPendingMediaDrafts('memoInline');
       }
 
@@ -11991,7 +12865,13 @@
         }
       }
       renderPendingMediaDrafts(bucket);
-      const editorEl = document.getElementById(kind === 'journal' ? 'detailJournalContent' : 'detailMemoContent');
+      const targetTaId = kind === 'journal' ? 'detailJournalContent' : 'detailMemoContent';
+      initLiveMarkdownEditor(targetTaId, {
+        mediaBucket: bucket,
+        minHeight: 175,
+        onCtrlEnter: () => saveDetailModalEdit(document.getElementById('detailModalSaveBtn')),
+      });
+      const editorEl = document.getElementById(targetTaId);
       if (editorEl) {
         editorEl.focus({ preventScroll: true });
         const len = editorEl.value.length;
@@ -12253,6 +13133,11 @@
         const editingEntry = _cachedJournalsById[_inlineEditJournalId];
         const ta = document.getElementById('inlineJournalContent');
         if (ta && editingEntry) ta.value = editingEntry.content || '';
+        initLiveMarkdownEditor('inlineJournalContent', {
+          mediaBucket: 'journalInline',
+          minHeight: 132,
+          onCtrlEnter: () => saveInlineJournalEdit(document.getElementById('inlineJournalSaveBtn')),
+        });
         renderPendingMediaDrafts('journalInline');
       }
 
@@ -12936,16 +13821,30 @@
           rec.lang = 'zh-CN';
           rec.continuous = true;
           rec.interimResults = true;
-          let finalTranscript = '';
+          let lastNonEmptySpoken = '';
+          let sessionClosed = false;
+
+          const syncPreservedVoiceText = (spokenStr) => {
+            const clean = (spokenStr || '').trim();
+            if (clean) {
+              lastNonEmptySpoken = clean;
+            }
+            const effectiveSpoken = clean || lastNonEmptySpoken;
+            if (!effectiveSpoken && !baseText) return;
+            const nextVal = (baseText + effectiveSpoken).trimStart();
+            if (inputEl.value !== nextVal) {
+              inputEl.value = nextVal;
+              inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          };
 
           rec.onresult = (e) => {
-            let interim = '';
-            for (let i = e.resultIndex; i < e.results.length; i++) {
-              const t = e.results[i][0].transcript;
-              if (e.results[i].isFinal) finalTranscript += t;
-              else interim += t;
+            if (sessionClosed) return;
+            let fullSpoken = '';
+            for (let i = 0; i < e.results.length; i++) {
+              fullSpoken += (e.results[i][0]?.transcript || '');
             }
-            inputEl.value = (baseText + finalTranscript + interim).trimStart();
+            syncPreservedVoiceText(fullSpoken);
           };
           rec.onerror = (e) => {
             if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
@@ -12953,6 +13852,9 @@
             }
           };
           rec.onend = () => {
+            sessionClosed = true;
+            // Ensure stopping dictation never clears already-entered or just-dictated text
+            syncPreservedVoiceText('');
             const wasAuto = _voiceSession?.autoSubmit;
             btn.classList.remove('recording');
             btn.innerHTML = origLabel;
@@ -12961,7 +13863,7 @@
               _autoSubmitTargetIfRequested(targetId, true);
             }
           };
-          _voiceSession = { kind: 'webspeech', rec, btn, origLabel, targetId, autoSubmit, holdMode };
+          _voiceSession = { kind: 'webspeech', rec, btn, origLabel, targetId, autoSubmit, holdMode, markClosed: () => { sessionClosed = true; syncPreservedVoiceText(''); } };
           rec.start();
           showToast(holdMode ? '🎤 按住说话中，松手自动入队...' : '🎤 实时语音听写已开启，再次点击结束');
           return;
@@ -13031,7 +13933,10 @@
     function stopVoiceDictation() {
       if (!_voiceSession) return;
       if (_voiceSession.kind === 'webspeech') {
-        try { _voiceSession.rec.stop(); } catch (e) { _voiceSession = null; }
+        try {
+          if (typeof _voiceSession.markClosed === 'function') _voiceSession.markClosed();
+          _voiceSession.rec.stop();
+        } catch (e) { _voiceSession = null; }
       } else if (_voiceSession.kind === 'mediarecorder') {
         try {
           if (_voiceSession.recorder.state === 'recording') _voiceSession.recorder.stop();

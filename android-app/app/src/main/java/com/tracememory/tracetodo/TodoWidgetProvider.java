@@ -150,6 +150,10 @@ public class TodoWidgetProvider extends AppWidgetProvider {
         openCapture.setClass(context, MainActivity.class);
         PendingIntent capturePi = PendingIntent.getActivity(context, 11, openCapture, piFlags);
 
+        Intent openFocus = new Intent(Intent.ACTION_VIEW, Uri.parse("tracetodo://focus"));
+        openFocus.setClass(context, MainActivity.class);
+        PendingIntent focusPi = PendingIntent.getActivity(context, 13, openFocus, piFlags);
+
         Intent refreshIntent = new Intent(context, TodoWidgetProvider.class);
         refreshIntent.setAction(ACTION_WIDGET_REFRESH);
         PendingIntent refreshPi = PendingIntent.getBroadcast(context, 12, refreshIntent, piFlags);
@@ -195,6 +199,7 @@ public class TodoWidgetProvider extends AppWidgetProvider {
             RemoteViews rv = new RemoteViews(context.getPackageName(), R.layout.widget_todo);
             rv.setOnClickPendingIntent(R.id.widget_root, openMainPi);
             rv.setOnClickPendingIntent(R.id.widget_add_btn, capturePi);
+            rv.setOnClickPendingIntent(R.id.widget_focus_btn, focusPi);
             rv.setOnClickPendingIntent(R.id.widget_refresh_btn, refreshPi);
 
             rv.setTextViewText(R.id.widget_total_count, String.valueOf(totalTodo));

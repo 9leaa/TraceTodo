@@ -90,6 +90,40 @@ struct ActiveFocusLaunchConfig: Identifiable, Equatable {
     let plannedMinutes: Int
 }
 
+struct ActiveFocusSessionState: Equatable {
+    var mode: FocusTimerMode
+    var task: TaskItemModel?
+    var customTitle: String
+    var plannedMinutes: Int
+    var elapsedSeconds: Int
+    var isPaused: Bool
+    var startedAtIso: String
+
+    var totalSeconds: Int {
+        max(60, plannedMinutes * 60)
+    }
+
+    var remainingSeconds: Int {
+        max(0, totalSeconds - elapsedSeconds)
+    }
+
+    var displaySeconds: Int {
+        mode == .stopwatch ? elapsedSeconds : remainingSeconds
+    }
+
+    var progress: Double {
+        if mode == .stopwatch {
+            return Double(elapsedSeconds % 1500) / 1500.0
+        }
+        return min(1.0, Double(elapsedSeconds) / Double(max(1, totalSeconds)))
+    }
+
+    var displayTitle: String {
+        if let t = task, !t.title.isEmpty { return t.title }
+        return customTitle.isEmpty ? "自由专注" : customTitle
+    }
+}
+
 func formatFocusDurationHuman(_ totalSec: Int) -> String {
     let mins = max(0, totalSec) / 60
     if mins < 60 {
@@ -126,19 +160,24 @@ enum ScreenTimeLockCapability {
 
 struct FocusLockView: View {
     @EnvironmentObject var store: TodoStore
-    let mode: FocusTimerMode
-    let task: TaskItemModel?
-    let customTitle: String
-    let plannedMinutes: Int
 
-    @State private var totalSeconds: Int = 25 * 60
-    @State private var elapsedSeconds: Int = 0
-    @State private var startedAtIso: String = ISO8601DateFormatter().string(from: Date())
     @State private var showAbortPrompt: Bool = false
     @State private var abortReason: String = ""
     @State private var isFinishing: Bool = false
     @State private var lockSceneOverrideId: String = ""
     @State private var dimOpacity: Double = 0.28
+
+    private var sess: ActiveFocusSessionState {
+        store.activeFocusSession ?? ActiveFocusSessionState(
+            mode: .pomodoro,
+            task: nil,
+            customTitle: "自由专注",
+            plannedMinutes: 25,
+            elapsedSeconds: 0,
+            isPaused: false,
+            startedAtIso: ISO8601DateFormatter().string(from: Date())
+        )
+    }
 
     private var effectiveLockScene: AmbientSceneItem {
         if !lockSceneOverrideId.isEmpty {
@@ -150,40 +189,13 @@ struct FocusLockView: View {
         return AmbientSceneItem.byId("starfield")
     }
 
-    private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
-
-    init(task: TaskItemModel) {
-        self.mode = .pomodoro
-        self.task = task
-        self.customTitle = task.title
-        self.plannedMinutes = max(1, task.payload.focusMinutes ?? 25)
-    }
-
-    init(launch: ActiveFocusLaunchConfig) {
-        self.mode = launch.mode
-        self.task = launch.task
-        self.customTitle = launch.task?.title ?? (launch.customTitle.isEmpty ? "自由专注" : launch.customTitle)
-        self.plannedMinutes = max(1, launch.plannedMinutes)
-    }
-
-    private var remainingSeconds: Int {
-        max(0, totalSeconds - elapsedSeconds)
-    }
-
-    private var progress: Double {
-        if mode == .stopwatch {
-            return Double(elapsedSeconds % 1500) / 1500.0
-        }
-        guard totalSeconds > 0 else { return 0 }
-        return min(1.0, Double(elapsedSeconds) / Double(totalSeconds))
-    }
-
     private var formattedTimer: String {
-        formatFocusClockString(mode == .stopwatch ? elapsedSeconds : remainingSeconds)
+        formatFocusClockString(sess.displaySeconds)
     }
 
     var body: some View {
         let sc = effectiveLockScene
+        let curTask = sess.task
         ZStack {
             Color(red: 0.04, green: 0.05, blue: 0.10)
                 .ignoresSafeArea()
@@ -208,8 +220,8 @@ struct FocusLockView: View {
             }
 
             VStack(spacing: 14) {
-                HStack {
-                    Text(mode == .stopwatch ? "🔒 正计时专注" : "🔒 番茄专注")
+                HStack(spacing: 8) {
+                    Text(sess.mode == .stopwatch ? "🔒 正计时专注" : "🔒 番茄专注")
                         .font(.caption.bold())
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
@@ -218,6 +230,24 @@ struct FocusLockView: View {
                         .clipShape(Capsule())
 
                     Spacer()
+
+                    Button {
+                        store.minimizeFocusLockScreen()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.down.right.and.arrow.up.left")
+                                .font(.system(size: 10, weight: .bold))
+                            Text("收起悬浮")
+                                .font(.caption2.bold())
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.black.opacity(0.42))
+                        .foregroundStyle(.white)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help("暂时收起锁屏返回工作台，计时继续进行，随时可点悬浮胶囊重进锁屏")
 
                     Button {
                         if dimOpacity < 0.20 {
@@ -243,7 +273,7 @@ struct FocusLockView: View {
 
                 Spacer(minLength: 24)
 
-                Text(task?.title ?? customTitle)
+                Text(sess.displayTitle)
                     .font(.title3.bold())
                     .foregroundStyle(.white)
                     .shadow(color: .black.opacity(0.55), radius: 6, x: 0, y: 2)
@@ -256,20 +286,20 @@ struct FocusLockView: View {
                     Circle()
                         .stroke(Color.white.opacity(0.20), lineWidth: 10)
                     Circle()
-                        .trim(from: 0, to: progress)
+                        .trim(from: 0, to: sess.progress)
                         .stroke(
                             LinearGradient(colors: [sc.accentColor, store.activeTheme.primaryColor], startPoint: .topLeading, endPoint: .bottomTrailing),
                             style: StrokeStyle(lineWidth: 10, lineCap: .round)
                         )
                         .rotationEffect(.degrees(-90))
-                        .animation(.linear(duration: 0.4), value: progress)
+                        .animation(.linear(duration: 0.4), value: sess.progress)
 
                     VStack(spacing: 4) {
                         Text(formattedTimer)
                             .font(.system(size: 44, weight: .heavy, design: .rounded))
                             .monospacedDigit()
                             .foregroundStyle(.white)
-                        Text(task != nil ? "已专注 \(task?.payload.focusSessionsCompleted ?? 0) 轮" : "🌱 \(sc.name)")
+                        Text(sess.isPaused ? "⏸ 已暂停" : (curTask != nil ? "已专注 \(curTask?.payload.focusSessionsCompleted ?? 0) 轮" : "🌱 \(sc.name)"))
                             .font(.caption)
                             .foregroundStyle(Color.white.opacity(0.82))
                     }
@@ -305,7 +335,7 @@ struct FocusLockView: View {
                 }
                 .frame(maxWidth: 560)
 
-                if let curTask = task, !curTask.payload.subtaskList.isEmpty {
+                if let curTask, !curTask.payload.subtaskList.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("📋 执行清单")
                             .font(.caption.bold())
@@ -381,16 +411,17 @@ struct FocusLockView: View {
                                 let clean = abortReason.trimmingCharacters(in: .whitespacesAndNewlines)
                                 guard !clean.isEmpty else { return }
                                 isFinishing = true
+                                let snap = sess
                                 Task {
                                     await store.recordUnifiedFocusSession(
-                                        mode: mode,
+                                        mode: snap.mode,
                                         status: "aborted",
-                                        plannedMinutes: plannedMinutes,
-                                        durationSeconds: max(1, elapsedSeconds),
-                                        task: task,
-                                        customTitle: customTitle,
+                                        plannedMinutes: snap.plannedMinutes,
+                                        durationSeconds: max(1, snap.elapsedSeconds),
+                                        task: snap.task,
+                                        customTitle: snap.customTitle,
                                         abortReason: clean,
-                                        startedAtIso: startedAtIso
+                                        startedAtIso: snap.startedAtIso
                                     )
                                 }
                             }
@@ -404,29 +435,43 @@ struct FocusLockView: View {
                     .background(Color.black.opacity(0.55))
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                 } else {
-                    HStack(spacing: 14) {
+                    HStack(spacing: 12) {
                         Button {
                             guard !isFinishing else { return }
                             isFinishing = true
-                            let effDur = mode == .stopwatch ? max(1, elapsedSeconds) : max(1, elapsedSeconds > 0 ? elapsedSeconds : totalSeconds)
+                            let snap = sess
+                            let effDur = snap.mode == .stopwatch ? max(1, snap.elapsedSeconds) : max(1, snap.elapsedSeconds > 0 ? snap.elapsedSeconds : snap.totalSeconds)
                             Task {
                                 await store.recordUnifiedFocusSession(
-                                    mode: mode,
+                                    mode: snap.mode,
                                     status: "completed",
-                                    plannedMinutes: plannedMinutes,
+                                    plannedMinutes: snap.plannedMinutes,
                                     durationSeconds: effDur,
-                                    task: task,
-                                    customTitle: customTitle,
-                                    completeTask: task != nil,
-                                    startedAtIso: startedAtIso
+                                    task: snap.task,
+                                    customTitle: snap.customTitle,
+                                    completeTask: snap.task != nil,
+                                    startedAtIso: snap.startedAtIso
                                 )
                             }
                         } label: {
-                            Text(task != nil ? "✅ 完成任务并结束" : "✅ 结束并记录专注")
-                                .font(.headline)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 12)
+                            Text(curTask != nil ? "✅ 完成任务并结束" : "✅ 结束并记录")
+                                .font(.subheadline.bold())
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 11)
                                 .background(LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing))
+                                .foregroundStyle(.white)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            store.toggleFocusPause()
+                        } label: {
+                            Text(sess.isPaused ? "▶ 继续" : "⏸ 暂停")
+                                .font(.subheadline.weight(.semibold))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 11)
+                                .background(Color.white.opacity(0.16))
                                 .foregroundStyle(.white)
                                 .clipShape(Capsule())
                         }
@@ -435,7 +480,8 @@ struct FocusLockView: View {
                         Button("提前退出") {
                             showAbortPrompt = true
                         }
-                        .padding(.horizontal, 16)
+                        .font(.subheadline)
+                        .padding(.horizontal, 14)
                         .padding(.vertical, 11)
                         .background(Color.white.opacity(0.14))
                         .foregroundStyle(.white)
@@ -446,39 +492,6 @@ struct FocusLockView: View {
             }
             .padding(24)
         }
-        .onAppear {
-            totalSeconds = plannedMinutes * 60
-            elapsedSeconds = 0
-            startedAtIso = ISO8601DateFormatter().string(from: Date())
-        }
-        .onReceive(ticker) { _ in
-            guard !isFinishing else { return }
-            elapsedSeconds += 1
-            if mode == .pomodoro && elapsedSeconds >= totalSeconds {
-                isFinishing = true
-                playCompletionSound()
-                Task {
-                    await store.recordUnifiedFocusSession(
-                        mode: .pomodoro,
-                        status: "completed",
-                        plannedMinutes: plannedMinutes,
-                        durationSeconds: totalSeconds,
-                        task: task,
-                        customTitle: customTitle,
-                        completeTask: false,
-                        startedAtIso: startedAtIso
-                    )
-                }
-            }
-        }
-    }
-
-    private func playCompletionSound() {
-        #if os(macOS)
-        NSSound.beep()
-        #elseif canImport(AudioToolbox)
-        AudioServicesPlaySystemSound(1005)
-        #endif
     }
 }
 
@@ -490,13 +503,13 @@ struct FocusCenterView: View {
     @State private var selectedTaskId: String = ""
     @State private var freeFocusTitle: String = ""
 
-    // Inline active timer state (unified with lock overlay)
-    @State private var isRunningInline: Bool = false
-    @State private var isPausedInline: Bool = false
-    @State private var elapsedSeconds: Int = 0
-    @State private var startedAtIso: String = ""
+    private var activeSess: ActiveFocusSessionState? {
+        store.activeFocusSession
+    }
 
-    private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    private var isRunning: Bool {
+        activeSess != nil
+    }
 
     private var openTasks: [TaskItemModel] {
         (store.matrix?.sortedTasks ?? []).filter { !$0.payload.isDone }
@@ -519,20 +532,14 @@ struct FocusCenterView: View {
     }
 
     private var inlineDisplaySeconds: Int {
-        if mode == .stopwatch {
-            return isRunningInline ? elapsedSeconds : 0
+        if let s = activeSess {
+            return s.displaySeconds
         }
-        let total = plannedMinutes * 60
-        return isRunningInline ? max(0, total - elapsedSeconds) : total
+        return mode == .stopwatch ? 0 : plannedMinutes * 60
     }
 
     private var inlineProgress: Double {
-        guard isRunningInline else { return 0 }
-        if mode == .stopwatch {
-            return Double(elapsedSeconds % 1500) / 1500.0
-        }
-        let total = max(1, plannedMinutes * 60)
-        return min(1.0, Double(elapsedSeconds) / Double(total))
+        activeSess?.progress ?? 0
     }
 
     var body: some View {
@@ -542,7 +549,7 @@ struct FocusCenterView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("🍅 番茄专注中心")
                             .font(.title3.bold())
-                        Text("番茄计时 / 正计时双模式 · 统一专注内核")
+                        Text("番茄计时 / 正计时双模式 · 随时可进出全屏沉浸锁屏")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -554,7 +561,7 @@ struct FocusCenterView: View {
                     }
                     .pickerStyle(.segmented)
                     .frame(maxWidth: 220)
-                    .disabled(isRunningInline)
+                    .disabled(isRunning)
                 }
 
                 #if os(macOS)
@@ -575,31 +582,19 @@ struct FocusCenterView: View {
         }
         .task {
             plannedMinutes = store.defaultPomodoroMinutes
-            await store.refreshFocusOverview()
-        }
-        .onReceive(ticker) { _ in
-            guard isRunningInline && !isPausedInline else { return }
-            elapsedSeconds += 1
-            if mode == .pomodoro && elapsedSeconds >= plannedMinutes * 60 {
-                let dur = plannedMinutes * 60
-                stopInlineState()
-                Task {
-                    await store.recordUnifiedFocusSession(
-                        mode: .pomodoro,
-                        status: "completed",
-                        plannedMinutes: plannedMinutes,
-                        durationSeconds: dur,
-                        task: boundTask,
-                        customTitle: freeFocusTitle,
-                        startedAtIso: startedAtIso
-                    )
-                }
+            if let s = store.activeFocusSession {
+                mode = s.mode
+                plannedMinutes = s.plannedMinutes
+                selectedTaskId = s.task?.memoryId ?? ""
+                freeFocusTitle = s.customTitle
             }
+            await store.refreshFocusOverview()
         }
     }
 
     private var timerCardView: some View {
-        VStack(spacing: 16) {
+        let curSess = activeSess
+        return VStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
                 Picker("关联事项", selection: $selectedTaskId) {
                     Text("🌱 自由专注（不绑定待办）").tag("")
@@ -607,21 +602,21 @@ struct FocusCenterView: View {
                         Text("[\(t.payload.quadrantKind.shortCode)] \(t.title)").tag(t.memoryId)
                     }
                 }
-                .disabled(isRunningInline)
+                .disabled(isRunning)
 
                 if selectedTaskId.isEmpty {
                     TextField("可选：自由专注主题（如：深度阅读论文）...", text: $freeFocusTitle)
                         .textFieldStyle(.roundedBorder)
-                        .disabled(isRunningInline)
+                        .disabled(isRunning)
                 }
             }
 
-            if mode == .pomodoro {
+            if (curSess?.mode ?? mode) == .pomodoro {
                 HStack(spacing: 8) {
                     ForEach([15, 25, 45, 60], id: \.self) { mins in
-                        let sel = plannedMinutes == mins
+                        let sel = (curSess?.plannedMinutes ?? plannedMinutes) == mins
                         Button("\(mins) 分钟") {
-                            if !isRunningInline { plannedMinutes = mins }
+                            if !isRunning { plannedMinutes = mins }
                         }
                         .font(.caption.bold())
                         .padding(.horizontal, 12)
@@ -658,7 +653,11 @@ struct FocusCenterView: View {
                     Text(formatFocusClockString(inlineDisplaySeconds))
                         .font(.system(size: 44, weight: .heavy, design: .rounded))
                         .monospacedDigit()
-                    Text(isRunningInline ? (isPausedInline ? "⏸ 已暂停" : (boundTask?.title ?? (freeFocusTitle.isEmpty ? "自由专注中" : freeFocusTitle))) : (mode == .stopwatch ? "正计时随时结算" : "准备 \(plannedMinutes) 分钟番茄"))
+                    Text(
+                        curSess != nil
+                            ? (curSess!.isPaused ? "⏸ 已暂停" : curSess!.displayTitle)
+                            : (mode == .stopwatch ? "正计时随时结算" : "准备 \(plannedMinutes) 分钟番茄")
+                    )
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -668,13 +667,78 @@ struct FocusCenterView: View {
             .frame(width: 205, height: 205)
             .padding(.vertical, 4)
 
-            if !isRunningInline {
+            if let curSess {
+                VStack(spacing: 10) {
+                    Button {
+                        store.enterFocusLockScreen()
+                    } label: {
+                        Label("进入沉浸锁屏", systemImage: "lock.fill")
+                            .font(.subheadline.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(
+                                LinearGradient(
+                                    colors: [store.activeTheme.primaryFillColor, store.activeTheme.accentColor],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+
+                    HStack(spacing: 8) {
+                        Button(curSess.isPaused ? "▶ 继续" : "⏸ 暂停") {
+                            store.toggleFocusPause()
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("✅ 完成记录") {
+                            let snap = curSess
+                            Task {
+                                await store.recordUnifiedFocusSession(
+                                    mode: snap.mode,
+                                    status: "completed",
+                                    plannedMinutes: snap.plannedMinutes,
+                                    durationSeconds: max(1, snap.elapsedSeconds),
+                                    task: snap.task,
+                                    customTitle: snap.customTitle,
+                                    startedAtIso: snap.startedAtIso
+                                )
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(store.activeTheme.primaryColor)
+
+                        Button("✕ 中断", role: .destructive) {
+                            let snap = curSess
+                            Task {
+                                await store.recordUnifiedFocusSession(
+                                    mode: snap.mode,
+                                    status: "aborted",
+                                    plannedMinutes: snap.plannedMinutes,
+                                    durationSeconds: max(1, snap.elapsedSeconds),
+                                    task: snap.task,
+                                    customTitle: snap.customTitle,
+                                    abortReason: "手动提前结束",
+                                    startedAtIso: snap.startedAtIso
+                                )
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            } else {
                 HStack(spacing: 10) {
                     Button {
-                        elapsedSeconds = 0
-                        startedAtIso = ISO8601DateFormatter().string(from: Date())
-                        isPausedInline = false
-                        isRunningInline = true
+                        store.startUnifiedFocus(
+                            mode: mode,
+                            task: boundTask,
+                            customTitle: freeFocusTitle,
+                            plannedMinutes: plannedMinutes,
+                            openLock: false
+                        )
                     } label: {
                         Label("开始专注", systemImage: "play.fill")
                             .font(.subheadline.bold())
@@ -687,11 +751,12 @@ struct FocusCenterView: View {
                     .buttonStyle(.plain)
 
                     Button {
-                        store.activeFocusLaunch = ActiveFocusLaunchConfig(
+                        store.startUnifiedFocus(
                             mode: mode,
                             task: boundTask,
                             customTitle: freeFocusTitle,
-                            plannedMinutes: plannedMinutes
+                            plannedMinutes: plannedMinutes,
+                            openLock: true
                         )
                     } label: {
                         Label("沉浸锁屏", systemImage: "lock.fill")
@@ -702,51 +767,6 @@ struct FocusCenterView: View {
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
-                }
-            } else {
-                HStack(spacing: 8) {
-                    Button(isPausedInline ? "▶ 继续" : "⏸ 暂停") {
-                        isPausedInline.toggle()
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button("✅ 完成记录") {
-                        let eff = max(1, elapsedSeconds)
-                        let stIso = startedAtIso
-                        stopInlineState()
-                        Task {
-                            await store.recordUnifiedFocusSession(
-                                mode: mode,
-                                status: "completed",
-                                plannedMinutes: plannedMinutes,
-                                durationSeconds: eff,
-                                task: boundTask,
-                                customTitle: freeFocusTitle,
-                                startedAtIso: stIso
-                            )
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(store.activeTheme.primaryColor)
-
-                    Button("✕ 中断", role: .destructive) {
-                        let eff = max(1, elapsedSeconds)
-                        let stIso = startedAtIso
-                        stopInlineState()
-                        Task {
-                            await store.recordUnifiedFocusSession(
-                                mode: mode,
-                                status: "aborted",
-                                plannedMinutes: plannedMinutes,
-                                durationSeconds: eff,
-                                task: boundTask,
-                                customTitle: freeFocusTitle,
-                                abortReason: "手动提前结束",
-                                startedAtIso: stIso
-                            )
-                        }
-                    }
-                    .buttonStyle(.bordered)
                 }
             }
         }
@@ -856,11 +876,5 @@ struct FocusCenterView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color.primary.opacity(0.07), lineWidth: 1)
         )
-    }
-
-    private func stopInlineState() {
-        isRunningInline = false
-        isPausedInline = false
-        elapsedSeconds = 0
     }
 }

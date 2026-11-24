@@ -290,14 +290,18 @@ struct MarkdownAnswerView: View {
     let text: String
 
     private enum Block: Identifiable {
-        case heading(id: Int, content: String)
+        case heading(id: Int, level: Int, content: String)
+        case quote(id: Int, content: String)
+        case taskItem(id: Int, checked: Bool, content: String)
         case numbered(id: Int, num: String, content: String)
         case bullet(id: Int, content: String)
         case paragraph(id: Int, content: String)
 
         var id: Int {
             switch self {
-            case .heading(let id, _),
+            case .heading(let id, _, _),
+                 .quote(let id, _),
+                 .taskItem(let id, _, _),
                  .numbered(let id, _, _),
                  .bullet(let id, _),
                  .paragraph(let id, _):
@@ -313,9 +317,19 @@ struct MarkdownAnswerView: View {
             let line = raw.trimmingCharacters(in: .whitespaces)
             if line.isEmpty { continue }
 
-            if line.hasPrefix("### ") || line.hasPrefix("## ") || line.hasPrefix("# ") {
-                let stripped = line.drop(while: { $0 == "#" || $0 == " " })
-                parsed.append(.heading(id: idx, content: String(stripped)))
+            if line.hasPrefix("### ") {
+                parsed.append(.heading(id: idx, level: 3, content: String(line.dropFirst(4))))
+            } else if line.hasPrefix("## ") {
+                parsed.append(.heading(id: idx, level: 2, content: String(line.dropFirst(3))))
+            } else if line.hasPrefix("# ") {
+                parsed.append(.heading(id: idx, level: 1, content: String(line.dropFirst(2))))
+            } else if line.hasPrefix("> ") {
+                parsed.append(.quote(id: idx, content: String(line.dropFirst(2))))
+            } else if let taskRange = line.range(of: #"^[-*•]\s+\[[ xX]\]\s*"#, options: .regularExpression) {
+                let prefix = String(line[taskRange]).lowercased()
+                let isChecked = prefix.contains("[x]")
+                let body = String(line[taskRange.upperBound...])
+                parsed.append(.taskItem(id: idx, checked: isChecked, content: body))
             } else if let numRange = line.range(of: #"^\d+[\.\、]\s+"#, options: .regularExpression) {
                 let prefix = String(line[numRange])
                 let digits = prefix.filter(\.isNumber)
@@ -332,13 +346,44 @@ struct MarkdownAnswerView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             ForEach(blocks) { block in
                 switch block {
-                case .heading(_, let content):
+                case .heading(_, let level, let content):
+                    let sz: CGFloat = level == 1 ? 17.5 : (level == 2 ? 16 : 14.8)
                     inlineMarkdownText(content)
-                        .font(.system(size: 15, weight: .bold))
-                        .padding(.top, 4)
+                        .font(.system(size: sz, weight: .bold))
+                        .padding(.top, level == 1 ? 5 : 3)
+
+                case .quote(_, let content):
+                    HStack(alignment: .top, spacing: 9) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.purple.opacity(0.65))
+                            .frame(width: 3)
+                        inlineMarkdownText(content)
+                            .font(.system(size: 13.5))
+                            .foregroundStyle(.secondary)
+                            .lineSpacing(4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 8)
+                    .background(Color.primary.opacity(0.035))
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+                case .taskItem(_, let checked, let content):
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: checked ? "checkmark.square.fill" : "square")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(checked ? Color.purple : Color.secondary)
+                            .padding(.top, 2)
+                        inlineMarkdownText(content)
+                            .font(.system(size: 14.5))
+                            .foregroundStyle(checked ? .secondary : .primary)
+                            .strikethrough(checked, color: .secondary)
+                            .lineSpacing(4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
 
                 case .numbered(_, let num, let content):
                     HStack(alignment: .top, spacing: 10) {

@@ -394,41 +394,68 @@ struct MainContentView: View {
             }
             #endif
 
-            // Global Floating "💬 问记忆" Copilot Button (matches Web `#askFabBtn` + ⌘K shortcut)
-            if !store.needsLoginGate && store.activeFocusLaunch == nil && store.activeFocusTask == nil {
-                Button {
-                    store.isPresentingFloatingAsk = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "bubble.left.and.bubble.right.fill")
-                            .font(.system(size: 13.5, weight: .bold))
-                        Text("问记忆")
-                            .font(.system(size: 13, weight: .bold))
-                        #if os(macOS)
-                        Text("⌘K")
-                            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1.5)
-                            .background(Color.white.opacity(0.20))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                        #endif
+            // Global Floating "💬 问记忆" Copilot Button + Active Focus Mini Capsule
+            if !store.needsLoginGate && !store.isFocusLockPresented {
+                HStack(spacing: 10) {
+                    if let fSess = store.activeFocusSession {
+                        Button {
+                            store.enterFocusLockScreen()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: fSess.isPaused ? "pause.circle.fill" : "timer")
+                                    .font(.system(size: 13.5, weight: .bold))
+                                Text("\(formatFocusClockString(fSess.displaySeconds)) · 🔒 沉浸锁屏")
+                                    .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                                    .monospacedDigit()
+                            }
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 10)
+                            .background(Color(red: 0.10, green: 0.12, blue: 0.20).opacity(0.92))
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(store.activeTheme.accentColor.opacity(0.65), lineWidth: 1.2))
+                            .shadow(color: Color.black.opacity(0.24), radius: 10, x: 0, y: 4)
+                        }
+                        .buttonStyle(.plain)
+                        .help("点击重新进入全屏沉浸专注锁屏")
                     }
-                    .padding(.horizontal, 15)
-                    .padding(.vertical, 10)
-                    .background(
-                        LinearGradient(
-                            colors: [store.activeTheme.primaryFillColor, store.activeTheme.accentColor],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+
+                    Button {
+                        store.isPresentingFloatingAsk = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "bubble.left.and.bubble.right.fill")
+                                .font(.system(size: 13.5, weight: .bold))
+                            Text("问记忆")
+                                .font(.system(size: 13, weight: .bold))
+                            #if os(macOS)
+                            Text("⌘K")
+                                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1.5)
+                                .background(Color.white.opacity(0.20))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                            #endif
+                        }
+                        .padding(.horizontal, 15)
+                        .padding(.vertical, 10)
+                        .background(
+                            LinearGradient(
+                                colors: [store.activeTheme.primaryFillColor, store.activeTheme.accentColor],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    )
-                    .foregroundStyle(.white)
-                    .clipShape(Capsule())
-                    .shadow(color: Color.black.opacity(0.22), radius: 12, x: 0, y: 5)
+                        .foregroundStyle(.white)
+                        .clipShape(Capsule())
+                        .shadow(color: Color.black.opacity(0.22), radius: 12, x: 0, y: 5)
+                    }
+                    .buttonStyle(.plain)
+                    #if os(macOS)
+                    .keyboardShortcut("k", modifiers: .command)
+                    #endif
                 }
-                .buttonStyle(.plain)
                 #if os(macOS)
-                .keyboardShortcut("k", modifiers: .command)
                 .padding(.trailing, 24)
                 .padding(.bottom, 20)
                 #else
@@ -438,13 +465,8 @@ struct MainContentView: View {
                 .zIndex(60)
             }
 
-            if let launch = store.activeFocusLaunch {
-                FocusLockView(launch: launch)
-                    .environmentObject(store)
-                    .transition(.opacity)
-                    .zIndex(100)
-            } else if let focusTask = store.activeFocusTask {
-                FocusLockView(task: focusTask)
+            if store.isFocusLockPresented && store.activeFocusSession != nil {
+                FocusLockView()
                     .environmentObject(store)
                     .transition(.opacity)
                     .zIndex(100)
@@ -669,6 +691,8 @@ struct MainContentView: View {
             return
         } else if host == "memories" {
             selectedSection = .memories
+        } else if host == "notes" || host == "memo" || host == "journal" {
+            selectedSection = .notes
         } else if host == "supervision" {
             store.isPresentingSupervisionSheet = true
         } else if host == "focus" {

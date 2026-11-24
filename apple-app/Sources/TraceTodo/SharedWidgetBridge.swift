@@ -30,6 +30,8 @@ enum SharedWidgetBridge {
     private static let kAuthToken = "tm_shared_auth_token"
     private static let kMatrixSnapshot = "tm_shared_matrix_snapshot_json"
     private static let kCountdownsSnapshot = "tm_shared_countdowns_snapshot_json"
+    private static let kMemosSnapshot = "tm_shared_memos_snapshot_json"
+    private static let kCalendarSnapshot = "tm_shared_calendar_snapshot_json"
     private static let kUpdatedAt = "tm_shared_snapshot_updated_at"
 
     private struct BridgeConfigEnvelope: Codable {
@@ -327,6 +329,74 @@ enum SharedWidgetBridge {
         }
         for grp in candidateAppGroups {
             if let d = UserDefaults(suiteName: grp)?.data(forKey: kCountdownsSnapshot), !d.isEmpty {
+                return d
+            }
+        }
+        return nil
+    }
+
+    static func saveMemosSnapshotData(_ data: Data) {
+        if data.count <= 32_768 {
+            keychainSave(account: "memos_snapshot", data: data)
+        }
+        for fileURL in candidateSharedFiles {
+            let snapURL = fileURL.deletingLastPathComponent().appendingPathComponent("widget_memos_snapshot.json")
+            try? data.write(to: snapURL, options: .atomic)
+        }
+        for grp in candidateAppGroups {
+            if let ud = UserDefaults(suiteName: grp) {
+                ud.set(data, forKey: kMemosSnapshot)
+                ud.set(Date().timeIntervalSince1970, forKey: kUpdatedAt)
+            }
+        }
+    }
+
+    static func loadMemosSnapshotData() -> Data? {
+        for fileURL in candidateSharedFiles {
+            let snapURL = fileURL.deletingLastPathComponent().appendingPathComponent("widget_memos_snapshot.json")
+            if let d = try? Data(contentsOf: snapURL), !d.isEmpty {
+                return d
+            }
+        }
+        if let kc = keychainLoad(account: "memos_snapshot"), !kc.isEmpty {
+            return kc
+        }
+        for grp in candidateAppGroups {
+            if let d = UserDefaults(suiteName: grp)?.data(forKey: kMemosSnapshot), !d.isEmpty {
+                return d
+            }
+        }
+        return nil
+    }
+
+    static func saveCalendarSnapshotData(_ data: Data) {
+        if data.count <= 40_960 {
+            keychainSave(account: "calendar_snapshot", data: data)
+        }
+        for fileURL in candidateSharedFiles {
+            let snapURL = fileURL.deletingLastPathComponent().appendingPathComponent("widget_calendar_snapshot.json")
+            try? data.write(to: snapURL, options: .atomic)
+        }
+        for grp in candidateAppGroups {
+            if let ud = UserDefaults(suiteName: grp) {
+                ud.set(data, forKey: kCalendarSnapshot)
+                ud.set(Date().timeIntervalSince1970, forKey: kUpdatedAt)
+            }
+        }
+    }
+
+    static func loadCalendarSnapshotData() -> Data? {
+        for fileURL in candidateSharedFiles {
+            let snapURL = fileURL.deletingLastPathComponent().appendingPathComponent("widget_calendar_snapshot.json")
+            if let d = try? Data(contentsOf: snapURL), !d.isEmpty {
+                return d
+            }
+        }
+        if let kc = keychainLoad(account: "calendar_snapshot"), !kc.isEmpty {
+            return kc
+        }
+        for grp in candidateAppGroups {
+            if let d = UserDefaults(suiteName: grp)?.data(forKey: kCalendarSnapshot), !d.isEmpty {
                 return d
             }
         }

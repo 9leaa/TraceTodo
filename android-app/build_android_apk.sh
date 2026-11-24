@@ -88,7 +88,11 @@ cat > "$WORK_DIR/res_stage/values/strings.xml" <<STRXML
     <string name="sc_auth_short">账号登录</string>
     <string name="sc_auth_long">🔐 登录或切换云端账号</string>
     <string name="widget_label">${APP_LABEL} 四象限待办</string>
-    <string name="widget_desc">在手机桌面实时展示今日四象限优先待办，支持一键刷新与新建</string>
+    <string name="widget_desc">在手机桌面实时展示今日四象限优先待办，支持一键刷新、专注与新建</string>
+    <string name="memo_widget_label">${APP_LABEL} 随记备忘录</string>
+    <string name="memo_widget_desc">在手机桌面展示置顶灵感与最新随记便签，一键打开速记</string>
+    <string name="calendar_widget_label">${APP_LABEL} 今日日历日程</string>
+    <string name="calendar_widget_desc">在手机桌面展示今日日期、时间段排期与全天事项，一键直达周时间轴</string>
     <color name="ic_launcher_background">#0F172A</color>
 </resources>
 STRXML
@@ -96,15 +100,15 @@ STRXML
 echo "🤖 [1/5] Compiling Android resources with aapt2 ($APP_STEM)..."
 "$AAPT2" compile --dir "$WORK_DIR/res_stage" -o "$WORK_DIR/compiled_res/resources.zip"
 
-echo "🔗 [2/5] Linking resources & AndroidManifest (targetSdk 34, version 1.4.6)..."
+echo "🔗 [2/5] Linking resources & AndroidManifest (targetSdk 34, version 1.4.7)..."
 "$AAPT2" link \
   -I "$ANDROID_JAR" \
   --manifest "$WORK_DIR/AndroidManifest.xml" \
   --rename-manifest-package "$PKG_ID" \
   --min-sdk-version 24 \
   --target-sdk-version 34 \
-  --version-code 10 \
-  --version-name "1.4.6" \
+  --version-code 11 \
+  --version-name "1.4.7" \
   --java "$WORK_DIR/gen" \
   -o "$WORK_DIR/unaligned.apk" \
   "$WORK_DIR/compiled_res/resources.zip"
@@ -119,6 +123,8 @@ javac \
   "$WORK_DIR/gen/com/tracememory/tracetodo/R.java" \
   "$SCRIPT_DIR/app/src/main/java/com/tracememory/tracetodo/CameraFileProvider.java" \
   "$SCRIPT_DIR/app/src/main/java/com/tracememory/tracetodo/TodoWidgetProvider.java" \
+  "$SCRIPT_DIR/app/src/main/java/com/tracememory/tracetodo/MemoWidgetProvider.java" \
+  "$SCRIPT_DIR/app/src/main/java/com/tracememory/tracetodo/CalendarWidgetProvider.java" \
   "$SCRIPT_DIR/app/src/main/java/com/tracememory/tracetodo/MainActivity.java"
 
 echo "⚡ [4/5] Converting bytecode to universal DEX 035/037 with d8..."
