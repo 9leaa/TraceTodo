@@ -668,9 +668,7 @@ struct SettingsSyncView: View {
 
     var body: some View {
         Form {
-            ThemeAndModulesSettingsSections()
-
-            Section("账号登录与今日配额") {
+            Section("👤 账号登录与今日配额") {
                 if let user = store.currentUser {
                     LabeledContent("当前账号", value: "\(user.displayName) (@\(user.username))")
                     LabeledContent("角色权限", value: user.isAdmin ? "管理员 admin" : "普通用户")
@@ -680,6 +678,10 @@ struct SettingsSyncView: View {
                         LabeledContent("今日 AI 调用 / 上限", value: "\(q.llmCalls) / \(user.dailyLlmLimit)")
                         LabeledContent("🛡️ 防线拦截水话", value: "\(q.blockedNoiseCount) 次（0 Token 省费）")
                     }
+                    Button("👤 打开账号中心 / 切换账号 / 修改密码") {
+                        store.openAuthSheetFromAnywhere()
+                    }
+                    .fontWeight(.semibold)
                     Button {
                         #if os(macOS)
                         NSPasteboard.general.clearContents()
@@ -701,15 +703,22 @@ struct SettingsSyncView: View {
                         Task { await store.logout() }
                     }
                 } else {
-                    Text(store.authRequired ? "服务端已开启鉴权保护，请登录后同步待办与记忆。" : "当前处于免登录/本地开发模式，你也可以登录账号管理专属空间。")
+                    Text(store.authRequired ? "服务端已开启鉴权保护，请登录后同步待办与记忆。" : "当前尚未登录账号，登录后可跨设备同步专属空间数据。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                    Button("🔐 登录或注册账号") {
-                        store.isPresentingAuthSheet = true
+                    Button {
+                        store.openAuthSheetFromAnywhere()
+                    } label: {
+                        HStack {
+                            Image(systemName: "person.crop.circle.badge.plus")
+                            Text("立即登录或注册账号")
+                                .fontWeight(.bold)
+                        }
                     }
-                    .fontWeight(.semibold)
                 }
             }
+
+            ThemeAndModulesSettingsSections()
 
             Section("Trace-Memory 服务端环境与连接") {
                 HStack(spacing: 8) {

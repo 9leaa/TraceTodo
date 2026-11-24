@@ -282,21 +282,48 @@ struct MainContentView: View {
                         }
 
                         Button {
-                            store.isPresentingAuthSheet = true
+                            store.openAuthSheetFromAnywhere()
                         } label: {
-                            HStack(spacing: 6) {
-                                Circle()
-                                    .fill(store.isOnline ? Color.green : Color.orange)
-                                    .frame(width: 7, height: 7)
-                                Text(store.currentUser?.displayName ?? store.spaceId)
-                                    .font(.system(size: 12.5, weight: .medium))
+                            if let user = store.currentUser, store.isAuthenticated {
+                                HStack(spacing: 6) {
+                                    ZStack(alignment: .bottomTrailing) {
+                                        Image(systemName: "person.crop.circle.fill")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundStyle(store.activeTheme.primaryColor)
+                                        Circle()
+                                            .fill(store.isOnline ? Color.green : Color.orange)
+                                            .frame(width: 6.5, height: 6.5)
+                                    }
+                                    Text(user.displayName)
+                                        .font(.system(size: 12.5, weight: .semibold))
+                                        .lineLimit(1)
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 6)
+                                .background(store.activeTheme.primaryColor.opacity(0.10))
+                                .overlay(
+                                    Capsule().stroke(store.activeTheme.primaryColor.opacity(0.24), lineWidth: 1)
+                                )
+                                .clipShape(Capsule())
+                            } else {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "person.crop.circle.badge.plus")
+                                        .font(.system(size: 13.5, weight: .bold))
+                                    Text("登录 / 注册")
+                                        .font(.system(size: 12.5, weight: .bold))
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(store.activeTheme.primaryFillColor)
+                                .foregroundStyle(.white)
+                                .clipShape(Capsule())
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Color.primary.opacity(0.06))
-                            .clipShape(Capsule())
                         }
                         .buttonStyle(.plain)
+                        .help(store.isAuthenticated ? "查看我的账号、配额、切换账号或退出登录 (⌘⇧L)" : "登录或注册云端账号 (⌘⇧L)")
 
                         Button {
                             Task { await store.refresh() }
@@ -531,6 +558,46 @@ struct MainContentView: View {
             }
 
             Spacer(minLength: 8)
+
+            Divider()
+                .padding(.horizontal, 8)
+                .padding(.bottom, 2)
+
+            Button {
+                store.openAuthSheetFromAnywhere()
+            } label: {
+                VStack(spacing: 4) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                store.isAuthenticated
+                                    ? store.activeTheme.primaryColor.opacity(0.14)
+                                    : store.activeTheme.primaryFillColor
+                            )
+                            .frame(width: 34, height: 34)
+                        if let user = store.currentUser, store.isAuthenticated {
+                            Text(String(user.displayName.prefix(1)).uppercased())
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .foregroundStyle(store.activeTheme.primaryColor)
+                        } else {
+                            Image(systemName: "person.crop.circle.badge.plus")
+                                .font(.system(size: 14.5, weight: .bold))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    Text(store.isAuthenticated ? (store.currentUser?.displayName ?? "账号") : "登录")
+                        .font(.system(size: 10.5, weight: .bold))
+                        .foregroundStyle(store.isAuthenticated ? Color.primary : store.activeTheme.primaryColor)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 7)
+                .background(store.isAuthenticated ? Color.clear : store.activeTheme.primaryColor.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .help(store.isAuthenticated ? "打开我的账号中心" : "点击登录或注册账号")
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 6)
@@ -555,6 +622,9 @@ struct MainContentView: View {
         let host = url.host ?? ""
         if host == "new" {
             store.isPresentingNewTaskSheet = true
+        } else if host == "login" || host == "auth" || host == "account" {
+            store.openAuthSheetFromAnywhere()
+            return
         } else if host == "memories" {
             selectedSection = .memories
         } else if host == "supervision" {
@@ -569,7 +639,38 @@ struct MainContentView: View {
         Task { await store.refresh() }
     }
 
+    @ToolbarContentBuilder
     private var iosTopToolbar: some ToolbarContent {
+        #if os(iOS)
+        ToolbarItem(placement: .topBarLeading) {
+            Button {
+                store.openAuthSheetFromAnywhere()
+            } label: {
+                if let user = store.currentUser, store.isAuthenticated {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text(user.displayName)
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .lineLimit(1)
+                    }
+                } else {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.crop.circle.badge.plus")
+                            .font(.system(size: 13.5, weight: .bold))
+                        Text("登录")
+                            .font(.system(size: 12.5, weight: .bold))
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(store.activeTheme.primaryFillColor)
+                    .foregroundStyle(.white)
+                    .clipShape(Capsule())
+                }
+            }
+        }
+        #endif
+
         ToolbarItemGroup(placement: .automatic) {
             Button {
                 store.isPresentingNewTaskSheet = true
@@ -609,9 +710,19 @@ struct MenuBarQuickView: View {
                 Text("🧠 TraceTodo 快捷待办")
                     .font(.headline)
                 Spacer()
-                Text("Q1: \(store.q1Count) · 待办: \(store.totalTodoCount)")
+                Button {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow(id: "main")
+                    store.openAuthSheetFromAnywhere()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: store.isAuthenticated ? "person.crop.circle.fill" : "person.crop.circle.badge.plus")
+                        Text(store.isAuthenticated ? (store.currentUser?.displayName ?? "账号") : "登录")
+                    }
                     .font(.caption.bold())
-                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
 
             HStack(spacing: 6) {
@@ -718,6 +829,27 @@ struct TraceTodoApp: App {
             MainContentView()
                 .environmentObject(store)
         }
+        #if os(macOS)
+        .commands {
+            CommandMenu("账号") {
+                Button(store.isAuthenticated ? "我的账号与配额 (\(store.currentUser?.displayName ?? ""))..." : "登录 / 注册账号...") {
+                    store.openAuthSheetFromAnywhere()
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
+
+                Button("外观主题与设置...") {
+                    store.isPresentingSettingsSheet = true
+                }
+
+                if store.isAuthenticated {
+                    Divider()
+                    Button("退出当前账号") {
+                        Task { await store.logout() }
+                    }
+                }
+            }
+        }
+        #endif
 
         #if os(macOS)
         MenuBarExtra {
