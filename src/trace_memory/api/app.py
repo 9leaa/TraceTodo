@@ -108,28 +108,22 @@ from trace_memory.services.auth_service import UserAccount
 DASHBOARD_HTML_PATH = Path(__file__).with_name("dashboard.html")
 APP_ICON_PNG_PATH = Path(__file__).with_name("app_icon.png")
 SCENES_DIR = Path(__file__).with_name("scenes")
-SCENE_IDS = frozenset(
-    {
-        "starfield",
-        "scifi",
-        "neon",
-        "nature",
-        "aurora",
-        "ocean",
-        "portrait_m",
-        "portrait_m_sunny",
-        "portrait_m_ancient",
-        "portrait_m_sport",
-        "portrait_f",
-        "portrait_f_cool",
-        "portrait_f_hanfu",
-        "portrait_f_vitality",
-        "portrait_f_qipao",
-        "portrait_f_snow",
-        "portrait_f_ballet",
-        "portrait_f_cyber",
-    }
-)
+def _scene_file(filename: str) -> Path | None:
+    """Resolve a scene image against the on-disk directory at request time.
+
+    The dashboard HTML is hot-reloaded from disk, so a whitelist frozen at process
+    start would 404 newly merged scenes until the server is restarted.
+    """
+    stem = filename[:-4] if filename.endswith(".jpg") else ""
+    if not stem or not all(c.isascii() and (c.isalnum() or c == "_") for c in stem):
+        return None
+    path = SCENES_DIR / filename
+    return path if path.is_file() else None
+
+
+def _scene_etag(path: Path) -> str:
+    st = path.stat()
+    return f'"{st.st_mtime_ns:x}-{st.st_size:x}"'
 
 _DASHBOARD_CACHE: dict[str, Any] = {
     "key": None,
@@ -360,9 +354,12 @@ class ApiDispatcher:
             if user.role == "admin":
                 eff_space = req_space or user.space_id
             else:
-                if req_space and req_space != user.space_id:
+                if path == "/api/bootstrap":
+                    eff_space = user.space_id
+                elif req_space and req_space != user.space_id:
                     raise PermissionDeniedError("无权访问其他用户的记忆空间")
-                eff_space = user.space_id
+                else:
+                    eff_space = user.space_id
             return user, eff_space, None
 
         return None, req_space or self.container.config.default_space, None
@@ -1948,15 +1945,14 @@ def create_fastapi_app(container: AppContainer) -> Any:
         return Response(content=PWA_ICON_SVG, media_type="image/svg+xml")
 
     @app.get("/scenes/{filename}")
-    async def scene_image(filename: str) -> Response:
-        if filename.endswith(".jpg") and filename[:-4] in SCENE_IDS:
-            path = SCENES_DIR / filename
-            if path.is_file():
-                return Response(
-                    content=path.read_bytes(),
-                    media_type="image/jpeg",
-                    headers={"Cache-Control": "public, max-age=86400"},
-                )
+    async def scene_image(filename: str, request: Request) -> Response:
+        path = _scene_file(filename)
+        if path is not None:
+            etag = _scene_etag(path)
+            headers = {"Cache-Control": "no-cache", "ETag": etag}
+            if _etag_matches(request.headers.get("if-none-match"), etag):
+                return Response(status_code=304, headers=headers)
+            return Response(content=path.read_bytes(), media_type="image/jpeg", headers=headers)
         return JSONResponse(content={"error": "scene not found"}, status_code=404)
 
     @app.get("/sw.js")
@@ -2172,13 +2168,21 @@ def run_web_server(container: AppContainer, host: str = "127.0.0.1", port: int =
                 return
             if parsed.path.startswith("/scenes/"):
                 fname = parsed.path[len("/scenes/"):]
-                path = SCENES_DIR / fname
-                if fname.endswith(".jpg") and fname[:-4] in SCENE_IDS and path.is_file():
+                path = _scene_file(fname)
+                if path is not None:
+                    etag = _scene_etag(path)
+                    if _etag_matches(self.headers.get("If-None-Match"), etag):
+                        self.send_response(HTTPStatus.NOT_MODIFIED)
+                        self._send_cors()
+                        self.send_header("Cache-Control", "no-cache")
+                        self.send_header("ETag", etag)
+                        self.end_headers()
+                        return
                     self._write_raw(
                         200,
                         "image/jpeg",
                         path.read_bytes(),
-                        extra_headers={"Cache-Control": "public, max-age=86400"},
+                        extra_headers={"Cache-Control": "no-cache", "ETag": etag},
                     )
                 else:
                     self._write_json(404, {"error": "scene not found"})

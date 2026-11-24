@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import sys
@@ -82,9 +83,9 @@ class TestSceneAssetsAndThemes(unittest.TestCase):
             ("velvet_noir", "portrait_f_cool"),
             ("obsidian_gold", "portrait_m"),
             ("tide_blue", "portrait_m_sport"),
-            ("autumn", "portrait_f_qipao"),
+            ("warm_ivory", "portrait_f_campus"),
             ("snow_peak", "portrait_f_snow"),
-            ("nebula", "portrait_f_ballet"),
+            ("sakura", "portrait_f_lolita"),
             ("cyber", "portrait_f_cyber"),
         ):
             code, res = self.api.dispatch(
@@ -172,9 +173,9 @@ class TestSceneAssetsAndThemes(unittest.TestCase):
             "portrait_f_cool.jpg",
             "portrait_f_hanfu.jpg",
             "portrait_f_vitality.jpg",
-            "portrait_f_qipao.jpg",
+            "portrait_f_campus.jpg",
             "portrait_f_snow.jpg",
-            "portrait_f_ballet.jpg",
+            "portrait_f_lolita.jpg",
             "portrait_f_cyber.jpg",
         ):
             with self.subTest(scene=scene_file):
@@ -192,6 +193,33 @@ class TestSceneAssetsAndThemes(unittest.TestCase):
                     self.fail("expected 404")
                 except urllib.error.HTTPError as e:
                     self.assertEqual(e.code, 404)
+
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/scenes/starfield.jpg", timeout=5) as r:
+            etag = r.headers["ETag"]
+            self.assertEqual(r.headers["Cache-Control"], "no-cache")
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/scenes/starfield.jpg", headers={"If-None-Match": etag}
+        )
+        try:
+            urllib.request.urlopen(req, timeout=5)
+            self.fail("expected 304")
+        except urllib.error.HTTPError as e:
+            self.assertEqual(e.code, 304)
+
+        # A running server must pick up scene files added after process start.
+        scenes_dir = REPO_ROOT / "src" / "trace_memory" / "api" / "scenes"
+        hot = scenes_dir / "zz_hot_probe.jpg"
+        shutil.copyfile(scenes_dir / "starfield.jpg", hot)
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/scenes/zz_hot_probe.jpg", timeout=5) as r:
+                self.assertEqual(r.status, 200)
+        finally:
+            hot.unlink(missing_ok=True)
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/scenes/zz_hot_probe.jpg", timeout=5)
+            self.fail("expected 404 after removal")
+        except urllib.error.HTTPError as e:
+            self.assertEqual(e.code, 404)
 
     def test_dashboard_html_exposes_scene_and_immersive_ui(self) -> None:
         html = (REPO_ROOT / "src" / "trace_memory" / "api" / "dashboard.html").read_text(encoding="utf-8")
@@ -229,9 +257,9 @@ class TestSceneAssetsAndThemes(unittest.TestCase):
             "portrait_f_cool",
             "portrait_f_hanfu",
             "portrait_f_vitality",
-            "portrait_f_qipao",
+            "portrait_f_campus",
             "portrait_f_snow",
-            "portrait_f_ballet",
+            "portrait_f_lolita",
             "portrait_f_cyber",
             '[data-theme="tide_blue"]',
             "theme-gallery-wrap",
