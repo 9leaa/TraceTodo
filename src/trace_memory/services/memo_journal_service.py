@@ -141,12 +141,7 @@ class MemoAndJournalService:
     def _dispatch_note_processing(self, space_id: str, note: RawNote, actor_id: str) -> str:
         """Run async worker queue if running, else process synchronously so tests & CLI stay deterministic."""
         if self.ingest_worker.is_running:
-            job = self.job_repo.enqueue(
-                space_id=space_id,
-                note_id=note.note_id,
-                actor_id=actor_id,
-                content_hint=note.content,
-            )
+            job = self.job_repo.enqueue(space_id=space_id, note_id=note.note_id, actor_id=actor_id)
             self.ingest_worker.notify()
             return str(job["job_id"])
         self.ingest_service.process_persisted_note(
