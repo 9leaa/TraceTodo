@@ -10,19 +10,19 @@ enum MemorySheetTab: String, CaseIterable, Identifiable {
 
 struct MemoriesAndAskHostView: View {
     @EnvironmentObject var store: TodoStore
-    @State private var mode: Int = 0  // 0 = 记忆库, 1 = 关系星图, 2 = 问答
+    @State private var mode: Int = 1  // Default to 1 = 🕸️ 双链星图 (matches Web optimization)
 
     var body: some View {
         VStack(spacing: 0) {
             Picker("模式", selection: $mode) {
+                Text("🕸️ 双链星图").tag(1)
                 Text("🗂️ 记忆库").tag(0)
-                Text("🕸️ 关系星图").tag(1)
                 Text("💬 证据问答").tag(2)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(Color.primary.opacity(0.03))
+            .background(store.cardSurfaceBackground.opacity(0.75))
 
             Divider()
 

@@ -37,17 +37,18 @@ struct SortedTaskListView: View {
 
             Divider()
 
-            let items = store.matrix?.sortedTasks ?? []
+            let items = store.filteredSortedTasks
             if items.isEmpty {
                 ContentUnavailableView(
-                    "暂无待办事项",
+                    "暂无匹配的待办事项",
                     systemImage: "checkmark.circle",
-                    description: Text("在上方输入框输入任意一句话，或点击「新建任务」创建 DuoDo 彩色卡片。")
+                    description: Text("在上方输入框输入任意一句话，或切换快捷筛选范围查看其他事项。")
                 )
             } else {
                 List {
                     ForEach(items) { task in
                         TaskCardView(task: task)
+                            .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 5, leading: 14, bottom: 5, trailing: 14))
                             .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -73,6 +74,7 @@ struct SortedTaskListView: View {
                     }
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
                 .iosScrollDismissesKeyboard()
                 .refreshable {
                     await store.refresh()
