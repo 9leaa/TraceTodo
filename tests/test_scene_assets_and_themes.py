@@ -62,22 +62,38 @@ class TestSceneAssetsAndThemes(unittest.TestCase):
         code, res = self.api.dispatch("GET", "/api/preferences", {"space_id": ["scene_sp"]})
         self.assertEqual(code, 200)
         ids = {t["id"] for t in res["themes_catalog"]}
-        for new_id in ("nebula", "cyber", "polar", "sakura"):
+        for new_id in (
+            "nebula",
+            "cyber",
+            "polar",
+            "sakura",
+            "warm_ivory",
+            "celadon_mist",
+            "velvet_noir",
+            "obsidian_gold",
+        ):
             self.assertIn(new_id, ids)
 
-        code, res = self.api.dispatch(
-            "POST",
-            "/api/preferences",
-            body={
-                "space_id": "scene_sp",
-                "theme_id": "nebula",
-                "extra": {"scene_id": "starfield", "scene_intensity": 3, "scene_motion": 1},
-            },
-        )
-        self.assertEqual(code, 200)
-        self.assertEqual(res["theme_id"], "nebula")
-        self.assertEqual(res["extra"]["scene_id"], "starfield")
-        self.assertEqual(res["extra"]["scene_intensity"], 3)
+        for paired_theme, paired_scene in (
+            ("nebula", "starfield"),
+            ("warm_ivory", "portrait_m_sunny"),
+            ("celadon_mist", "portrait_f_hanfu"),
+            ("velvet_noir", "portrait_f_cool"),
+            ("obsidian_gold", "portrait_m"),
+        ):
+            code, res = self.api.dispatch(
+                "POST",
+                "/api/preferences",
+                body={
+                    "space_id": "scene_sp",
+                    "theme_id": paired_theme,
+                    "extra": {"scene_id": paired_scene, "scene_intensity": 3, "scene_motion": 1},
+                },
+            )
+            self.assertEqual(code, 200)
+            self.assertEqual(res["theme_id"], paired_theme)
+            self.assertEqual(res["extra"]["scene_id"], paired_scene)
+            self.assertEqual(res["extra"]["scene_intensity"], 3)
 
         code, res = self.api.dispatch(
             "POST", "/api/preferences", body={"space_id": "scene_sp", "theme_id": "not_a_theme"}
@@ -140,12 +156,24 @@ class TestSceneAssetsAndThemes(unittest.TestCase):
                 time.sleep(0.15)
         self.assertTrue(ready, "test server did not start")
 
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/scenes/starfield.jpg", timeout=5) as r:
-            self.assertEqual(r.status, 200)
-            self.assertEqual(r.headers["Content-Type"], "image/jpeg")
-            body = r.read()
-            self.assertTrue(body.startswith(b"\xff\xd8\xff"))
-            self.assertGreater(len(body), 10000)
+        for scene_file in (
+            "starfield.jpg",
+            "portrait_m.jpg",
+            "portrait_m_sunny.jpg",
+            "portrait_m_ancient.jpg",
+            "portrait_m_sport.jpg",
+            "portrait_f.jpg",
+            "portrait_f_cool.jpg",
+            "portrait_f_hanfu.jpg",
+            "portrait_f_vitality.jpg",
+        ):
+            with self.subTest(scene=scene_file):
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/scenes/{scene_file}", timeout=5) as r:
+                    self.assertEqual(r.status, 200)
+                    self.assertEqual(r.headers["Content-Type"], "image/jpeg")
+                    body = r.read()
+                    self.assertTrue(body.startswith(b"\xff\xd8\xff"))
+                    self.assertGreater(len(body), 10000)
 
         for bad in ("/scenes/nope.jpg", "/scenes/..%2fapp.py", "/scenes/starfield.jpg/../../app.py"):
             with self.subTest(path=bad):
@@ -179,8 +207,29 @@ class TestSceneAssetsAndThemes(unittest.TestCase):
             '[data-theme="cyber"]',
             '[data-theme="polar"]',
             '[data-theme="sakura"]',
+            '[data-theme="warm_ivory"]',
+            '[data-theme="celadon_mist"]',
+            '[data-theme="velvet_noir"]',
+            '[data-theme="obsidian_gold"]',
+            'id="sceneCategoryBar"',
+            'id="sceneSyncThemeCheck"',
+            "portrait_m_sunny",
+            "portrait_m_ancient",
+            "portrait_m_sport",
+            "portrait_f_cool",
+            "portrait_f_hanfu",
+            "portrait_f_vitality",
         ):
             self.assertIn(marker, html, f"Missing UI marker: {marker}")
+
+    def test_focus_duration_pills_do_not_override_active_text_color_inline(self) -> None:
+        html = (REPO_ROOT / "src" / "trace_memory" / "api" / "dashboard.html").read_text(encoding="utf-8")
+        self.assertNotIn(
+            'onclick="selectPomodoroDuration(25)" style="border-color:var(--primary);color:var(--primary)',
+            html,
+        )
+        self.assertNotIn("b.style.color = active ? 'var(--primary)' : '';", html)
+        self.assertIn(".btn-group button.active:hover", html)
 
 
 if __name__ == "__main__":
