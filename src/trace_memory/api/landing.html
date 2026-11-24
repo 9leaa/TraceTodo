@@ -1203,9 +1203,11 @@
           <a href="#star-graph">双链星图</a>
           <a href="#themes">主题场景</a>
           <a href="#ecosystem">全端 &amp; MCP</a>
+          <a href="https://github.com/cu4oral6/TraceTodo/releases" target="_blank" rel="noopener noreferrer">客户端下载 ↗</a>
         </nav>
 
         <div class="nav-actions" id="navAuthActions">
+          <a href="https://github.com/cu4oral6/TraceTodo/releases" target="_blank" rel="noopener noreferrer" class="btn btn-subtle" id="navDownloadAppBtn" title="前往 GitHub Releases 下载 macOS / iOS / Android 客户端">📲 下载 App</a>
           <span class="user-pill" id="navUserPill" hidden><i class="user-dot"></i><span id="navUserName"></span></span>
           <button type="button" class="btn btn-subtle" id="navLoginBtn" onclick="openLandingAuth('login')">登录</button>
           <button type="button" class="btn btn-primary" id="navPrimaryBtn" onclick="openLandingAuth('register')">免费注册</button>
@@ -1227,6 +1229,7 @@
           </p>
           <div class="hero-cta-row">
             <button type="button" class="btn btn-primary btn-lg" id="heroPrimaryCta" onclick="handleHeroPrimaryAction()">立即开启 TraceTodo →</button>
+            <a href="https://github.com/cu4oral6/TraceTodo/releases" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-lg" id="heroDownloadAppCta">📲 下载客户端 (Mac / iOS / Android) ↗</a>
             <button type="button" class="btn btn-ghost btn-lg" id="heroSecondaryCta" onclick="handleHeroSecondaryAction()">已有账号？立即登录</button>
             <button type="button" class="btn btn-subtle btn-lg" id="heroGuestBtn" hidden onclick="enterLocalGuestMode()">本地免登录体验 →</button>
           </div>
@@ -1652,11 +1655,11 @@
 
       <div class="eco-grid">
         <article class="eco-card">
-          <h3>🍎 macOS / iOS 原生 &amp; Web PWA</h3>
-          <p>纯原生 SwiftUI 跨端体验：Mac 顶部状态栏极速录入、iPhone 桌面小组件、系统通知与浏览器离线队列，通过 SSE 毫秒级推送跨端变更。</p>
-          <div class="code-box"># 一键启动局域网全端同步服务
-python3 run_web.py --lan
-# 支持 PWA 添加到手机主屏幕</div>
+          <h3>🍎 macOS / iOS / Android 原生 &amp; Web PWA</h3>
+          <p>原生跨端体验：Mac 顶部状态栏极速录入、iPhone 与 Android 桌面小组件、相机直拍录入、系统通知与浏览器离线队列，通过 SSE 毫秒级推送跨端变更。</p>
+          <div class="code-box"># 支持平台：macOS (.dmg/.zip) · iOS (.ipa) · Android (.apk)
+# 账号登录后四象限待办与长期记忆全端实时同步</div>
+          <a href="https://github.com/cu4oral6/TraceTodo/releases" target="_blank" rel="noopener noreferrer" class="btn btn-ghost" style="align-self:flex-start;padding:7px 14px;font-size:12.5px;">⬇️ 前往 GitHub Releases 下载安装包 ↗</a>
         </article>
 
         <article class="eco-card">
@@ -1711,6 +1714,7 @@ python3 run_web.py --lan
         <a href="#memory-engine">记忆引擎</a>
         <a href="#star-graph">双链星图</a>
         <a href="#ecosystem">MCP 接入</a>
+        <a href="https://github.com/cu4oral6/TraceTodo/releases" target="_blank" rel="noopener noreferrer">App 下载</a>
         <a href="/" id="footerWorkspaceLink">进入工作台</a>
       </div>
     </div>
