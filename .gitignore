@@ -30,10 +30,22 @@ apple-app/dist/
 DerivedData/
 *.xcarchive
 *.ipa
+*.dmg
 *.dSYM
 *.mobileprovision
 *.p12
 *.cer
+
+# Android builds & signing
+android-app/.gradle/
+android-app/build/
+android-app/app/build/
+android-app/dist/
+android-app/local.properties
+*.apk
+*.aab
+*.jks
+*.keystore
 
 # Generated benchmark runs/artifacts
 tests/memory_benchmark_1000/*.jsonl
