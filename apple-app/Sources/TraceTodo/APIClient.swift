@@ -381,15 +381,23 @@ struct TraceMemoryAPIClient {
         return try JSONDecoder().decode(SubtaskToggleResponse.self, from: data)
     }
 
-    func transitionTask(memoryId: String, action: String, expectedVersion: Int) async throws -> TaskTransitionResponse {
-        let data = try await postRaw(
-            "/api/tasks/transition",
-            body: [
-                "memory_id": memoryId,
-                "action": action,
-                "expected_version": expectedVersion
-            ]
-        )
+    func transitionTask(
+        memoryId: String,
+        action: String,
+        expectedVersion: Int? = nil,
+        undoNextTaskId: String = ""
+    ) async throws -> TaskTransitionResponse {
+        var body: [String: Any] = [
+            "memory_id": memoryId,
+            "action": action
+        ]
+        if let expectedVersion, expectedVersion >= 1 {
+            body["expected_version"] = expectedVersion
+        }
+        if !undoNextTaskId.isEmpty {
+            body["undo_next_task_id"] = undoNextTaskId
+        }
+        let data = try await postRaw("/api/tasks/transition", body: body)
         return try JSONDecoder().decode(TaskTransitionResponse.self, from: data)
     }
 

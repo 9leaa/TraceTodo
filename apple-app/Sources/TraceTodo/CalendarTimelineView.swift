@@ -1105,6 +1105,19 @@ struct CalendarTimelineView: View {
             }
             .buttonStyle(.plain)
 
+            if item.isDone {
+                Button("↩️ 恢复") {
+                    Task {
+                        await store.reopenTaskById(item.memoryId)
+                        await reloadCalendar()
+                    }
+                }
+                .font(.caption.bold())
+                .buttonStyle(.bordered)
+                .tint(.green)
+                .controlSize(.small)
+            }
+
             Button("🔍 详情") {
                 openTaskEditor(memoryId: item.memoryId)
             }

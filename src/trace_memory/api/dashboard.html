@@ -3488,6 +3488,7 @@
               <button type="button" class="seg-pill-btn active" data-scope="all" onclick="setTaskQuickScope('all')">全部待办</button>
               <button type="button" class="seg-pill-btn" data-scope="today" onclick="setTaskQuickScope('today')">☀️ 今日聚焦<span class="scope-cnt" id="scopeCntToday"></span></button>
               <button type="button" class="seg-pill-btn" data-scope="overdue" onclick="setTaskQuickScope('overdue')">⏰ 逾期未完<span class="scope-cnt" id="scopeCntOverdue"></span></button>
+              <button type="button" class="seg-pill-btn" data-scope="done" onclick="setTaskQuickScope('done')" title="查看已完结或已取消的待办并一键恢复">✅ 已完结<span class="scope-cnt" id="scopeCntDone"></span></button>
             </div>
           </div>
           <div class="btn-group">
@@ -4061,6 +4062,11 @@
       <div style="display:flex;justify-content:space-between;align-items:center;padding:0 4px;">
         <strong id="sheetHeading" style="font-size:15px;">✨ 新建任务卡片</strong>
         <button onclick="closeTaskSheet()" style="border-radius:999px;padding:4px 12px;font-size:12px;">取消</button>
+      </div>
+
+      <div id="tsDoneRestoreBanner" style="display:none;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-radius:12px;background:color-mix(in srgb, #10b981 12%, var(--surface));border:1px solid rgba(16,185,129,0.35);flex-wrap:wrap;">
+        <span id="tsDoneRestoreText" style="font-size:12.5px;font-weight:600;color:var(--heading);">✅ 当前任务已完结（误点完成可一键恢复）</span>
+        <button type="button" class="primary" onclick="reopenTaskFromSheet()" style="border-radius:999px;padding:5px 14px;font-size:12px;font-weight:700;">↩️ 恢复为未完成待办</button>
       </div>
 
       <!-- Top Macaron Theme Color Card -->
@@ -5003,14 +5009,19 @@
       }
     }
 
+    let _autoEnabledIncludeDoneForScope = false;
+
     function matchesTaskQuickScope(t, scopeMode = _taskQuickScope) {
-      if (!scopeMode || scopeMode === 'all') return true;
       const p = t?.payload || {};
-      if (p.task_status === 'done' || p.task_status === 'cancelled') return false;
+      const isClosed = p.task_status === 'done' || p.task_status === 'cancelled';
+      if (scopeMode === 'done') return isClosed;
+      if (!scopeMode || scopeMode === 'all') return true;
+      const incDoneChecked = Boolean(document.getElementById('includeDoneCheck')?.checked);
+      if (isClosed && !incDoneChecked) return false;
       const todayYmd = _currentTodayBeijingYmd();
       const dueYmd = p.due_at ? (parseIsoYmdHhmm(p.due_at)?.ymd || String(p.due_at).slice(0, 10)) : '';
       const startYmd = p.start_at ? (parseIsoYmdHhmm(p.start_at)?.ymd || String(p.start_at).slice(0, 10)) : '';
-      const isOverdue = Boolean(p.is_overdue || (dueYmd && dueYmd < todayYmd));
+      const isOverdue = Boolean(p.is_overdue || (!isClosed && dueYmd && dueYmd < todayYmd));
       if (scopeMode === 'overdue') return isOverdue;
       if (scopeMode === 'today') {
         return isOverdue || dueYmd === todayYmd || startYmd === todayYmd || p.quadrant === 'Q1_do_first';
@@ -5018,12 +5029,26 @@
       return true;
     }
 
-    function setTaskQuickScope(scopeMode) {
+    async function setTaskQuickScope(scopeMode) {
+      const prevScope = _taskQuickScope;
       _taskQuickScope = scopeMode || 'all';
       _taskListVisibleCount = TASK_LIST_PAGE_SIZE;
       document.querySelectorAll('#todoQuickScopeBar .seg-pill-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.scope === _taskQuickScope);
       });
+      const incCb = document.getElementById('includeDoneCheck');
+      if (_taskQuickScope === 'done' && incCb && !incCb.checked) {
+        incCb.checked = true;
+        _autoEnabledIncludeDoneForScope = true;
+        await loadTasks();
+        return;
+      }
+      if (prevScope === 'done' && _taskQuickScope !== 'done' && _autoEnabledIncludeDoneForScope && incCb) {
+        incCb.checked = false;
+        _autoEnabledIncludeDoneForScope = false;
+        await loadTasks();
+        return;
+      }
       renderTaskViewsFromCache();
     }
 
@@ -5131,10 +5156,18 @@
         : '';
       const reasonTip = p.priority_reason ? String(p.priority_reason) : (p.quadrant_label || '');
 
+      const isClosed = p.task_status === 'done' || p.task_status === 'cancelled';
+      const toggleCircleHtml = isClosed
+        ? `<button type="button" data-mem-id="${esc(t.memory_id)}" onclick="transitionTask(this.dataset.memId, 'reopen_task', null)" title="点击恢复为未完成待办" aria-label="恢复为未完成待办" style="width:20px;height:20px;min-width:20px;padding:0;border-radius:50%;border:1.5px solid #10b981;background:#10b981;color:#fff;font-size:12px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;margin-top:1px;">✓</button>`
+        : `<button type="button" data-mem-id="${esc(t.memory_id)}" data-ver="${Number(t.version) || 1}" onclick="transitionTask(this.dataset.memId, 'complete_task', Number(this.dataset.ver))" title="标记为已完成" aria-label="标记为已完成" style="width:20px;height:20px;min-width:20px;padding:0;border-radius:50%;border:2px solid var(--card-accent, var(--primary));background:transparent;cursor:pointer;margin-top:1px;"></button>`;
+
       return `
-        <div class="task-card theme-${esc(theme)} ${isDone ? 'done' : ''}">
+        <div class="task-card theme-${esc(theme)} ${isClosed ? 'done' : ''}">
           <div class="task-top">
-            <div class="task-title" data-mem-id="${esc(t.memory_id)}" onclick="openTaskSheet(this.dataset.memId)" title="点击编辑任务卡片">${esc(t.title)}</div>
+            <div style="display:flex;align-items:flex-start;gap:8px;min-width:0;flex:1;">
+              ${toggleCircleHtml}
+              <div class="task-title" data-mem-id="${esc(t.memory_id)}" onclick="openTaskSheet(this.dataset.memId)" title="点击编辑任务卡片">${esc(t.title)}</div>
+            </div>
             <span class="badge badge-${esc(quad)}" title="${esc(reasonTip)}">${esc(quad.slice(0, 2))} · ${esc(p.priority_score)}分</span>
           </div>
           ${summaryHtml}
@@ -5152,12 +5185,13 @@
             <span class="tag">v${t.version}</span>
           </div>
           <div class="card-actions">
-            ${!isDone
-              ? `<button data-mem-id="${esc(t.memory_id)}" data-ver="${Number(t.version) || 1}" onclick="transitionTask(this.dataset.memId, 'complete_task', Number(this.dataset.ver))">✅ 完成</button>
-                 <button data-mem-id="${esc(t.memory_id)}" onclick="openFocusLock(this.dataset.memId)">🎯 专注</button>
-                 <button data-mem-id="${esc(t.memory_id)}" onclick="openTaskSheet(this.dataset.memId)">✏️ 编辑</button>
-                 <button data-mem-id="${esc(t.memory_id)}" data-ver="${Number(t.version) || 1}" onclick="transitionTask(this.dataset.memId, 'cancel_task', Number(this.dataset.ver))">✕ 取消</button>`
-              : `<button data-mem-id="${esc(t.memory_id)}" data-ver="${Number(t.version) || 1}" onclick="transitionTask(this.dataset.memId, 'reopen_task', Number(this.dataset.ver))">↩️ 重新开启</button>`
+            ${!isClosed
+              ? `<button type="button" data-mem-id="${esc(t.memory_id)}" data-ver="${Number(t.version) || 1}" onclick="transitionTask(this.dataset.memId, 'complete_task', Number(this.dataset.ver))">✅ 完成</button>
+                 <button type="button" data-mem-id="${esc(t.memory_id)}" onclick="openFocusLock(this.dataset.memId)">🎯 专注</button>
+                 <button type="button" data-mem-id="${esc(t.memory_id)}" onclick="openTaskSheet(this.dataset.memId)">✏️ 编辑</button>
+                 <button type="button" data-mem-id="${esc(t.memory_id)}" data-ver="${Number(t.version) || 1}" onclick="transitionTask(this.dataset.memId, 'cancel_task', Number(this.dataset.ver))">✕ 取消</button>`
+              : `<button type="button" class="primary" style="font-weight:600;" data-mem-id="${esc(t.memory_id)}" onclick="transitionTask(this.dataset.memId, 'reopen_task', null)">↩️ 恢复待办</button>
+                 <button type="button" data-mem-id="${esc(t.memory_id)}" onclick="openTaskSheet(this.dataset.memId)">✏️ 编辑</button>`
             }
             <select data-mem-id="${esc(t.memory_id)}" data-ver="${Number(t.version) || 1}" onchange="changeQuadrant(this.dataset.memId, Number(this.dataset.ver), this.value)">
               <option value="" disabled selected>调整象限...</option>
@@ -5166,7 +5200,7 @@
               <option value="Q3_delegate">移至 Q3 紧急不重要</option>
               <option value="Q4_eliminate">移至 Q4 稍后/精简</option>
             </select>
-            <button data-mem-id="${esc(t.memory_id)}" onclick="openDetail(this.dataset.memId)">🔎 溯源</button>
+            <button type="button" data-mem-id="${esc(t.memory_id)}" onclick="openDetail(this.dataset.memId)">🔎 溯源</button>
           </div>
         </div>
       `;
@@ -5222,12 +5256,15 @@
       const data = _lastMatrixData;
       if (!data) return;
       const sorted = data.sorted_tasks || [];
-      const todayCnt = sorted.filter(t => matchesTaskQuickScope(t, 'today')).length;
-      const overdueCnt = sorted.filter(t => matchesTaskQuickScope(t, 'overdue')).length;
+      const todayCnt = sorted.filter(t => !(t?.payload?.task_status === 'done' || t?.payload?.task_status === 'cancelled') && matchesTaskQuickScope(t, 'today')).length;
+      const overdueCnt = sorted.filter(t => !(t?.payload?.task_status === 'done' || t?.payload?.task_status === 'cancelled') && matchesTaskQuickScope(t, 'overdue')).length;
+      const doneCnt = Number(data.summary_counts?.total_done || 0);
       const todayBadge = document.getElementById('scopeCntToday');
       const overdueBadge = document.getElementById('scopeCntOverdue');
+      const doneBadge = document.getElementById('scopeCntDone');
       if (todayBadge) todayBadge.textContent = todayCnt > 0 ? `(${todayCnt})` : '';
       if (overdueBadge) overdueBadge.textContent = overdueCnt > 0 ? `(${overdueCnt})` : '';
+      if (doneBadge) doneBadge.textContent = doneCnt > 0 ? `(${doneCnt})` : '';
 
       const qOrder = ['Q1_do_first', 'Q2_schedule', 'Q3_delegate', 'Q4_eliminate'];
       document.getElementById('matrixContainer').innerHTML = qOrder.map(qKey => {
@@ -5321,10 +5358,10 @@
           <div class="sub"><span>Q3 速办 ${c.Q3_delegate ?? 0} ↑</span><span>Q4 精简 ${c.Q4_eliminate ?? 0}</span></div>
           <div class="watermark">📋</div>
         </div>
-        <div class="hero-kpi violet">
+        <div class="hero-kpi violet" onclick="setTaskQuickScope('done')" style="cursor:pointer;" title="点击查看已完结记录并支持一键恢复待办">
           <div class="label">完成率 & 专注</div>
           <div class="val">${pct}% / ${c.total_done ?? 0}</div>
-          <div class="sub"><span>专注 ${focusSessions} 轮 ↑</span><span>累计已完结 ↑</span></div>
+          <div class="sub"><span>专注 ${focusSessions} 轮 ↑</span><span>点此查看/恢复已完结 ↗</span></div>
           <div class="watermark">★</div>
         </div>
       `;
@@ -5511,12 +5548,16 @@
       return snapshot;
     }
 
-    async function transitionTask(memId, action, ver) {
+    async function transitionTask(memId, action, ver = null, extraBody = null) {
       const prevTask = _cloneTaskSnapshot(cachedTasksById[memId]);
       const prevMatrix = _applyOptimisticTaskTransition(memId, action, prevTask);
+      const reqBody = { memory_id: memId, action, ...(extraBody || {}) };
+      if (ver !== null && ver !== undefined && Number(ver) >= 1) {
+        reqBody.expected_version = Number(ver);
+      }
       let res;
       try {
-        res = await apiPost('/api/tasks/transition', { memory_id: memId, action, expected_version: ver });
+        res = await apiPost('/api/tasks/transition', reqBody);
       } catch (err) {
         res = { error: err?.message || '网络异常' };
       }
@@ -5535,22 +5576,25 @@
       }
       const shortTitle = String(updatedMem?.title || '任务').slice(0, 22);
       if (res.next_task) {
-        showToast(`✅ 本期已完成，已自动生成下一周期 (${res.next_task.payload?.due_at?.slice(0,10) || ''})`);
+        const nextId = res.next_task.memory_id || '';
+        showToast(`✅ 本期已完成，已自动生成下一周期 (${res.next_task.payload?.due_at?.slice(0,10) || ''})`, '', {
+          actionLabel: '↩ 撤销恢复',
+          durationMs: 8000,
+          onAction: () => transitionTask(memId, 'reopen_task', null, nextId ? { undo_next_task_id: nextId } : null),
+        });
       } else if (action === 'complete_task') {
-        const undoVer = Number(res.memory?.version) || ((Number(ver) || 1) + 1);
         showToast(`✅ 已完成「${shortTitle}」`, '', {
-          actionLabel: '↩ 撤销',
-          durationMs: 5200,
-          onAction: () => transitionTask(memId, 'reopen_task', undoVer),
+          actionLabel: '↩ 撤销恢复',
+          durationMs: 8000,
+          onAction: () => transitionTask(memId, 'reopen_task', null),
         });
       } else if (action === 'reopen_task') {
         showToast(`↩️ 已恢复待办「${shortTitle}」`);
       } else if (action === 'cancel_task') {
-        const undoVer = Number(res.memory?.version) || ((Number(ver) || 1) + 1);
         showToast(`✕ 已取消「${shortTitle}」`, '', {
-          actionLabel: '↩ 撤销',
-          durationMs: 5200,
-          onAction: () => transitionTask(memId, 'reopen_task', undoVer),
+          actionLabel: '↩ 撤销恢复',
+          durationMs: 8000,
+          onAction: () => transitionTask(memId, 'reopen_task', null),
         });
       } else {
         showToast(`已更新状态 -> v${res.memory?.version}`);
@@ -5559,7 +5603,8 @@
       if (res.memory) {
         cachedTasksById[memId] = res.memory;
       }
-      if (document.getElementById('panel-supervision').classList.contains('active')) loadSupervisionBoard();
+      if (document.getElementById('panel-supervision')?.classList.contains('active')) loadSupervisionBoard();
+      if (document.getElementById('panel-calendar')?.classList.contains('active')) renderCalendarPanel();
     }
 
     async function changeQuadrant(memId, ver, quadrant) {
@@ -5804,6 +5849,13 @@
       updateTaskSheetTimeHint();
     }
 
+    async function reopenTaskFromSheet() {
+      if (!editingMemoryId) return;
+      const mid = editingMemoryId;
+      closeTaskSheet();
+      await transitionTask(mid, 'reopen_task', null);
+    }
+
     function openTaskSheet(memId) {
       const t = memId ? cachedTasksById[memId] : null;
       editingMemoryId = t ? t.memory_id : null;
@@ -5814,6 +5866,17 @@
       document.getElementById('aiMemoryContextHint').style.display = 'none';
 
       const p = t?.payload || {};
+      const restoreBanner = document.getElementById('tsDoneRestoreBanner');
+      const restoreTxt = document.getElementById('tsDoneRestoreText');
+      const isClosedTask = Boolean(t && (p.task_status === 'done' || p.task_status === 'cancelled'));
+      if (restoreBanner) {
+        restoreBanner.style.display = isClosedTask ? 'flex' : 'none';
+      }
+      if (restoreTxt && isClosedTask) {
+        restoreTxt.textContent = p.close_reason === 'cancelled'
+          ? '🗑️ 当前任务已取消（可一键恢复为待办）'
+          : '✅ 当前任务已完结（误点完成可一键恢复）';
+      }
       document.getElementById('tsTitle').value = t ? t.title : '';
       document.getElementById('tsSummary').value = t && t.summary !== t.title ? t.summary : '';
       selectSheetColor(p.color_theme || 'sky');
@@ -6489,7 +6552,9 @@
             <div class="card-actions">
               <button onclick="sendNudge('${t.memory_id}', 'nudge')">⚡ 催一催</button>
               <button onclick="sendNudge('${t.memory_id}', 'cheer')">👍 点赞鼓励</button>
-              ${!isDone ? `<button onclick="transitionTask('${t.memory_id}', 'complete_task', ${t.version})">✅ 标记完成</button>` : ''}
+              ${!isDone
+                ? `<button onclick="transitionTask('${t.memory_id}', 'complete_task', ${t.version})">✅ 标记完成</button>`
+                : `<button onclick="transitionTask('${t.memory_id}', 'reopen_task', null)">↩️ 恢复待办</button>`}
             </div>
           </div>
         `;

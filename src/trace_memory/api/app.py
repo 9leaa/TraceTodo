@@ -702,11 +702,13 @@ class ApiDispatcher:
                 mem_id = str(payload.get("memory_id", ""))
                 action = str(payload.get("action", "complete_task"))
                 exp_ver = _safe_int(payload.get("expected_version"), name="expected_version", min_val=1)
+                undo_next_id = str(payload.get("undo_next_task_id", "") or "")
                 out = self.container.task_matrix_service.transition_task_state_with_repeat(
                     space_id=space_id,
                     memory_id=mem_id,
                     action=action,
                     expected_version=exp_ver,
+                    undo_next_task_id=undo_next_id,
                 )
                 return 200, out
 
