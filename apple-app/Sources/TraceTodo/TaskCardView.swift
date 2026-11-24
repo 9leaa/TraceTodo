@@ -170,9 +170,31 @@ struct TaskCardView: View {
                         }
                         .buttonStyle(.plain)
                         .help("进入沉浸专注锁屏")
+                    } else {
+                        Button {
+                            Task { await store.transitionTask(task, action: "reopen_task") }
+                        } label: {
+                            Text("↩️ 恢复待办")
+                                .font(.system(size: 11, weight: .bold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(store.activeTheme.primaryColor.opacity(0.14))
+                                .foregroundStyle(store.activeTheme.primaryColor)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .help("将此已完成任务恢复为未完成待办")
                     }
 
                     Menu {
+                        if task.payload.isDone {
+                            Button {
+                                Task { await store.transitionTask(task, action: "reopen_task") }
+                            } label: {
+                                Label("恢复为未完成待办", systemImage: "arrow.uturn.backward.circle")
+                            }
+                            Divider()
+                        }
                         Button {
                             store.editingTaskTarget = task
                         } label: {

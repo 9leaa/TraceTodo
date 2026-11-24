@@ -715,7 +715,7 @@ struct UnifiedTodoHostView: View {
                             let cnt = store.quickScopeCount(scope)
                             Button {
                                 withAnimation(.easeInOut(duration: 0.16)) {
-                                    store.taskQuickScope = scope
+                                    store.setQuickScope(scope)
                                 }
                             } label: {
                                 HStack(spacing: 4) {

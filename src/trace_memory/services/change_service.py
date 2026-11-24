@@ -524,18 +524,34 @@ class ChangeService:
         new_event_time = proposal.event_time or existing.event_time
 
         if existing.memory_type == "task":
+            has_custom_summary = bool(
+                existing.summary.strip()
+                and existing.summary.strip() != existing.title.strip()
+                and not existing.summary.startswith(("已完成：", "已取消："))
+            )
             if proposal.action == "complete_task":
                 new_payload["task_status"] = "done"
                 new_payload["close_reason"] = proposal.payload.get("close_reason") or "completed"
-                new_summary = proposal.summary.strip() or f"已完成：{existing.title}"
+                new_summary = (
+                    proposal.summary.strip()
+                    or (existing.summary if has_custom_summary else f"已完成：{existing.title}")
+                )
             elif proposal.action == "cancel_task":
                 new_payload["task_status"] = "done"
                 new_payload["close_reason"] = proposal.payload.get("close_reason") or "cancelled"
-                new_summary = proposal.summary.strip() or f"已取消：{existing.title}"
+                new_summary = (
+                    proposal.summary.strip()
+                    or (existing.summary if has_custom_summary else f"已取消：{existing.title}")
+                )
             elif proposal.action == "reopen_task":
                 new_payload["task_status"] = "todo"
                 new_payload["close_reason"] = ""
-                new_summary = proposal.summary.strip() or existing.title
+                if proposal.summary.strip():
+                    new_summary = proposal.summary.strip()
+                elif existing.summary.startswith(("已完成：", "已取消：")):
+                    new_summary = existing.title
+                else:
+                    new_summary = existing.summary or existing.title
             elif proposal.action == "update_quadrant":
                 for k in ("importance", "urgency", "quadrant", "priority_score", "priority_reason", "due_at"):
                     if k in proposal.payload and proposal.payload[k] is not None:

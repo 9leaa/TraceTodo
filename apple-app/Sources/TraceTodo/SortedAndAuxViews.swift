@@ -13,6 +13,36 @@ struct SortedTaskListView: View {
             VStack(spacing: 10) {
                 QuickCaptureBar()
 
+                if let banner = store.statusBanner {
+                    HStack(spacing: 10) {
+                        Image(systemName: "sparkles")
+                            .foregroundStyle(store.activeTheme.primaryColor)
+                        Text(banner)
+                            .font(.footnote.weight(.medium))
+                        Spacer()
+                        if let undoLbl = store.statusBannerUndoLabel {
+                            Button(undoLbl) {
+                                store.triggerBannerUndo()
+                            }
+                            .font(.caption.bold())
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(store.activeTheme.primaryFillColor)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(store.cardSurfaceBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(store.activeTheme.primaryColor.opacity(0.25), lineWidth: 1)
+                    )
+                }
+
                 HStack {
                     Picker("排序", selection: $store.sortBy) {
                         ForEach(TaskSortOption.allCases) { opt in
@@ -224,6 +254,11 @@ struct SupervisionBoardView: View {
                                 if !task.payload.isDone {
                                     Button("✅ 标记完成") {
                                         Task { await store.transitionTask(task, action: "complete_task") }
+                                    }
+                                    .buttonStyle(.bordered)
+                                } else {
+                                    Button("↩️ 恢复待办") {
+                                        Task { await store.transitionTask(task, action: "reopen_task") }
                                     }
                                     .buttonStyle(.bordered)
                                 }

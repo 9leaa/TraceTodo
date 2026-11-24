@@ -585,10 +585,12 @@ class TaskMatrixService:
         expected_version: int | None = None,
         actor_id: str = "user",
         now: datetime | None = None,
+        undo_next_task_id: str = "",
     ) -> dict[str, Any]:
         """Transition task state and spawn next recurring cycle when completing a repeating task."""
         prev_task = self.memory_repo.get(space_id, memory_id)
         was_done = prev_task is not None and prev_task.payload.get("task_status") == "done"
+        orig_summary = prev_task.summary if prev_task is not None else ""
         res = self.transition_task_state(
             space_id=space_id,
             memory_id=memory_id,
@@ -596,6 +598,28 @@ class TaskMatrixService:
             expected_version=expected_version,
             actor_id=actor_id,
         )
+        undone_next_id = ""
+        if action == "reopen_task" and undo_next_task_id.strip():
+            cand_next = self.memory_repo.get(space_id, undo_next_task_id.strip())
+            if (
+                cand_next is not None
+                and cand_next.memory_type == "task"
+                and cand_next.status == "active"
+                and cand_next.payload.get("task_status") == "todo"
+            ):
+                self.change_service.apply(
+                    ChangeProposal(
+                        space_id=space_id,
+                        action="forget",
+                        memory_type="task",
+                        target_memory_id=cand_next.memory_id,
+                        actor_id=actor_id,
+                        origin="user_direct",
+                        reason=f"Undo auto-spawned recurring task for {memory_id}",
+                    )
+                )
+                undone_next_id = cand_next.memory_id
+
         next_task_dict: dict[str, Any] | None = None
         if (
             action == "complete_task"
@@ -618,7 +642,7 @@ class TaskMatrixService:
                     space_id=space_id,
                     data={
                         "title": res.memory.title,
-                        "summary": res.memory.summary,
+                        "summary": orig_summary or res.memory.title,
                         "importance": p.get("importance", 3),
                         "urgency": p.get("urgency", 3),
                         "due_at": next_due,
@@ -650,6 +674,8 @@ class TaskMatrixService:
 
         out = res.to_dict()
         out["next_task"] = next_task_dict
+        if undone_next_id:
+            out["undone_next_task_id"] = undone_next_id
         return out
 
     def save_task_card(

@@ -98,14 +98,31 @@ struct QuadrantMatrixView: View {
                 QuickCaptureBar()
 
                 if let banner = store.statusBanner {
-                    HStack {
+                    HStack(spacing: 10) {
                         Image(systemName: "info.circle.fill")
+                            .foregroundStyle(store.activeTheme.primaryColor)
                         Text(banner).font(.footnote.weight(.medium))
                         Spacer()
+                        if let undoLbl = store.statusBannerUndoLabel {
+                            Button(undoLbl) {
+                                store.triggerBannerUndo()
+                            }
+                            .font(.caption.bold())
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(store.activeTheme.primaryFillColor)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                            .buttonStyle(.plain)
+                        }
                     }
                     .padding(10)
-                    .background(Color.purple.opacity(0.12))
+                    .background(store.cardSurfaceBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(store.activeTheme.primaryColor.opacity(0.25), lineWidth: 1)
+                    )
                 }
 
                 // KPI Summary Strip
@@ -116,7 +133,23 @@ struct QuadrantMatrixView: View {
                             KpiPill(title: "Q1 马上做", value: counts.q1, color: QuadrantKind.q1.tintColor)
                             KpiPill(title: "Q2 计划做", value: counts.q2, color: QuadrantKind.q2.tintColor)
                             KpiPill(title: "Q3 速办", value: counts.q3, color: QuadrantKind.q3.tintColor)
-                            KpiPill(title: "已完成", value: counts.totalDone, color: .green)
+                            Button {
+                                store.setQuickScope(.done)
+                            } label: {
+                                KpiPill(title: "已完成（点此查看）", value: counts.totalDone, color: .green)
+                            }
+                            .buttonStyle(.plain)
+                            Toggle("含已完成", isOn: $store.includeDone)
+                                .toggleStyle(.switch)
+                                .controlSize(.small)
+                                .font(.caption)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(.background)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .onChange(of: store.includeDone) { _, _ in
+                                    Task { await store.refreshTasksFast() }
+                                }
                             if !store.pendingNotes.isEmpty {
                                 KpiPill(title: "离线待同步", value: store.pendingNotes.count, color: .orange)
                             }

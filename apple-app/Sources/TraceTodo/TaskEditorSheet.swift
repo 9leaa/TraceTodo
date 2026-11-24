@@ -38,6 +38,37 @@ struct TaskEditorSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
+                    if let existing = existingTask, existing.payload.isDone {
+                        HStack(spacing: 10) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .foregroundStyle(.green)
+                            Text("当前任务已完结（误点完成可一键恢复）")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Button("↩️ 恢复待办") {
+                                let mid = existing.memoryId
+                                dismiss()
+                                Task { await store.reopenTaskById(mid) }
+                            }
+                            .font(.caption.bold())
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(store.activeTheme.primaryFillColor)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(Color.green.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(Color.green.opacity(0.35), lineWidth: 1)
+                        )
+                    }
+
                     // 1. Top Macaron Theme Header Card
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 8) {

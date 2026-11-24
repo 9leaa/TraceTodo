@@ -284,6 +284,81 @@ class TestDuoDoFeatures(unittest.TestCase):
         self.assertIn("fallbackCopyText", html)
         self.assertIn("withBtnBusy", html)
         self.assertIn("trace-todo-shell-v3", PWA_SW_JS)
+        self.assertIn('data-scope="done"', html)
+        self.assertIn('id="tsDoneRestoreBanner"', html)
+        self.assertIn("reopenTaskFromSheet", html)
+
+    def test_accidental_complete_restore_preserves_summary_and_undoes_repeat_cycle(self) -> None:
+        # 1. Ordinary task with rich summary: complete -> reopen (without expected_version) preserves summary
+        _, saved = self.api.dispatch(
+            "POST",
+            "/api/tasks/save",
+            body={
+                "space_id": "restore_space",
+                "title": "购买伴郎伴手礼",
+                "summary": "关联已知婚期任务，需提前两周采购包装",
+                "due_at": "2026-12-01",
+            },
+        )
+        tid = saved["memory"]["memory_id"]
+
+        c_done, done_out = self.api.dispatch(
+            "POST",
+            "/api/tasks/transition",
+            body={"space_id": "restore_space", "memory_id": tid, "action": "complete_task"},
+        )
+        self.assertEqual(c_done, 200)
+        self.assertEqual(done_out["memory"]["payload"]["task_status"], "done")
+
+        c_reopen, reopen_out = self.api.dispatch(
+            "POST",
+            "/api/tasks/transition",
+            body={"space_id": "restore_space", "memory_id": tid, "action": "reopen_task"},
+        )
+        self.assertEqual(c_reopen, 200)
+        self.assertEqual(reopen_out["memory"]["payload"]["task_status"], "todo")
+        self.assertEqual(reopen_out["memory"]["summary"], "关联已知婚期任务，需提前两周采购包装")
+
+        # 2. Repeating task: complete spawns next cycle -> undo reopens original and removes spawned cycle
+        _, rep_saved = self.api.dispatch(
+            "POST",
+            "/api/tasks/save",
+            body={
+                "space_id": "restore_space",
+                "title": "每日晨读英语",
+                "summary": "精读经济学人 20 分钟",
+                "due_at": "2026-11-24",
+                "repeat_rule": "daily",
+            },
+        )
+        rep_id = rep_saved["memory"]["memory_id"]
+
+        _, rep_done = self.api.dispatch(
+            "POST",
+            "/api/tasks/transition",
+            body={"space_id": "restore_space", "memory_id": rep_id, "action": "complete_task"},
+        )
+        next_id = rep_done["next_task"]["memory_id"]
+        self.assertEqual(rep_done["next_task"]["summary"], "精读经济学人 20 分钟")
+
+        c_undo, undo_out = self.api.dispatch(
+            "POST",
+            "/api/tasks/transition",
+            body={
+                "space_id": "restore_space",
+                "memory_id": rep_id,
+                "action": "reopen_task",
+                "undo_next_task_id": next_id,
+            },
+        )
+        self.assertEqual(c_undo, 200)
+        self.assertEqual(undo_out["memory"]["payload"]["task_status"], "todo")
+        self.assertEqual(undo_out.get("undone_next_task_id"), next_id)
+
+        _, mat = self.api.dispatch("GET", "/api/tasks/matrix", {"space_id": ["restore_space"]})
+        todo_ids = [t["memory_id"] for t in mat["sorted_tasks"]]
+        self.assertIn(rep_id, todo_ids)
+        self.assertNotIn(next_id, todo_ids)
 
 
 if __name__ == "__main__":

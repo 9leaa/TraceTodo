@@ -126,11 +126,15 @@ struct DashboardOverviewView: View {
                         title: "完成率 & 专注",
                         mainValue: "\(completionPct)% / \(counts.totalDone)",
                         subLeft: "专注 \(focusSessionsTotal) 轮 ↑",
-                        subRight: "累计已完结 ↑",
+                        subRight: "点此查看/恢复已完结 ↗",
                         iconName: "star.circle.fill",
                         colors: [Color(red: 0.93, green: 0.27, blue: 0.77), Color(red: 0.48, green: 0.35, blue: 0.97)],
                         shadowColor: Color(red: 0.68, green: 0.31, blue: 0.88)
                     )
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        store.setQuickScope(.done)
+                    }
                 }
 
                 // Collapsible Middle Row: TOP FOCUS + TASK INSIGHTS Donut Chart (matches Web `#todoInsightsFoldWrap`)

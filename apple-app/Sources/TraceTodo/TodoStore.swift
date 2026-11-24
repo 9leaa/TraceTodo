@@ -8,6 +8,7 @@ enum TaskQuickScope: String, CaseIterable, Identifiable {
     case all = "all"
     case today = "today"
     case overdue = "overdue"
+    case done = "done"
 
     var id: String { rawValue }
 
@@ -16,6 +17,7 @@ enum TaskQuickScope: String, CaseIterable, Identifiable {
         case .all: return "全部待办"
         case .today: return "☀️ 今日聚焦"
         case .overdue: return "⏰ 逾期顺延"
+        case .done: return "✅ 已完结"
         }
     }
 }
@@ -75,6 +77,7 @@ final class TodoStore: ObservableObject {
     @Published var isPresentingSupervisionSheet: Bool = false
     @Published var isPresentingFloatingAsk: Bool = false
     @Published var taskQuickScope: TaskQuickScope = .all
+    private var autoIncludeDoneForScope: Bool = false
     @Published var editingTaskTarget: TaskItemModel?
     @Published var activeFocusTask: TaskItemModel?
     @Published var activeFocusLaunch: ActiveFocusLaunchConfig?
@@ -222,23 +225,47 @@ final class TodoStore: ObservableObject {
         return fmt.string(from: Date())
     }
 
+    func setQuickScope(_ scope: TaskQuickScope) {
+        let prev = taskQuickScope
+        taskQuickScope = scope
+        if scope == .done && !includeDone {
+            includeDone = true
+            autoIncludeDoneForScope = true
+            Task { await refreshTasksFast() }
+        } else if prev == .done && scope != .done && autoIncludeDoneForScope {
+            includeDone = false
+            autoIncludeDoneForScope = false
+            Task { await refreshTasksFast() }
+        }
+    }
+
     func matchesQuickScope(_ task: TaskItemModel, scope: TaskQuickScope) -> Bool {
         switch scope {
+        case .done:
+            return task.payload.isDone
         case .all:
             return true
         case .today:
+            if task.payload.isDone && !includeDone { return false }
             let duePrefix = String((task.payload.dueAt ?? "").prefix(10))
             return duePrefix == todayYMDString
-                || task.payload.isOverdue == true
+                || (!task.payload.isDone && task.payload.isOverdue == true)
                 || task.payload.quadrantKind == .q1
         case .overdue:
-            return task.payload.isOverdue == true || (task.payload.rolloverCount ?? 0) > 0
+            if task.payload.isDone && !includeDone { return false }
+            return (!task.payload.isDone && task.payload.isOverdue == true) || (task.payload.rolloverCount ?? 0) > 0
         }
     }
 
     func quickScopeCount(_ scope: TaskQuickScope) -> Int {
+        if scope == .done {
+            return matrix?.summaryCounts.totalDone ?? (matrix?.sortedTasks.filter { $0.payload.isDone }.count ?? 0)
+        }
         let allItems = matrix?.sortedTasks ?? []
-        return allItems.filter { matchesQuickScope($0, scope: scope) }.count
+        if scope == .all {
+            return matrix?.summaryCounts.totalTodo ?? allItems.filter { !$0.payload.isDone }.count
+        }
+        return allItems.filter { !$0.payload.isDone && matchesQuickScope($0, scope: scope) }.count
     }
 
     var filteredSortedTasks: [TaskItemModel] {
@@ -798,39 +825,49 @@ final class TodoStore: ObservableObject {
         }
     }
 
+    func reopenTaskById(_ memoryId: String, undoNextTaskId: String = "") async {
+        do {
+            let res = try await client.transitionTask(
+                memoryId: memoryId,
+                action: "reopen_task",
+                expectedVersion: nil,
+                undoNextTaskId: undoNextTaskId
+            )
+            let titleTxt = res.memory?.title ?? "待办事项"
+            showBanner("↩️ 已恢复待办「\(titleTxt)」")
+            await refresh()
+            await refreshSupervisionBoard()
+        } catch {
+            showBanner("恢复失败：\(error.localizedDescription)")
+        }
+    }
+
     func transitionTask(_ task: TaskItemModel, action: String) async {
         do {
             let res = try await client.transitionTask(
                 memoryId: task.memoryId,
                 action: action,
-                expectedVersion: task.version
+                expectedVersion: action == "reopen_task" ? nil : task.version
             )
+            let targetId = res.memory?.memoryId ?? task.memoryId
             if let next = res.nextTask, let nextDue = next.payload.dueAt {
-                showBanner("✅ 本期已完成，已生成下一期 (\(String(nextDue.prefix(10))))")
-            } else if action == "complete_task" {
-                let targetId = res.memory?.memoryId ?? task.memoryId
-                let nextVer = res.memory?.version ?? (task.version + 1)
-                showBanner("✅ 已完成「\(task.title)」", undoLabel: "↩ 撤销") { [weak self] in
+                let nextId = next.memoryId
+                showBanner("✅ 本期已完成，已生成下一期 (\(String(nextDue.prefix(10))))", undoLabel: "↩ 撤销恢复") { [weak self] in
                     guard let self else { return }
-                    _ = try? await self.client.transitionTask(
-                        memoryId: targetId,
-                        action: "reopen_task",
-                        expectedVersion: nextVer
-                    )
-                    await self.refresh()
+                    await self.reopenTaskById(targetId, undoNextTaskId: nextId)
+                }
+            } else if action == "complete_task" {
+                showBanner("✅ 已完成「\(task.title)」", undoLabel: "↩ 撤销恢复") { [weak self] in
+                    guard let self else { return }
+                    await self.reopenTaskById(targetId)
                 }
             } else if action == "cancel_task" {
-                let targetId = res.memory?.memoryId ?? task.memoryId
-                let nextVer = res.memory?.version ?? (task.version + 1)
-                showBanner("🗑️ 已取消「\(task.title)」", undoLabel: "↩ 撤销") { [weak self] in
+                showBanner("🗑️ 已取消「\(task.title)」", undoLabel: "↩ 撤销恢复") { [weak self] in
                     guard let self else { return }
-                    _ = try? await self.client.transitionTask(
-                        memoryId: targetId,
-                        action: "reopen_task",
-                        expectedVersion: nextVer
-                    )
-                    await self.refresh()
+                    await self.reopenTaskById(targetId)
                 }
+            } else if action == "reopen_task" {
+                showBanner("↩️ 已恢复待办「\(task.title)」")
             }
             await refresh()
             await refreshSupervisionBoard()
@@ -1130,7 +1167,7 @@ final class TodoStore: ObservableObject {
         statusBanner = message
         statusBannerUndoLabel = undoLabel
         statusBannerUndoHandler = undoHandler
-        let waitNs: UInt64 = undoLabel != nil ? 5_200_000_000 : 3_400_000_000
+        let waitNs: UInt64 = undoLabel != nil ? 8_000_000_000 : 3_400_000_000
         Task {
             try? await Task.sleep(nanoseconds: waitNs)
             if statusBanner == message {
