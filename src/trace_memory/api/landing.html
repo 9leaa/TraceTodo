@@ -1750,6 +1750,15 @@ python3 run_web.py --lan
           <input id="lAuthPassword" type="password" autocomplete="current-password" placeholder="密码（至少 6 位）" required />
           <button type="button" aria-label="显示或隐藏密码" onclick="const p=document.getElementById('lAuthPassword');p.type=p.type==='password'?'text':'password';this.textContent=p.type==='password'?'👁️':'🙈';" style="border:none;background:transparent;padding:2px 4px;font-size:14px;">👁️</button>
         </div>
+        <div id="lAuthCaptchaRow" style="display:none;align-items:center;gap:8px;">
+          <div class="auth-field" style="flex:1;margin:0;">
+            <span aria-hidden="true">🛡️</span>
+            <input id="lAuthCaptchaCode" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="6" placeholder="输入右侧 4 位验证码" style="text-transform:uppercase;letter-spacing:1.5px;font-weight:700;" />
+          </div>
+          <button type="button" onclick="refreshLandingCaptcha()" title="看不清？点击换一张" aria-label="刷新图形验证码" style="border:1px solid rgba(99,102,241,0.24);background:#eef2ff;border-radius:12px;padding:0;height:44px;width:136px;overflow:hidden;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <img id="lAuthCaptchaImg" alt="点击刷新验证码" style="width:136px;height:44px;display:block;object-fit:cover;" />
+          </button>
+        </div>
         <div class="auth-err" id="landingAuthErr"></div>
         <button type="submit" class="btn btn-primary btn-lg" id="landingAuthSubmitBtn" style="width:100%;">立即登录并进入工作台</button>
       </form>
@@ -1771,6 +1780,23 @@ python3 run_web.py --lan
       allow_registration: true,
     };
     let landingAuthMode = 'login';
+    let landingCaptchaId = '';
+
+    async function refreshLandingCaptcha() {
+      const imgEl = document.getElementById('lAuthCaptchaImg');
+      const inputEl = document.getElementById('lAuthCaptchaCode');
+      if (inputEl) inputEl.value = '';
+      try {
+        const res = await fetch('/api/auth/captcha', { cache: 'no-store' });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data && data.captcha_id) {
+          landingCaptchaId = data.captcha_id;
+          if (imgEl && data.image_svg) imgEl.src = data.image_svg;
+        }
+      } catch (e) {
+        // Silent fallback
+      }
+    }
 
     function sanitizeNextPath(raw) {
       if (!raw || typeof raw !== 'string') return '/';
@@ -1797,6 +1823,13 @@ python3 run_web.py --lan
       document.getElementById('landingTabLogin').classList.toggle('active', landingAuthMode === 'login');
       document.getElementById('landingTabReg').classList.toggle('active', landingAuthMode === 'register');
       document.getElementById('lAuthDisplayRow').style.display = landingAuthMode === 'register' ? 'flex' : 'none';
+      const capRow = document.getElementById('lAuthCaptchaRow');
+      const capInput = document.getElementById('lAuthCaptchaCode');
+      if (capRow) capRow.style.display = landingAuthMode === 'register' ? 'flex' : 'none';
+      if (capInput) capInput.required = landingAuthMode === 'register';
+      if (landingAuthMode === 'register') {
+        refreshLandingCaptcha();
+      }
       document.getElementById('lAuthPassword').autocomplete = landingAuthMode === 'register' ? 'new-password' : 'current-password';
       document.getElementById('landingAuthTitle').textContent = !landingAuthState.has_users
         ? '初始化 TraceTodo 管理员'
@@ -1863,7 +1896,14 @@ python3 run_web.py --lan
       const username = document.getElementById('lAuthUsername').value.trim();
       const password = document.getElementById('lAuthPassword').value;
       const displayName = document.getElementById('lAuthDisplayName').value.trim();
+      const captchaCode = (document.getElementById('lAuthCaptchaCode')?.value || '').trim();
       errEl.style.display = 'none';
+      if (landingAuthMode === 'register' && !captchaCode) {
+        errEl.textContent = '请输入图形验证码';
+        errEl.style.display = 'block';
+        if (!landingCaptchaId) refreshLandingCaptcha();
+        return;
+      }
       btn.disabled = true;
       const prevLabel = btn.textContent;
       btn.textContent = '⏳ 正在进入工作台...';
@@ -1878,12 +1918,14 @@ python3 run_web.py --lan
             password,
             display_name: displayName,
             device_label: 'web',
+            ...(landingAuthMode === 'register' ? { captcha_id: landingCaptchaId, captcha_code: captchaCode } : {}),
           }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data.error || !data.token) {
           errEl.textContent = data.error || data.detail || `认证失败 (HTTP ${res.status})`;
           errEl.style.display = 'block';
+          if (landingAuthMode === 'register') refreshLandingCaptcha();
           return;
         }
         localStorage.setItem(TOKEN_KEY, data.token);

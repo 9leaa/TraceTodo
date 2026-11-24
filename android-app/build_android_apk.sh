@@ -96,15 +96,15 @@ STRXML
 echo "🤖 [1/5] Compiling Android resources with aapt2 ($APP_STEM)..."
 "$AAPT2" compile --dir "$WORK_DIR/res_stage" -o "$WORK_DIR/compiled_res/resources.zip"
 
-echo "🔗 [2/5] Linking resources & AndroidManifest (targetSdk 34, version 1.4.4)..."
+echo "🔗 [2/5] Linking resources & AndroidManifest (targetSdk 34, version 1.4.5)..."
 "$AAPT2" link \
   -I "$ANDROID_JAR" \
   --manifest "$WORK_DIR/AndroidManifest.xml" \
   --rename-manifest-package "$PKG_ID" \
   --min-sdk-version 24 \
   --target-sdk-version 34 \
-  --version-code 8 \
-  --version-name "1.4.4" \
+  --version-code 9 \
+  --version-name "1.4.5" \
   --java "$WORK_DIR/gen" \
   -o "$WORK_DIR/unaligned.apk" \
   "$WORK_DIR/compiled_res/resources.zip"

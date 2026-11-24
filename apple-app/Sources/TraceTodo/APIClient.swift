@@ -114,6 +114,10 @@ struct TraceMemoryAPIClient {
         try await get("/api/auth/status")
     }
 
+    func fetchAuthCaptcha() async throws -> AuthCaptchaResponse {
+        try await get("/api/auth/captcha", includeSpaceId: false)
+    }
+
     func login(username: String, password: String) async throws -> AuthSessionResponse {
         let data = try await postRaw(
             "/api/auth/login",
@@ -122,14 +126,22 @@ struct TraceMemoryAPIClient {
         return try JSONDecoder().decode(AuthSessionResponse.self, from: data)
     }
 
-    func register(username: String, password: String, displayName: String) async throws -> AuthSessionResponse {
+    func register(
+        username: String,
+        password: String,
+        displayName: String,
+        captchaId: String = "",
+        captchaCode: String = ""
+    ) async throws -> AuthSessionResponse {
         let data = try await postRaw(
             "/api/auth/register",
             body: [
                 "username": username,
                 "password": password,
                 "display_name": displayName,
-                "device_label": "apple-app"
+                "device_label": "apple-app",
+                "captcha_id": captchaId,
+                "captcha_code": captchaCode
             ]
         )
         return try JSONDecoder().decode(AuthSessionResponse.self, from: data)

@@ -13,6 +13,7 @@ struct AuthGateSheet: View {
         case username
         case displayName
         case password
+        case captchaCode
         case serverURL
     }
 
@@ -21,6 +22,10 @@ struct AuthGateSheet: View {
     @State private var username: String = ""
     @State private var displayName: String = ""
     @State private var password: String = ""
+    @State private var captchaId: String = ""
+    @State private var captchaCode: String = ""
+    @State private var captchaPngData: Data? = nil
+    @State private var isLoadingCaptcha: Bool = false
     @State private var showPassword: Bool = false
     @State private var showServerConfig: Bool = false
     @State private var forceSwitchAccount: Bool = false
@@ -37,6 +42,7 @@ struct AuthGateSheet: View {
         !isSubmitting
             && !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && password.count >= 1
+            && (!isRegisterMode || !captchaCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     private var shortServerLabel: String {
@@ -131,6 +137,9 @@ struct AuthGateSheet: View {
             if !store.hasUsers {
                 isRegisterMode = true
             }
+            if isRegisterMode {
+                refreshCaptcha()
+            }
         }
     }
 
@@ -182,6 +191,7 @@ struct AuthGateSheet: View {
                             isRegisterMode = true
                             errorMsg = nil
                         }
+                        refreshCaptcha()
                     }
                 }
                 .padding(4)
@@ -250,6 +260,67 @@ struct AuthGateSheet: View {
                         }
                         .buttonStyle(.plain)
                     }
+                }
+
+                if isRegisterMode {
+                    HStack(spacing: 8) {
+                        inputFieldCard(
+                            icon: "checkmark.shield.fill",
+                            isFocused: focusedField == .captchaCode
+                        ) {
+                            TextField("输入右侧 4 位验证码", text: $captchaCode)
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Color(red: 0.09, green: 0.12, blue: 0.20))
+                                .focused($focusedField, equals: .captchaCode)
+                                .autocorrectionDisabled()
+                                #if os(iOS)
+                                .textInputAutocapitalization(.characters)
+                                #endif
+                                .submitLabel(.go)
+                                .onSubmit {
+                                    if canSubmit { submit() }
+                                }
+                        }
+
+                        Button {
+                            refreshCaptcha()
+                        } label: {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color(red: 0.93, green: 0.95, blue: 1.00))
+
+                                if let data = captchaPngData, let img = captchaSwiftUIImage(from: data) {
+                                    img
+                                        .resizable()
+                                        .interpolation(.none)
+                                        .scaledToFill()
+                                        .frame(width: 128, height: 46)
+                                        .clipped()
+                                } else if isLoadingCaptcha {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                } else {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "arrow.clockwise")
+                                            .font(.system(size: 11, weight: .bold))
+                                        Text("加载验证码")
+                                            .font(.system(size: 11.5, weight: .semibold))
+                                    }
+                                    .foregroundStyle(Color(red: 0.25, green: 0.44, blue: 0.92))
+                                }
+                            }
+                            .frame(width: 128, height: 46)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(Color(red: 0.80, green: 0.84, blue: 0.96), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .help("看不清？点击刷新验证码")
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
 
@@ -582,7 +653,12 @@ struct AuthGateSheet: View {
         let isCurrent = store.serverURL == url
         return Button {
             store.switchServerURL(url)
-            Task { await store.refresh() }
+            Task {
+                await store.refresh()
+                if isRegisterMode {
+                    refreshCaptcha()
+                }
+            }
         } label: {
             Text(label)
                 .font(.system(size: 11.5, weight: .semibold))
@@ -653,15 +729,51 @@ struct AuthGateSheet: View {
         #endif
     }
 
+    private func captchaSwiftUIImage(from data: Data) -> Image? {
+        #if os(macOS)
+        if let nsImg = NSImage(data: data) {
+            return Image(nsImage: nsImg)
+        }
+        #elseif os(iOS)
+        if let uiImg = UIImage(data: data) {
+            return Image(uiImage: uiImg)
+        }
+        #endif
+        return nil
+    }
+
+    private func refreshCaptcha() {
+        captchaCode = ""
+        isLoadingCaptcha = true
+        Task {
+            defer { isLoadingCaptcha = false }
+            if let resp = try? await store.fetchAuthCaptcha() {
+                captchaId = resp.captchaId
+                if let pngUrl = resp.imagePng,
+                   let commaIdx = pngUrl.firstIndex(of: ",") {
+                    let b64 = String(pngUrl[pngUrl.index(after: commaIdx)...])
+                    captchaPngData = Data(base64Encoded: b64)
+                }
+            }
+        }
+    }
+
     private func submit() {
         dismissAppKeyboard()
         focusedField = nil
         errorMsg = nil
         isSubmitting = true
+        let cleanCaptchaCode = captchaCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         Task {
             do {
                 if isRegisterMode {
-                    try await store.register(username: username, password: password, displayName: displayName)
+                    try await store.register(
+                        username: username,
+                        password: password,
+                        displayName: displayName,
+                        captchaId: captchaId,
+                        captchaCode: cleanCaptchaCode
+                    )
                 } else {
                     try await store.login(username: username, password: password)
                 }
@@ -669,6 +781,9 @@ struct AuthGateSheet: View {
                 dismiss()
             } catch {
                 errorMsg = error.localizedDescription
+                if isRegisterMode {
+                    refreshCaptcha()
+                }
             }
             isSubmitting = false
         }

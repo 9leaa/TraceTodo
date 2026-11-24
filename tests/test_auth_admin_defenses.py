@@ -542,6 +542,110 @@ class TestAuthAdminAndDefenses(unittest.TestCase):
         self.assertEqual(bob_tasks[0]["space_id"], bob_space)
         self.assertNotIn("管理员专属机密任务", json.dumps(bob_tasks, ensure_ascii=False))
 
+    def test_register_captcha_challenge_and_anti_replay(self) -> None:
+        import base64
+        import re
+
+        env_cfg = TraceMemoryConfig.from_env({})
+        self.assertTrue(env_cfg.register_captcha_required)
+
+        with tempfile.TemporaryDirectory() as cap_tmp:
+            cap_base = Path(cap_tmp)
+            cap_app = AppContainer.build(
+                TraceMemoryConfig(
+                    default_space="cap_space",
+                    data_dir=cap_base / "data",
+                    knowledge_dir=cap_base / "knowledge",
+                    auth_required=True,
+                    register_captcha_required=True,
+                ),
+                llm_override=self.counting_llm,
+                embedder_override=self.counting_embedder,
+            )
+            try:
+                cap_api = ApiDispatcher(cap_app)
+                _, st = cap_api.dispatch("GET", "/api/auth/status")
+                self.assertTrue(st["register_captcha_required"])
+
+                # 1. Missing captcha must be rejected
+                c_miss, miss_body = cap_api.dispatch(
+                    "POST",
+                    "/api/auth/register",
+                    body={"username": "cap_user1", "password": "password123"},
+                )
+                self.assertEqual(c_miss, 400)
+                self.assertIn("验证码", miss_body["error"])
+
+                # 2. Issue captcha & verify SVG + PNG payloads
+                c_cap1, cap1 = cap_api.dispatch("GET", "/api/auth/captcha")
+                self.assertEqual(c_cap1, 200)
+                self.assertTrue(cap1["captcha_id"].startswith("cap_"))
+                self.assertTrue(cap1["image_svg"].startswith("data:image/svg+xml;base64,"))
+                self.assertTrue(cap1["image_png"].startswith("data:image/png;base64,"))
+                png_raw = base64.b64decode(cap1["image_png"].split(",", 1)[1])
+                self.assertTrue(png_raw.startswith(b"\x89PNG\r\n\x1a\n"))
+
+                svg_xml1 = base64.b64decode(cap1["image_svg"].split(",", 1)[1]).decode("utf-8")
+                true_code1 = "".join(re.findall(r">([A-Z2-9])</text>", svg_xml1))
+                self.assertEqual(len(true_code1), 4)
+
+                # 3. Wrong code fails AND immediately consumes captcha_id (anti-brute-force)
+                c_wrong, _ = cap_api.dispatch(
+                    "POST",
+                    "/api/auth/register",
+                    body={
+                        "username": "cap_user1",
+                        "password": "password123",
+                        "captcha_id": cap1["captcha_id"],
+                        "captcha_code": "ZZZZ" if true_code1 != "ZZZZ" else "AAAA",
+                    },
+                )
+                self.assertEqual(c_wrong, 400)
+
+                c_replay_after_wrong, replay_err = cap_api.dispatch(
+                    "POST",
+                    "/api/auth/register",
+                    body={
+                        "username": "cap_user1",
+                        "password": "password123",
+                        "captcha_id": cap1["captcha_id"],
+                        "captcha_code": true_code1,
+                    },
+                )
+                self.assertEqual(c_replay_after_wrong, 400)
+                self.assertIn("过期或失效", replay_err["error"])
+
+                # 4. Fresh captcha succeeds (case-insensitive) and cannot be replayed
+                _, cap2 = cap_api.dispatch("GET", "/api/auth/captcha")
+                svg_xml2 = base64.b64decode(cap2["image_svg"].split(",", 1)[1]).decode("utf-8")
+                true_code2 = "".join(re.findall(r">([A-Z2-9])</text>", svg_xml2))
+                c_ok, ok_body = cap_api.dispatch(
+                    "POST",
+                    "/api/auth/register",
+                    body={
+                        "username": "cap_user1",
+                        "password": "password123",
+                        "captcha_id": cap2["captcha_id"],
+                        "captcha_code": true_code2.lower(),
+                    },
+                )
+                self.assertEqual(c_ok, 200)
+                self.assertIn("token", ok_body)
+
+                c_replay2, _ = cap_api.dispatch(
+                    "POST",
+                    "/api/auth/register",
+                    body={
+                        "username": "cap_user2",
+                        "password": "password123",
+                        "captcha_id": cap2["captcha_id"],
+                        "captcha_code": true_code2,
+                    },
+                )
+                self.assertEqual(c_replay2, 400)
+            finally:
+                cap_app.close()
+
 
 if __name__ == "__main__":
     unittest.main()
