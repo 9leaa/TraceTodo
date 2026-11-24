@@ -91,8 +91,9 @@ final class TodoStore: ObservableObject {
     init() {
         let savedURL = (UserDefaults.standard.string(forKey: "tm_server_url") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let userExplicitlyPickedEnv = UserDefaults.standard.bool(forKey: "tm_env_user_selected")
-        if savedURL.isEmpty || (!userExplicitlyPickedEnv && savedURL == Self.localServerURL) {
-            // Default to online cloud environment unless user explicitly selected local/custom environment
+        if savedURL.isEmpty
+            || (!userExplicitlyPickedEnv && (savedURL == Self.localServerURL || (!SharedWidgetBridge.isTestBuild && savedURL == SharedWidgetBridge.prodCloudDirectIPURL))) {
+            // Default to online HTTPS production environment unless user explicitly selected local/custom environment
             self.serverURL = Self.defaultServerURL
             UserDefaults.standard.set(Self.defaultServerURL, forKey: "tm_server_url")
         } else {
@@ -225,7 +226,8 @@ final class TodoStore: ObservableObject {
     func refresh() async {
         loadOfflineState()
         do {
-            let boot = try await client.fetchBootstrap()
+            let explicitBootSpace: String? = (currentUser != nil && currentUser?.isAdmin == true && spaceId != "default") ? spaceId : nil
+            let boot = try await client.fetchBootstrap(explicitSpaceId: explicitBootSpace)
             if let authStatus = boot.auth {
                 self.authRequired = authStatus.authRequired
                 self.allowRegistration = authStatus.allowRegistration
@@ -254,6 +256,8 @@ final class TodoStore: ObservableObject {
 
             if let prefs = boot.preferences {
                 applyPreferencesResponse(prefs)
+            } else {
+                await refreshPreferences()
             }
             if let syncSt = boot.syncState {
                 self.lastKnownSyncVersion = syncSt.syncVersion

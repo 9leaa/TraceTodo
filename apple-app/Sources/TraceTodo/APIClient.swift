@@ -35,13 +35,17 @@ struct TraceMemoryAPIClient {
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     }
 
-    private func makeURL(path: String, queryItems: [URLQueryItem] = []) throws -> URL {
+    private func makeURL(path: String, queryItems: [URLQueryItem] = [], includeSpaceId: Bool = true) throws -> URL {
         guard var comps = URLComponents(string: cleanBase + path) else {
             throw APIError.invalidURL
         }
         var items = queryItems
-        items.append(URLQueryItem(name: "space_id", value: spaceId))
-        comps.queryItems = items
+        if includeSpaceId {
+            items.append(URLQueryItem(name: "space_id", value: spaceId))
+        }
+        if !items.isEmpty {
+            comps.queryItems = items
+        }
         guard let url = comps.url else {
             throw APIError.invalidURL
         }
@@ -58,8 +62,8 @@ struct TraceMemoryAPIClient {
         return APIError.serverError(code, "", text)
     }
 
-    private func get<T: Decodable>(_ path: String, queryItems: [URLQueryItem] = []) async throws -> T {
-        let url = try makeURL(path: path, queryItems: queryItems)
+    private func get<T: Decodable>(_ path: String, queryItems: [URLQueryItem] = [], includeSpaceId: Bool = true) async throws -> T {
+        let url = try makeURL(path: path, queryItems: queryItems, includeSpaceId: includeSpaceId)
         var req = URLRequest(url: url)
         req.timeoutInterval = 20
         let cleanTok = authToken.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -205,8 +209,11 @@ struct TraceMemoryAPIClient {
             ?? NoteRecordResponse(note: nil, extractionStatus: "completed", filtered: false, filterReason: nil, errorMessage: nil, jobId: nil)
     }
 
-    func fetchBootstrap() async throws -> BootstrapResponse {
-        try await get("/api/bootstrap")
+    func fetchBootstrap(explicitSpaceId: String? = nil) async throws -> BootstrapResponse {
+        if let sp = explicitSpaceId?.trimmingCharacters(in: .whitespacesAndNewlines), !sp.isEmpty {
+            return try await get("/api/bootstrap", queryItems: [URLQueryItem(name: "space_id", value: sp)], includeSpaceId: false)
+        }
+        return try await get("/api/bootstrap", includeSpaceId: false)
     }
 
     func uploadMedia(

@@ -1,0 +1,27 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.tracememory.tracetodo'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.tracememory.tracetodo"
+        minSdk 26
+        targetSdk 34
+        versionCode 3
+        versionName "1.3.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+}
