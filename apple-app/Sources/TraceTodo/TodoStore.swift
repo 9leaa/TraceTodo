@@ -402,6 +402,27 @@ final class TodoStore: ObservableObject {
         }
     }
 
+    func openAuthSheetFromAnywhere() {
+        let hadOpenSheet = isPresentingSettingsSheet
+            || isPresentingSupervisionSheet
+            || isPresentingFloatingAsk
+            || isPresentingNewTaskSheet
+            || editingTaskTarget != nil
+        if hadOpenSheet {
+            isPresentingSettingsSheet = false
+            isPresentingSupervisionSheet = false
+            isPresentingFloatingAsk = false
+            isPresentingNewTaskSheet = false
+            editingTaskTarget = nil
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 220_000_000)
+                self.isPresentingAuthSheet = true
+            }
+        } else {
+            isPresentingAuthSheet = true
+        }
+    }
+
     func login(username: String, password: String) async throws {
         let sess = try await client.login(username: username, password: password)
         self.authToken = sess.token
