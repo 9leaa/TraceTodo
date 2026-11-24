@@ -218,6 +218,9 @@ class TestOfficialWebsiteLanding(unittest.TestCase):
             "LANDING_SCENES",
             'id="mcpExampleBox"',
             'id="heroGuestBtn"',
+            'id="navDownloadAppBtn"',
+            'id="heroDownloadAppCta"',
+            "https://github.com/cu4oral6/TraceTodo/releases",
             "[hidden] { display: none !important; }",
             "tm_auth_token",
             "tm_guest_mode",
@@ -251,6 +254,9 @@ class TestOfficialWebsiteLanding(unittest.TestCase):
             "redirectToLanding('logged_out=1')",
             "redirectToLanding('auth=login&reason=expired')",
             'href="/home"',
+            'id="topAppDownloadLink"',
+            'id="prefsAppDownloadCard"',
+            "https://github.com/cu4oral6/TraceTodo/releases",
             "fetchOpts.keepalive = true",
         ):
             self.assertIn(marker, html, f"Missing expected marker in dashboard.html: {marker}")
