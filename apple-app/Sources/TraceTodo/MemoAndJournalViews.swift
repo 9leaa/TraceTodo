@@ -147,6 +147,21 @@ struct JournalAISummaryResponse: Codable {
     }
 }
 
+let defaultMoodCatalogList: [MoodCatalogItem] = [
+    MoodCatalogItem(id: "joy", icon: "😊", label: "愉悦", color: "#f59e0b", group: "positive"),
+    MoodCatalogItem(id: "focused", icon: "🔥", label: "充实", color: "#ef4444", group: "positive"),
+    MoodCatalogItem(id: "celebrate", icon: "🎉", label: "惊喜", color: "#ec4899", group: "positive"),
+    MoodCatalogItem(id: "grateful", icon: "💖", label: "感恩", color: "#f43f5e", group: "positive"),
+    MoodCatalogItem(id: "calm", icon: "🌿", label: "平静", color: "#10b981", group: "neutral"),
+    MoodCatalogItem(id: "thinking", icon: "🤔", label: "思考", color: "#6366f1", group: "neutral"),
+    MoodCatalogItem(id: "meh", icon: "😶", label: "麻木", color: "#94a3b8", group: "neutral"),
+    MoodCatalogItem(id: "tired", icon: "😴", label: "疲惫", color: "#64748b", group: "neutral"),
+    MoodCatalogItem(id: "sad", icon: "😔", label: "难过", color: "#3b82f6", group: "negative"),
+    MoodCatalogItem(id: "anxious", icon: "😰", label: "焦虑", color: "#8b5cf6", group: "negative"),
+    MoodCatalogItem(id: "angry", icon: "😠", label: "烦躁", color: "#dc2626", group: "negative"),
+    MoodCatalogItem(id: "low", icon: "🌧️", label: "低落", color: "#475569", group: "negative")
+]
+
 // MARK: - Unified Notes Hub (Memos + Daily Journal)
 
 enum NotesHubSubmode: String, Identifiable {
@@ -166,7 +181,7 @@ struct MemoAndJournalStudioView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("📝 备忘录与每日日记")
                             .font(.headline.bold())
-                        Text("备忘卡片、每日心情日记与 AI 今日小结")
+                        Text("轻点卡片查看完整详情，点击「原地修改」在当前位置直接编辑")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -193,12 +208,361 @@ struct MemoAndJournalStudioView: View {
     }
 }
 
-// MARK: - Subview 1: Pinned Memos (Grid / List + Tag Filter + Markdown + OCR)
+// MARK: - Shared Detail & Edit Modal for Memos & Journals
+
+struct NoteDetailPresentationTarget: Identifiable {
+    let kind: NotesHubSubmode
+    var item: RichNoteItemModel
+    var id: String { "\(kind.rawValue)-\(item.noteId)" }
+}
+
+struct NoteAndJournalDetailSheet: View {
+    @EnvironmentObject var store: TodoStore
+    @Environment(\.dismiss) private var dismiss
+
+    let kind: NotesHubSubmode
+    @State var item: RichNoteItemModel
+    let moodsCatalog: [MoodCatalogItem]
+    let onSaved: (RichNoteItemModel?) -> Void
+
+    @State private var isEditing: Bool = false
+    @State private var draftTitle: String = ""
+    @State private var draftTags: String = ""
+    @State private var draftContent: String = ""
+    @State private var draftPinned: Bool = false
+    @State private var draftExtract: Bool = false
+    @State private var draftMood: String = "calm"
+    @State private var existingMedia: [MediaAttachmentModel] = []
+    @State private var newMedia: [MediaAttachmentModel] = []
+    @State private var isSaving: Bool = false
+    @State private var confirmForget: Bool = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    metaHeader
+
+                    Divider()
+
+                    if isEditing {
+                        editSection
+                    } else {
+                        readOnlySection
+                    }
+                }
+                .padding(18)
+            }
+            .iosScrollDismissesKeyboard()
+            .iosKeyboardDoneToolbar()
+            .navigationTitle(sheetTitle)
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { dismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    if isEditing {
+                        Button(isSaving ? "保存中..." : "💾 保存") {
+                            saveChanges()
+                        }
+                        .fontWeight(.bold)
+                        .disabled(isSaving)
+                    } else {
+                        Button("✏️ 编辑") {
+                            enterEditMode()
+                        }
+                        .fontWeight(.semibold)
+                    }
+                }
+            }
+            .confirmationDialog("确认彻底遗忘此条记录？", isPresented: $confirmForget, titleVisibility: .visible) {
+                Button("确认彻底遗忘", role: .destructive) {
+                    Task {
+                        try? await store.client.forgetNote(noteId: item.noteId)
+                        onSaved(nil)
+                        await store.refresh()
+                        dismiss()
+                    }
+                }
+                Button("取消", role: .cancel) {}
+            }
+        }
+        #if os(macOS)
+        .frame(minWidth: 620, minHeight: 500)
+        #endif
+    }
+
+    private var sheetTitle: String {
+        if kind == .journal {
+            let ymd = item.journalDate ?? String(item.eventTime.prefix(10))
+            return "📖 \(ymd) 日记详情"
+        }
+        let t = (item.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? "📌 备忘录详情" : "📌 \(t)"
+    }
+
+    private var metaHeader: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                if isEditing {
+                    badgePill("✏️ 编辑中", filled: true)
+                }
+                if kind == .journal {
+                    let mm = item.moodMeta ?? moodsCatalog.first(where: { $0.id == item.mood }) ?? MoodCatalogItem(id: "calm", icon: "📖", label: "日记", color: "#6366f1", group: nil)
+                    badgePill("\(mm.icon) \(mm.label)", filled: false)
+                    if let wd = item.weekdayLabel, !wd.isEmpty {
+                        badgePill(wd, filled: false)
+                    }
+                    if let lunar = item.lunarLabel, !lunar.isEmpty {
+                        badgePill("🗓️ \(lunar)", filled: false)
+                    }
+                } else {
+                    if item.pinned == true {
+                        badgePill("📌 置顶", filled: true)
+                    }
+                    ForEach(item.tags ?? [], id: \.self) { t in
+                        badgePill("#\(t)", filled: false)
+                    }
+                }
+                badgePill((item.extractMemory ?? false) ? "🧠 记忆联动" : "📌 纯文本归档", filled: false)
+                badgePill("v\(item.revision)", filled: false)
+                Text("更新于 \(String(item.updatedAt.prefix(16)).replacingOccurrences(of: "T", with: " "))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func badgePill(_ text: String, filled: Bool) -> some View {
+        Text(text)
+            .font(.caption2.bold())
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(filled ? store.activeTheme.primaryColor : store.activeTheme.primaryColor.opacity(0.12))
+            .foregroundStyle(filled ? Color.white : store.activeTheme.primaryColor)
+            .clipShape(Capsule())
+    }
+
+    private var readOnlySection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if kind == .memo, let t = item.title, !t.isEmpty {
+                Text(t)
+                    .font(.title3.bold())
+            }
+
+            if item.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("（无正文内容）")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                MarkdownAnswerView(text: item.content)
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.primary.opacity(0.035))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
+            if let mList = item.media, !mList.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("🖼️ 附件照片（轻点查看原图与 OCR）")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                    MediaThumbnailGridView(media: mList)
+                }
+            }
+
+            HStack(spacing: 10) {
+                if kind == .memo {
+                    Button((item.pinned ?? false) ? "取消置顶" : "📌 置顶") {
+                        Task {
+                            let nextPin = !(item.pinned ?? false)
+                            try? await store.client.toggleMemoPin(noteId: item.noteId, pinned: nextPin)
+                            if let refreshed = try? await store.client.fetchMemos(limit: 120),
+                               let updated = refreshed.memos.first(where: { $0.noteId == item.noteId }) {
+                                item = updated
+                                onSaved(updated)
+                            } else {
+                                onSaved(nil)
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Button("✏️ 直接编辑") {
+                    enterEditMode()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(store.activeTheme.primaryColor)
+
+                Spacer()
+
+                Button(role: .destructive) {
+                    confirmForget = true
+                } label: {
+                    Label("遗忘", systemImage: "trash")
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(.top, 6)
+        }
+    }
+
+    private var editSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if kind == .journal {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(moodsCatalog) { m in
+                            Button {
+                                draftMood = m.id
+                            } label: {
+                                Text("\(m.icon) \(m.label)")
+                                    .font(.caption.bold())
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(draftMood == m.id ? store.activeTheme.primaryColor.opacity(0.18) : Color.primary.opacity(0.05))
+                                    .foregroundStyle(draftMood == m.id ? store.activeTheme.primaryColor : .primary)
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            } else {
+                HStack(spacing: 8) {
+                    TextField("备忘标题（可选）...", text: $draftTitle)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.subheadline.bold())
+                    TextField("#标签（空格分隔）", text: $draftTags)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 180)
+                }
+            }
+
+            TextField("输入 Markdown 正文...", text: $draftContent, axis: .vertical)
+                .lineLimit(6...16)
+                .textFieldStyle(.roundedBorder)
+
+            let combinedMedia = existingMedia + newMedia
+            if !combinedMedia.isEmpty {
+                MediaThumbnailGridView(media: combinedMedia) { removed in
+                    if existingMedia.contains(where: { $0.mediaId == removed.mediaId }) {
+                        existingMedia.removeAll { $0.mediaId == removed.mediaId }
+                    } else {
+                        newMedia.removeAll { $0.mediaId == removed.mediaId }
+                    }
+                    Task { try? await store.client.deleteMedia(mediaId: removed.mediaId) }
+                }
+            }
+
+            HStack(spacing: 12) {
+                if kind == .memo {
+                    Toggle("📌 置顶", isOn: $draftPinned)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                }
+                Toggle("🧠 提炼长期记忆", isOn: $draftExtract)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                Spacer()
+            }
+            .font(.caption)
+
+            HStack(spacing: 8) {
+                ImageAttachPickerButton(pendingMedia: $newMedia)
+                VoiceMicButton(text: $draftContent, compact: false)
+                Spacer()
+                Button("取消") {
+                    for nm in newMedia {
+                        Task { try? await store.client.deleteMedia(mediaId: nm.mediaId) }
+                    }
+                    newMedia = []
+                    isEditing = false
+                }
+                .buttonStyle(.bordered)
+
+                Button(isSaving ? "保存中..." : "💾 保存修改") {
+                    saveChanges()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(store.activeTheme.primaryColor)
+                .disabled(isSaving)
+            }
+        }
+    }
+
+    private func enterEditMode() {
+        draftTitle = item.title ?? ""
+        draftTags = (item.tags ?? []).joined(separator: " ")
+        draftContent = item.content
+        draftPinned = item.pinned ?? false
+        draftExtract = item.extractMemory ?? false
+        draftMood = item.mood ?? "calm"
+        existingMedia = item.media ?? []
+        newMedia = []
+        isEditing = true
+    }
+
+    private func saveChanges() {
+        let cleanContent = draftContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanTitle = draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleanContent.isEmpty && cleanTitle.isEmpty && existingMedia.isEmpty && newMedia.isEmpty {
+            store.showBanner("请输入内容或附加图片后再保存")
+            return
+        }
+        isSaving = true
+        dismissAppKeyboard()
+        Task {
+            defer { isSaving = false }
+            if kind == .memo {
+                let body: [String: Any] = [
+                    "note_id": item.noteId,
+                    "title": cleanTitle,
+                    "content": cleanContent,
+                    "tags": draftTags,
+                    "pinned": draftPinned,
+                    "extract_memory": draftExtract,
+                    "media_ids": newMedia.map(\.mediaId)
+                ]
+                if let res = try? await store.client.saveMemo(body: body) {
+                    item = res.memo
+                    newMedia = []
+                    isEditing = false
+                    onSaved(res.memo)
+                    store.showBanner("✅ 备忘录修改已保存")
+                }
+            } else {
+                let ymd = item.journalDate ?? String(item.eventTime.prefix(10))
+                let body: [String: Any] = [
+                    "note_id": item.noteId,
+                    "journal_date": ymd,
+                    "mood": draftMood,
+                    "content": cleanContent,
+                    "extract_memory": draftExtract,
+                    "media_ids": newMedia.map(\.mediaId)
+                ]
+                if let res = try? await store.client.saveJournal(body: body) {
+                    item = res.journal
+                    newMedia = []
+                    isEditing = false
+                    onSaved(res.journal)
+                    store.showBanner("📖 \(ymd) 日记修改已保存")
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Subview 1: Pinned Memos (Grid / List + Click Detail + In-Place Card Edit)
 
 struct MemosGalleryView: View {
     @EnvironmentObject var store: TodoStore
 
-    @State private var editingNoteId: String = ""
+    // Top New Memo Compose State
     @State private var title: String = ""
     @State private var tagsInput: String = ""
     @State private var content: String = ""
@@ -206,6 +570,21 @@ struct MemosGalleryView: View {
     @State private var extractMemory: Bool = false
     @State private var pendingMedia: [MediaAttachmentModel] = []
 
+    // In-Place Card Editing State (`在原位置直接修改`)
+    @State private var inlineNoteId: String = ""
+    @State private var inlineTitle: String = ""
+    @State private var inlineTags: String = ""
+    @State private var inlineContent: String = ""
+    @State private var inlinePinned: Bool = false
+    @State private var inlineExtract: Bool = false
+    @State private var inlineExistingMedia: [MediaAttachmentModel] = []
+    @State private var inlineNewMedia: [MediaAttachmentModel] = []
+    @State private var isSavingInline: Bool = false
+
+    // Detail Modal State (`点击查看详情`)
+    @State private var detailTarget: NoteDetailPresentationTarget?
+
+    // Filters & List
     @State private var searchQuery: String = ""
     @State private var selectedTag: String = ""
     @State private var pinnedOnly: Bool = false
@@ -214,7 +593,7 @@ struct MemosGalleryView: View {
     @State private var isLoading: Bool = false
 
     private let gridColumns = [
-        GridItem(.adaptive(minimum: 260, maximum: 440), spacing: 12)
+        GridItem(.adaptive(minimum: 270, maximum: 460), spacing: 12)
     ]
 
     var body: some View {
@@ -226,12 +605,22 @@ struct MemosGalleryView: View {
         .task {
             await reloadMemos()
         }
+        .sheet(item: $detailTarget) { target in
+            NoteAndJournalDetailSheet(
+                kind: .memo,
+                item: target.item,
+                moodsCatalog: defaultMoodCatalogList
+            ) { _ in
+                Task { await reloadMemos() }
+            }
+            .environmentObject(store)
+        }
     }
 
     private var composeCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                TextField("备忘标题（可选）...", text: $title)
+                TextField("新建备忘标题（可选）...", text: $title)
                     .textFieldStyle(.roundedBorder)
                     .font(.subheadline.bold())
                 TextField("#标签（空格分隔）", text: $tagsInput)
@@ -239,7 +628,7 @@ struct MemosGalleryView: View {
                     .frame(maxWidth: 165)
             }
 
-            TextField("支持 Markdown（**加粗**、- 列表、#标签）与附图 OCR...", text: $content, axis: .vertical)
+            TextField("支持 Markdown（**加粗**、- 列表、#标签）与拍照/附图 OCR...", text: $content, axis: .vertical)
                 .lineLimit(3...7)
                 .textFieldStyle(.roundedBorder)
 
@@ -262,17 +651,11 @@ struct MemosGalleryView: View {
             .font(.caption)
 
             HStack(spacing: 8) {
-                if !editingNoteId.isEmpty {
-                    Button("取消编辑") {
-                        resetCompose()
-                    }
-                    .buttonStyle(.bordered)
-                }
                 Spacer()
                 ImageAttachPickerButton(pendingMedia: $pendingMedia)
                 VoiceMicButton(text: $content, compact: false)
-                Button(editingNoteId.isEmpty ? "✍️ 保存备忘" : "💾 保存修改") {
-                    submitMemo()
+                Button("✍️ 保存备忘") {
+                    submitNewMemo()
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(store.activeTheme.primaryColor)
@@ -353,64 +736,176 @@ struct MemosGalleryView: View {
             ProgressView("正在加载备忘录...")
                 .frame(maxWidth: .infinity, minHeight: 160)
         } else if items.isEmpty {
-            ContentUnavailableView("暂无备忘录", systemImage: "pin.slash", description: Text("支持置顶、#标签筛选、Markdown 与附图 OCR"))
+            ContentUnavailableView("暂无备忘录", systemImage: "pin.slash", description: Text("支持置顶、#标签筛选、点击查看详情、原地编辑与拍照附图"))
                 .padding(.vertical, 24)
         } else if useGridLayout {
             LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 12) {
                 ForEach(items) { item in
-                    memoCard(item)
+                    memoOrInlineEditor(item)
                 }
             }
         } else {
             VStack(spacing: 12) {
                 ForEach(items) { item in
-                    memoCard(item)
+                    memoOrInlineEditor(item)
                 }
             }
         }
     }
 
+    @ViewBuilder
+    private func memoOrInlineEditor(_ item: RichNoteItemModel) -> some View {
+        if inlineNoteId == item.noteId {
+            inlineMemoEditorCard(item)
+        } else {
+            memoCard(item)
+        }
+    }
+
+    private func inlineMemoEditorCard(_ item: RichNoteItemModel) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("✏️ 卡片原地修改")
+                    .font(.caption2.bold())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(store.activeTheme.primaryColor)
+                    .foregroundStyle(.white)
+                    .clipShape(Capsule())
+                Spacer()
+                Toggle("📌 置顶", isOn: $inlinePinned)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .font(.caption2)
+                Toggle("🧠 记忆", isOn: $inlineExtract)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .font(.caption2)
+            }
+
+            HStack(spacing: 6) {
+                TextField("备忘标题（可选）...", text: $inlineTitle)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.subheadline.bold())
+                TextField("#标签", text: $inlineTags)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 130)
+            }
+
+            TextField("直接在此修改备忘正文...", text: $inlineContent, axis: .vertical)
+                .lineLimit(4...10)
+                .textFieldStyle(.roundedBorder)
+
+            let combined = inlineExistingMedia + inlineNewMedia
+            if !combined.isEmpty {
+                MediaThumbnailGridView(media: combined) { removed in
+                    if inlineExistingMedia.contains(where: { $0.mediaId == removed.mediaId }) {
+                        inlineExistingMedia.removeAll { $0.mediaId == removed.mediaId }
+                    } else {
+                        inlineNewMedia.removeAll { $0.mediaId == removed.mediaId }
+                    }
+                    Task { try? await store.client.deleteMedia(mediaId: removed.mediaId) }
+                }
+            }
+
+            HStack(spacing: 6) {
+                ImageAttachPickerButton(pendingMedia: $inlineNewMedia, compact: true)
+                VoiceMicButton(text: $inlineContent, compact: true)
+                Spacer()
+                Button("取消") {
+                    cancelInlineEdit()
+                }
+                .font(.caption)
+                .buttonStyle(.bordered)
+
+                Button(isSavingInline ? "保存中..." : "💾 保存") {
+                    saveInlineMemo(noteId: item.noteId)
+                }
+                .font(.caption.bold())
+                .buttonStyle(.borderedProminent)
+                .tint(store.activeTheme.primaryColor)
+                .disabled(isSavingInline)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(.background)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(store.activeTheme.primaryColor, lineWidth: 2)
+        )
+        .shadow(color: store.activeTheme.primaryColor.opacity(0.14), radius: 8, y: 3)
+    }
+
     private func memoCard(_ item: RichNoteItemModel) -> some View {
         let isPin = item.pinned ?? false
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                if isPin {
-                    Text("📌 置顶")
-                        .font(.caption2.bold())
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(store.activeTheme.primaryColor)
-                        .foregroundStyle(.white)
-                        .clipShape(Capsule())
+            // Clickable Body Area -> Opens Full Detail Modal
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    if isPin {
+                        Text("📌 置顶")
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(store.activeTheme.primaryColor)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                    }
+                    ForEach(item.tags ?? [], id: \.self) { t in
+                        Button {
+                            selectedTag = (selectedTag == t) ? "" : t
+                            Task { await reloadMemos() }
+                        } label: {
+                            Text("#\(t)")
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(store.activeTheme.primaryColor.opacity(0.12))
+                                .foregroundStyle(store.activeTheme.primaryColor)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Spacer(minLength: 4)
+                    Text(String(item.updatedAt.prefix(16)).replacingOccurrences(of: "T", with: " "))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
-                ForEach(item.tags ?? [], id: \.self) { t in
-                    Text("#\(t)")
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(store.activeTheme.primaryColor.opacity(0.12))
-                        .foregroundStyle(store.activeTheme.primaryColor)
-                        .clipShape(Capsule())
+
+                if let t = item.title, !t.isEmpty {
+                    Text(t)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
                 }
-                Spacer(minLength: 4)
-                Text(String(item.updatedAt.prefix(16)).replacingOccurrences(of: "T", with: " "))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
 
-            if let t = item.title, !t.isEmpty {
-                Text(t)
-                    .font(.headline)
+                MarkdownAnswerView(text: item.content)
+                    .lineLimit(6)
             }
-
-            MarkdownAnswerView(text: item.content)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                detailTarget = NoteDetailPresentationTarget(kind: .memo, item: item)
+            }
 
             if let mList = item.media, !mList.isEmpty {
                 MediaThumbnailGridView(media: mList)
             }
 
+            Divider().opacity(0.45)
+
             HStack(spacing: 10) {
+                Button {
+                    detailTarget = NoteDetailPresentationTarget(kind: .memo, item: item)
+                } label: {
+                    Text("🔍 详情")
+                        .font(.caption.weight(.medium))
+                }
+                .buttonStyle(.borderless)
+
                 Spacer()
+
                 Button(isPin ? "取消置顶" : "📌 置顶") {
                     Task {
                         try? await store.client.toggleMemoPin(noteId: item.noteId, pinned: !isPin)
@@ -420,15 +915,11 @@ struct MemosGalleryView: View {
                 .font(.caption)
                 .buttonStyle(.borderless)
 
-                Button("✏️ 编辑") {
-                    editingNoteId = item.noteId
-                    title = item.title ?? ""
-                    tagsInput = (item.tags ?? []).joined(separator: " ")
-                    content = item.content
-                    pinned = item.pinned ?? false
-                    extractMemory = item.extractMemory ?? false
+                Button("✏️ 原地改") {
+                    startInlineEdit(item)
                 }
-                .font(.caption)
+                .font(.caption.bold())
+                .foregroundStyle(store.activeTheme.primaryColor)
                 .buttonStyle(.borderless)
 
                 Button(role: .destructive) {
@@ -454,19 +945,62 @@ struct MemosGalleryView: View {
         )
     }
 
-    private func resetCompose() {
-        editingNoteId = ""
-        title = ""
-        tagsInput = ""
-        content = ""
-        pinned = false
-        extractMemory = false
-        pendingMedia = []
+    private func startInlineEdit(_ item: RichNoteItemModel) {
+        for nm in inlineNewMedia {
+            Task { try? await store.client.deleteMedia(mediaId: nm.mediaId) }
+        }
+        inlineNoteId = item.noteId
+        inlineTitle = item.title ?? ""
+        inlineTags = (item.tags ?? []).joined(separator: " ")
+        inlineContent = item.content
+        inlinePinned = item.pinned ?? false
+        inlineExtract = item.extractMemory ?? false
+        inlineExistingMedia = item.media ?? []
+        inlineNewMedia = []
     }
 
-    private func submitMemo() {
+    private func cancelInlineEdit() {
+        for nm in inlineNewMedia {
+            Task { try? await store.client.deleteMedia(mediaId: nm.mediaId) }
+        }
+        inlineNewMedia = []
+        inlineExistingMedia = []
+        inlineNoteId = ""
+    }
+
+    private func saveInlineMemo(noteId: String) {
+        let cleanTitle = inlineTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanContent = inlineContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleanTitle.isEmpty && cleanContent.isEmpty && inlineExistingMedia.isEmpty && inlineNewMedia.isEmpty {
+            store.showBanner("请输入备忘内容或附加图片")
+            return
+        }
+        isSavingInline = true
+        dismissAppKeyboard()
         let body: [String: Any] = [
-            "note_id": editingNoteId,
+            "note_id": noteId,
+            "title": cleanTitle,
+            "content": cleanContent,
+            "tags": inlineTags,
+            "pinned": inlinePinned,
+            "extract_memory": inlineExtract,
+            "media_ids": inlineNewMedia.map(\.mediaId)
+        ]
+        Task {
+            defer { isSavingInline = false }
+            if (try? await store.client.saveMemo(body: body)) != nil {
+                inlineNewMedia = []
+                inlineExistingMedia = []
+                inlineNoteId = ""
+                store.showBanner("✅ 已在原位置保存备忘修改")
+                await reloadMemos()
+            }
+        }
+    }
+
+    private func submitNewMemo() {
+        let body: [String: Any] = [
+            "note_id": "",
             "title": title.trimmingCharacters(in: .whitespacesAndNewlines),
             "content": content.trimmingCharacters(in: .whitespacesAndNewlines),
             "tags": tagsInput,
@@ -477,7 +1011,13 @@ struct MemosGalleryView: View {
         dismissAppKeyboard()
         Task {
             _ = try? await store.client.saveMemo(body: body)
-            resetCompose()
+            title = ""
+            tagsInput = ""
+            content = ""
+            pinned = false
+            extractMemory = false
+            pendingMedia = []
+            store.showBanner("✅ 新备忘录已保存")
             await reloadMemos()
         }
     }
@@ -491,7 +1031,7 @@ struct MemosGalleryView: View {
     }
 }
 
-// MARK: - Subview 2: One-Page-Per-Day Mood Journal + AI Daily Summary
+// MARK: - Subview 2: One-Page-Per-Day Mood Journal + Click Detail + In-Place Edit
 
 struct JournalDailyStudioView: View {
     @EnvironmentObject var store: TodoStore
@@ -504,35 +1044,41 @@ struct JournalDailyStudioView: View {
     @State private var overview: JournalOverviewResponse?
     @State private var isBusy: Bool = false
 
-    private let fallbackMoods: [MoodCatalogItem] = [
-        MoodCatalogItem(id: "joy", icon: "😊", label: "愉悦", color: "#f59e0b", group: "positive"),
-        MoodCatalogItem(id: "focused", icon: "🔥", label: "充实", color: "#ef4444", group: "positive"),
-        MoodCatalogItem(id: "celebrate", icon: "🎉", label: "惊喜", color: "#ec4899", group: "positive"),
-        MoodCatalogItem(id: "grateful", icon: "💖", label: "感恩", color: "#f43f5e", group: "positive"),
-        MoodCatalogItem(id: "calm", icon: "🌿", label: "平静", color: "#10b981", group: "neutral"),
-        MoodCatalogItem(id: "thinking", icon: "🤔", label: "思考", color: "#6366f1", group: "neutral"),
-        MoodCatalogItem(id: "meh", icon: "😶", label: "麻木", color: "#94a3b8", group: "neutral"),
-        MoodCatalogItem(id: "tired", icon: "😴", label: "疲惫", color: "#64748b", group: "neutral"),
-        MoodCatalogItem(id: "sad", icon: "😔", label: "难过", color: "#3b82f6", group: "negative"),
-        MoodCatalogItem(id: "anxious", icon: "😰", label: "焦虑", color: "#8b5cf6", group: "negative"),
-        MoodCatalogItem(id: "angry", icon: "😠", label: "烦躁", color: "#dc2626", group: "negative"),
-        MoodCatalogItem(id: "low", icon: "🌧️", label: "低落", color: "#475569", group: "negative")
-    ]
+    // In-Place History Journal Edit State (`在原位置直接修改`)
+    @State private var inlineJournalId: String = ""
+    @State private var inlineJournalMood: String = "calm"
+    @State private var inlineJournalContent: String = ""
+    @State private var inlineJournalExtract: Bool = true
+    @State private var inlineExistingMedia: [MediaAttachmentModel] = []
+    @State private var inlineNewMedia: [MediaAttachmentModel] = []
+    @State private var isSavingInline: Bool = false
+
+    // Detail Modal State (`点击查看详情`)
+    @State private var detailTarget: NoteDetailPresentationTarget?
 
     var body: some View {
+        let moods = overview?.moodCatalog ?? defaultMoodCatalogList
         VStack(alignment: .leading, spacing: 14) {
-            journalEditorCard
-            historySection
+            journalEditorCard(moods: moods)
+            historySection(moods: moods)
         }
         .task {
             await reloadJournal()
         }
+        .sheet(item: $detailTarget) { target in
+            NoteAndJournalDetailSheet(
+                kind: .journal,
+                item: target.item,
+                moodsCatalog: moods
+            ) { _ in
+                Task { await reloadJournal() }
+            }
+            .environmentObject(store)
+        }
     }
 
-    private var journalEditorCard: some View {
-        let moods = overview?.moodCatalog ?? fallbackMoods
-        return VStack(alignment: .leading, spacing: 12) {
-            // Date navigator + AI Summary triggers
+    private func journalEditorCard(moods: [MoodCatalogItem]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Button { shiftDay(-1) } label: { Image(systemName: "chevron.left") }
                     .buttonStyle(.bordered)
@@ -581,7 +1127,6 @@ struct JournalDailyStudioView: View {
                 }
             }
 
-            // Mood Selector
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(moods) { m in
@@ -604,6 +1149,15 @@ struct JournalDailyStudioView: View {
             TextField("写下今天的经历、感悟或点击右上角「✨ AI 今日小结」自动汇总...", text: $draftContent, axis: .vertical)
                 .lineLimit(6...14)
                 .textFieldStyle(.roundedBorder)
+
+            if let curMedia = overview?.currentEntry?.media, !curMedia.isEmpty {
+                MediaThumbnailGridView(media: curMedia) { removed in
+                    Task {
+                        try? await store.client.deleteMedia(mediaId: removed.mediaId)
+                        await reloadJournal()
+                    }
+                }
+            }
 
             if !pendingMedia.isEmpty {
                 MediaThumbnailGridView(media: pendingMedia) { item in
@@ -647,10 +1201,10 @@ struct JournalDailyStudioView: View {
             .clipShape(Capsule())
     }
 
-    private var historySection: some View {
+    private func historySection(moods: [MoodCatalogItem]) -> some View {
         let list = overview?.timeline ?? []
         return VStack(alignment: .leading, spacing: 10) {
-            Text("🕰️ 历史日记流（一日一页 · 共 \(list.count) 篇）")
+            Text("🕰️ 历史日记流（一日一页 · 共 \(list.count) 篇 · 点击卡片看详情或原地修改）")
                 .font(.subheadline.bold())
 
             if list.isEmpty {
@@ -660,48 +1214,231 @@ struct JournalDailyStudioView: View {
                     .padding(.vertical, 8)
             } else {
                 ForEach(list) { entry in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("📅 \(entry.journalDate ?? String(entry.eventTime.prefix(10)))")
-                                .font(.subheadline.bold())
-                            if let mm = entry.moodMeta {
-                                Text("\(mm.icon) \(mm.label)")
-                                    .font(.caption2.bold())
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 2)
-                                    .background(store.activeTheme.primaryColor.opacity(0.12))
-                                    .clipShape(Capsule())
-                            }
-                            if let lunar = entry.lunarLabel, !lunar.isEmpty {
-                                Text(lunar)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button("切换到此日") {
-                                if let jd = entry.journalDate, !jd.isEmpty {
-                                    selectedDate = jd
-                                    Task { await reloadJournal() }
-                                }
-                            }
-                            .font(.caption)
-                            .buttonStyle(.borderless)
-                        }
-
-                        MarkdownAnswerView(text: entry.content)
-
-                        if let m = entry.media, !m.isEmpty {
-                            MediaThumbnailGridView(media: m)
-                        }
+                    if inlineJournalId == entry.noteId {
+                        inlineJournalCard(entry: entry, moods: moods)
+                    } else {
+                        historyJournalCard(entry: entry)
                     }
-                    .padding(12)
-                    .background(.background)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-                    )
                 }
+            }
+        }
+    }
+
+    private func inlineJournalCard(entry: RichNoteItemModel, moods: [MoodCatalogItem]) -> some View {
+        let ymd = entry.journalDate ?? String(entry.eventTime.prefix(10))
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("📅 \(ymd) \(entry.weekdayLabel ?? "")")
+                    .font(.subheadline.bold())
+                if let lunar = entry.lunarLabel, !lunar.isEmpty {
+                    Text(lunar)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("✏️ 原地修改")
+                    .font(.caption2.bold())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(store.activeTheme.primaryColor)
+                    .foregroundStyle(.white)
+                    .clipShape(Capsule())
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(moods) { m in
+                        Button {
+                            inlineJournalMood = m.id
+                        } label: {
+                            Text("\(m.icon) \(m.label)")
+                                .font(.caption2.bold())
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 5)
+                                .background(inlineJournalMood == m.id ? store.activeTheme.primaryColor.opacity(0.18) : Color.primary.opacity(0.05))
+                                .foregroundStyle(inlineJournalMood == m.id ? store.activeTheme.primaryColor : .primary)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            TextField("直接修改当日日记正文...", text: $inlineJournalContent, axis: .vertical)
+                .lineLimit(4...12)
+                .textFieldStyle(.roundedBorder)
+
+            let combined = inlineExistingMedia + inlineNewMedia
+            if !combined.isEmpty {
+                MediaThumbnailGridView(media: combined) { removed in
+                    if inlineExistingMedia.contains(where: { $0.mediaId == removed.mediaId }) {
+                        inlineExistingMedia.removeAll { $0.mediaId == removed.mediaId }
+                    } else {
+                        inlineNewMedia.removeAll { $0.mediaId == removed.mediaId }
+                    }
+                    Task { try? await store.client.deleteMedia(mediaId: removed.mediaId) }
+                }
+            }
+
+            HStack(spacing: 8) {
+                Toggle("🧠 沉淀长期记忆", isOn: $inlineJournalExtract)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .font(.caption2)
+                Spacer()
+                ImageAttachPickerButton(pendingMedia: $inlineNewMedia, compact: true)
+                VoiceMicButton(text: $inlineJournalContent, compact: true)
+                Button("取消") {
+                    cancelInlineJournalEdit()
+                }
+                .font(.caption)
+                .buttonStyle(.bordered)
+                Button(isSavingInline ? "保存中..." : "💾 保存") {
+                    saveInlineJournal(entry: entry)
+                }
+                .font(.caption.bold())
+                .buttonStyle(.borderedProminent)
+                .tint(store.activeTheme.primaryColor)
+                .disabled(isSavingInline)
+            }
+        }
+        .padding(14)
+        .background(.background)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(store.activeTheme.primaryColor, lineWidth: 2)
+        )
+    }
+
+    private func historyJournalCard(entry: RichNoteItemModel) -> some View {
+        let ymd = entry.journalDate ?? String(entry.eventTime.prefix(10))
+        return VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("📅 \(ymd) \(entry.weekdayLabel ?? "")")
+                        .font(.subheadline.bold())
+                    if let mm = entry.moodMeta {
+                        Text("\(mm.icon) \(mm.label)")
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(store.activeTheme.primaryColor.opacity(0.12))
+                            .clipShape(Capsule())
+                    }
+                    if let lunar = entry.lunarLabel, !lunar.isEmpty {
+                        Text(lunar)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+
+                MarkdownAnswerView(text: entry.content)
+                    .lineLimit(6)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                detailTarget = NoteDetailPresentationTarget(kind: .journal, item: entry)
+            }
+
+            if let m = entry.media, !m.isEmpty {
+                MediaThumbnailGridView(media: m)
+            }
+
+            Divider().opacity(0.4)
+
+            HStack(spacing: 10) {
+                Button("🔍 详情") {
+                    detailTarget = NoteDetailPresentationTarget(kind: .journal, item: entry)
+                }
+                .font(.caption)
+                .buttonStyle(.borderless)
+
+                Spacer()
+
+                Button("✏️ 原地改") {
+                    startInlineJournalEdit(entry)
+                }
+                .font(.caption.bold())
+                .foregroundStyle(store.activeTheme.primaryColor)
+                .buttonStyle(.borderless)
+
+                Button("切换到此日") {
+                    selectedDate = ymd
+                    Task { await reloadJournal() }
+                }
+                .font(.caption)
+                .buttonStyle(.borderless)
+
+                Button(role: .destructive) {
+                    Task {
+                        try? await store.client.forgetNote(noteId: entry.noteId)
+                        await reloadJournal()
+                    }
+                } label: {
+                    Text("🗑️ 遗忘")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .padding(12)
+        .background(.background)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(ymd == selectedDate ? store.activeTheme.primaryColor : Color.primary.opacity(0.07), lineWidth: ymd == selectedDate ? 1.5 : 1)
+        )
+    }
+
+    private func startInlineJournalEdit(_ entry: RichNoteItemModel) {
+        for nm in inlineNewMedia {
+            Task { try? await store.client.deleteMedia(mediaId: nm.mediaId) }
+        }
+        inlineJournalId = entry.noteId
+        inlineJournalMood = entry.mood ?? "calm"
+        inlineJournalContent = entry.content
+        inlineJournalExtract = entry.extractMemory ?? true
+        inlineExistingMedia = entry.media ?? []
+        inlineNewMedia = []
+    }
+
+    private func cancelInlineJournalEdit() {
+        for nm in inlineNewMedia {
+            Task { try? await store.client.deleteMedia(mediaId: nm.mediaId) }
+        }
+        inlineNewMedia = []
+        inlineExistingMedia = []
+        inlineJournalId = ""
+    }
+
+    private func saveInlineJournal(entry: RichNoteItemModel) {
+        let ymd = entry.journalDate ?? String(entry.eventTime.prefix(10))
+        let clean = inlineJournalContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        if clean.isEmpty && inlineExistingMedia.isEmpty && inlineNewMedia.isEmpty {
+            store.showBanner("请输入日记内容或附加照片")
+            return
+        }
+        isSavingInline = true
+        dismissAppKeyboard()
+        let body: [String: Any] = [
+            "note_id": entry.noteId,
+            "journal_date": ymd,
+            "mood": inlineJournalMood,
+            "content": clean,
+            "extract_memory": inlineJournalExtract,
+            "media_ids": inlineNewMedia.map(\.mediaId)
+        ]
+        Task {
+            defer { isSavingInline = false }
+            if (try? await store.client.saveJournal(body: body)) != nil {
+                inlineNewMedia = []
+                inlineExistingMedia = []
+                inlineJournalId = ""
+                store.showBanner("📖 已原地保存 \(ymd) 日记")
+                await reloadJournal()
             }
         }
     }

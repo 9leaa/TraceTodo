@@ -290,6 +290,17 @@ struct CalendarTimelineView: View {
     @State private var adaptiveDensity: Bool = true
     @State private var expandedBandIds: Set<String> = []
 
+    // In-Place Calendar Task Editing State (`在原位置直接修改`)
+    @State private var inlineTaskId: String = ""
+    @State private var inlineTitle: String = ""
+    @State private var inlineDate: Date = Date()
+    @State private var inlineIsAllDay: Bool = false
+    @State private var inlineHour: Int = 9
+    @State private var inlineMinute: Int = 0
+    @State private var inlineDuration: Int = 60
+    @State private var inlineMacaron: MacaronTheme = .sky
+    @State private var isSavingInline: Bool = false
+
     private let hourHeight: CGFloat = 44
 
     private func buildWeekLayout(days: [CalendarDayBucket]) -> CalendarWeekLayoutMetrics {
@@ -614,18 +625,20 @@ struct CalendarTimelineView: View {
                             .foregroundStyle(.tertiary)
                     } else {
                         ForEach(d.allDayTasks) { item in
-                            Text("\(item.isDone ? "✓ " : "")\(item.title)")
-                                .font(.system(size: 10, weight: .semibold))
-                                .lineLimit(1)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(isDark ? item.macaron.accentColor.opacity(0.24) : item.macaron.cardBackground)
-                                .foregroundStyle(isDark ? Color.white.opacity(0.92) : Color.black.opacity(0.82))
-                                .clipShape(RoundedRectangle(cornerRadius: 5))
-                                .onTapGesture {
-                                    openTaskEditor(memoryId: item.memoryId)
-                                }
+                            Button {
+                                openTaskEditor(memoryId: item.memoryId)
+                            } label: {
+                                Text("\(item.isDone ? "✓ " : "")\(item.title)")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 2)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(isDark ? item.macaron.accentColor.opacity(0.24) : item.macaron.cardBackground)
+                                    .foregroundStyle(isDark ? Color.white.opacity(0.92) : Color.black.opacity(0.82))
+                                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -756,49 +769,51 @@ struct CalendarTimelineView: View {
                 let titleFg = isDark ? Color.white.opacity(0.94) : Color.black.opacity(0.85)
                 let timeFg = isDark ? Color.white.opacity(0.78) : blk.macaron.accentColor
 
-                Group {
-                    if hVal < 35 {
-                        HStack(spacing: 3) {
-                            Text(String(blk.timeRangeLabel.prefix(5)))
-                                .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-                                .foregroundStyle(timeFg)
-                            Text("\(blk.isDone ? "✓" : "")\(blk.title)")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(titleFg)
-                                .strikethrough(blk.isDone)
-                                .lineLimit(1)
-                        }
-                        .padding(.horizontal, 5)
-                        .frame(width: blkW, height: hVal, alignment: .leading)
-                    } else {
-                        VStack(alignment: .leading, spacing: 1.5) {
-                            Text(blk.timeRangeLabel)
-                                .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-                                .foregroundStyle(timeFg)
-                                .lineLimit(1)
-                            Text("\(blk.isDone ? "✓ " : "")\(blk.title)")
-                                .font(.system(size: 10.5, weight: .bold))
-                                .foregroundStyle(titleFg)
-                                .strikethrough(blk.isDone)
-                                .lineLimit(hVal > 52 ? 3 : 2)
-                        }
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 3)
-                        .frame(width: blkW, height: hVal, alignment: .topLeading)
-                    }
-                }
-                .background(cardBg)
-                .overlay(alignment: .leading) {
-                    Rectangle()
-                        .fill(blk.macaron.accentColor)
-                        .frame(width: 3)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .opacity(blk.isDone ? 0.62 : 1.0)
-                .offset(x: offsetX, y: topY)
-                .onTapGesture {
+                Button {
                     openTaskEditor(memoryId: blk.memoryId)
+                } label: {
+                    Group {
+                        if hVal < 35 {
+                            HStack(spacing: 3) {
+                                Text(String(blk.timeRangeLabel.prefix(5)))
+                                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(timeFg)
+                                Text("\(blk.isDone ? "✓" : "")\(blk.title)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(titleFg)
+                                    .strikethrough(blk.isDone)
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 5)
+                            .frame(width: blkW, height: hVal, alignment: .leading)
+                        } else {
+                            VStack(alignment: .leading, spacing: 1.5) {
+                                Text(blk.timeRangeLabel)
+                                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(timeFg)
+                                    .lineLimit(1)
+                                Text("\(blk.isDone ? "✓ " : "")\(blk.title)")
+                                    .font(.system(size: 10.5, weight: .bold))
+                                    .foregroundStyle(titleFg)
+                                    .strikethrough(blk.isDone)
+                                    .lineLimit(hVal > 52 ? 3 : 2)
+                            }
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 3)
+                            .frame(width: blkW, height: hVal, alignment: .topLeading)
+                        }
+                    }
+                    .background(cardBg)
+                    .overlay(alignment: .leading) {
+                        Rectangle()
+                            .fill(blk.macaron.accentColor)
+                            .frame(width: 3)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .opacity(blk.isDone ? 0.62 : 1.0)
                 }
+                .buttonStyle(.plain)
+                .offset(x: offsetX, y: topY)
             }
 
             // Current Time Red Indicator Line
@@ -871,27 +886,41 @@ struct CalendarTimelineView: View {
                         }
 
                         ForEach(d.timedBlocks.prefix(2)) { tb in
-                            Text(tb.title)
-                                .font(.system(size: 9.5, weight: .medium))
-                                .lineLimit(1)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(tb.macaron.cardBackground)
-                                .foregroundStyle(Color.black.opacity(0.82))
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
-                        if d.timedBlocks.count < 2 {
-                            ForEach(d.allDayTasks.prefix(2 - d.timedBlocks.count)) { ad in
-                                Text(ad.title)
+                            Button {
+                                selectedDate = d.date
+                                openTaskEditor(memoryId: tb.memoryId)
+                            } label: {
+                                Text("\(tb.isDone ? "✓ " : "")\(tb.title)")
                                     .font(.system(size: 9.5, weight: .medium))
+                                    .strikethrough(tb.isDone)
                                     .lineLimit(1)
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 1)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(ad.macaron.cardBackground)
+                                    .background(tb.macaron.cardBackground)
                                     .foregroundStyle(Color.black.opacity(0.82))
                                     .clipShape(RoundedRectangle(cornerRadius: 4))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        if d.timedBlocks.count < 2 {
+                            ForEach(d.allDayTasks.prefix(2 - d.timedBlocks.count)) { ad in
+                                Button {
+                                    selectedDate = d.date
+                                    openTaskEditor(memoryId: ad.memoryId)
+                                } label: {
+                                    Text("\(ad.isDone ? "✓ " : "")\(ad.title)")
+                                        .font(.system(size: 9.5, weight: .medium))
+                                        .strikethrough(ad.isDone)
+                                        .lineLimit(1)
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .background(ad.macaron.cardBackground)
+                                        .foregroundStyle(Color.black.opacity(0.82))
+                                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                         Spacer(minLength: 0)
@@ -921,19 +950,87 @@ struct CalendarTimelineView: View {
         )
     }
 
-    // MARK: - Selected Day Agenda & Unscheduled Pool
+    // MARK: - Selected Day Agenda & Unscheduled Pool (Click Detail + In-Place Direct Edit)
+
+    private struct AgendaSlotRowItem: Identifiable {
+        let memoryId: String
+        let title: String
+        let isDone: Bool
+        let isAllDay: Bool
+        let startMinute: Int
+        let durationMinutes: Int
+        let timeLabel: String
+        let macaron: MacaronTheme
+
+        var id: String { memoryId }
+    }
+
+    private func buildSelectedDayAgendaItems() -> [AgendaSlotRowItem] {
+        var result: [AgendaSlotRowItem] = []
+        var seen = Set<String>()
+
+        if let bucket = (overview?.days ?? []).first(where: { $0.date == selectedDate }) {
+            for ad in bucket.allDayTasks where !seen.contains(ad.memoryId) {
+                seen.insert(ad.memoryId)
+                result.append(AgendaSlotRowItem(
+                    memoryId: ad.memoryId,
+                    title: ad.title,
+                    isDone: ad.isDone,
+                    isAllDay: true,
+                    startMinute: 9 * 60,
+                    durationMinutes: 60,
+                    timeLabel: "全天",
+                    macaron: ad.macaron
+                ))
+            }
+            for tb in bucket.timedBlocks where !seen.contains(tb.memoryId) {
+                seen.insert(tb.memoryId)
+                result.append(AgendaSlotRowItem(
+                    memoryId: tb.memoryId,
+                    title: tb.title,
+                    isDone: tb.isDone,
+                    isAllDay: false,
+                    startMinute: tb.startMinute,
+                    durationMinutes: tb.durationMinutes,
+                    timeLabel: tb.timeRangeLabel,
+                    macaron: tb.macaron
+                ))
+            }
+        }
+
+        for t in (store.matrix?.sortedTasks ?? []) where !seen.contains(t.memoryId) {
+            let startYmd = t.payload.startAt.map { String($0.prefix(10)) } ?? ""
+            let dueYmd = t.payload.dueAt.map { String($0.prefix(10)) } ?? ""
+            guard startYmd == selectedDate || dueYmd == selectedDate else { continue }
+            seen.insert(t.memoryId)
+            let allDay = t.payload.isAllDay ?? (t.payload.startAt == nil && (t.payload.dueAt?.count ?? 0) <= 10)
+            let dur = t.payload.durationMinutes ?? t.payload.focusMinutes ?? 60
+            let rawIso = t.payload.startAt ?? t.payload.dueAt ?? ""
+            let hhmm = rawIso.count >= 16 ? String(rawIso.dropFirst(11).prefix(5)) : "09:00"
+            let parts = hhmm.split(separator: ":")
+            let sMin = (Int(parts.first ?? "9") ?? 9) * 60 + (Int(parts.dropFirst().first ?? "0") ?? 0)
+            result.append(AgendaSlotRowItem(
+                memoryId: t.memoryId,
+                title: t.title,
+                isDone: t.payload.isDone,
+                isAllDay: allDay,
+                startMinute: sMin,
+                durationMinutes: dur,
+                timeLabel: allDay ? "全天" : hhmm,
+                macaron: t.payload.themeKind
+            ))
+        }
+        return result
+    }
 
     private var selectedDayAndUnscheduledSection: some View {
-        let dayTasks = (store.matrix?.sortedTasks ?? []).filter { t in
-            guard let due = t.payload.dueAt, due.count >= 10 else { return false }
-            return String(due.prefix(10)) == selectedDate
-        }
+        let dayItems = buildSelectedDayAgendaItems()
         let unscheduled = overview?.unscheduledTasks ?? []
 
         return VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("📅 \(selectedDate) 排期详情 (\(dayTasks.count) 项)")
+                    Text("📅 \(selectedDate) 排期详情 (\(dayItems.count) 项 · 轻点看详情 / 原地修改)")
                         .font(.subheadline.bold())
                     Spacer()
                     Button("+ 添加时段") {
@@ -943,14 +1040,18 @@ struct CalendarTimelineView: View {
                     .buttonStyle(.bordered)
                 }
 
-                if dayTasks.isEmpty {
+                if dayItems.isEmpty {
                     Text("当日暂无排期事项，轻点上方任意小时格即可一键排期。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 8)
                 } else {
-                    ForEach(dayTasks) { task in
-                        TaskCardView(task: task)
+                    ForEach(dayItems) { item in
+                        if inlineTaskId == item.memoryId {
+                            calendarInlineEditorCard(memoryId: item.memoryId, isCurrentlyScheduled: true)
+                        } else {
+                            calendarAgendaRow(item)
+                        }
                     }
                 }
             }
@@ -960,41 +1061,311 @@ struct CalendarTimelineView: View {
 
             if !unscheduled.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("📥 待排期任务池 (\(unscheduled.count) 项)")
+                    Text("📥 待排期任务池 (\(unscheduled.count) 项 · 支持点击详情与原地排期修改)")
                         .font(.subheadline.bold())
 
-                    ForEach(unscheduled.prefix(8)) { u in
-                        HStack {
-                            Circle()
-                                .fill(u.macaron.accentColor)
-                                .frame(width: 8, height: 8)
-                            Text(u.title)
-                                .font(.subheadline.weight(.medium))
-                                .lineLimit(1)
-                            Spacer()
-                            Button("排入选中日") {
-                                Task {
-                                    try? await store.client.scheduleCalendarSlot(body: [
-                                        "memory_id": u.memoryId,
-                                        "date": selectedDate,
-                                        "time": "10:00",
-                                        "is_all_day": false,
-                                        "duration_minutes": u.durationMinutes
-                                    ])
-                                    await store.refresh()
-                                    await reloadCalendar()
-                                }
-                            }
-                            .font(.caption.bold())
-                            .buttonStyle(.bordered)
+                    ForEach(unscheduled.prefix(12)) { u in
+                        if inlineTaskId == u.memoryId {
+                            calendarInlineEditorCard(memoryId: u.memoryId, isCurrentlyScheduled: false)
+                        } else {
+                            unscheduledTaskRow(u)
                         }
-                        .padding(.vertical, 4)
                     }
                 }
                 .padding(12)
                 .background(.background)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
+        }
+    }
+
+    private func calendarAgendaRow(_ item: AgendaSlotRowItem) -> some View {
+        HStack(spacing: 10) {
+            Button {
+                openTaskEditor(memoryId: item.memoryId)
+            } label: {
+                HStack(spacing: 10) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(item.macaron.accentColor)
+                        .frame(width: 4, height: 34)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(item.isDone ? "✓ " : "")\(item.title)")
+                            .font(.subheadline.weight(.semibold))
+                            .strikethrough(item.isDone)
+                            .foregroundStyle(item.isDone ? .secondary : .primary)
+                            .lineLimit(1)
+                        Text("⏰ \(item.timeLabel)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 4)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button("🔍 详情") {
+                openTaskEditor(memoryId: item.memoryId)
+            }
+            .font(.caption)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            Button("✏️ 原地改") {
+                startInlineTaskEdit(
+                    memoryId: item.memoryId,
+                    title: item.title,
+                    ymd: selectedDate,
+                    isAllDay: item.isAllDay,
+                    startMinute: item.startMinute,
+                    durationMinutes: item.durationMinutes,
+                    macaron: item.macaron
+                )
+            }
+            .font(.caption.bold())
+            .buttonStyle(.borderedProminent)
+            .tint(store.activeTheme.primaryColor)
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(item.macaron.cardBackground.opacity(store.activeTheme.isDark ? 0.16 : 0.35))
+        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+    }
+
+    private func unscheduledTaskRow(_ u: CalendarUnscheduledTask) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                openTaskEditor(memoryId: u.memoryId)
+            } label: {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(u.macaron.accentColor)
+                        .frame(width: 8, height: 8)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(u.title)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text("\(u.quadrantLabel) · 预计 \(u.durationMinutes)m")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 4)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button("✏️ 原地改") {
+                startInlineTaskEdit(
+                    memoryId: u.memoryId,
+                    title: u.title,
+                    ymd: selectedDate,
+                    isAllDay: false,
+                    startMinute: 10 * 60,
+                    durationMinutes: u.durationMinutes,
+                    macaron: u.macaron
+                )
+            }
+            .font(.caption)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            Button("排入选中日") {
+                Task {
+                    try? await store.client.scheduleCalendarSlot(body: [
+                        "memory_id": u.memoryId,
+                        "date": selectedDate,
+                        "time": "10:00",
+                        "is_all_day": false,
+                        "duration_minutes": u.durationMinutes
+                    ])
+                    await store.refresh()
+                    await reloadCalendar()
+                }
+            }
+            .font(.caption.bold())
+            .buttonStyle(.borderedProminent)
+            .tint(store.activeTheme.primaryColor)
+            .controlSize(.small)
+        }
+        .padding(.vertical, 5)
+    }
+
+    private func calendarInlineEditorCard(memoryId: String, isCurrentlyScheduled: Bool) -> some View {
+        let presets = [30, 45, 60, 90, 120]
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("✏️ 日历原地修改")
+                    .font(.caption2.bold())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(store.activeTheme.primaryColor)
+                    .foregroundStyle(.white)
+                    .clipShape(Capsule())
+                Spacer()
+                if isCurrentlyScheduled {
+                    Button("📥 移回待排期池") {
+                        unscheduleInlineTask(memoryId: memoryId)
+                    }
+                    .font(.caption2)
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                }
+            }
+
+            HStack(spacing: 6) {
+                TextField("事项标题...", text: $inlineTitle)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.subheadline.bold())
+                VoiceMicButton(text: $inlineTitle, compact: true)
+            }
+
+            HStack(spacing: 12) {
+                DatePicker("日期", selection: $inlineDate, displayedComponents: [.date])
+                    .labelsHidden()
+                Toggle("全天", isOn: $inlineIsAllDay)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .font(.caption)
+                if !inlineIsAllDay {
+                    Stepper(
+                        String(format: "%02d:%02d", inlineHour, inlineMinute),
+                        value: $inlineHour,
+                        in: 0...23
+                    )
+                    .font(.caption.monospacedDigit().bold())
+                }
+                Spacer(minLength: 0)
+            }
+
+            if !inlineIsAllDay {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        Text("时长：")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        ForEach(presets, id: \.self) { mins in
+                            Button("\(mins)m") {
+                                inlineDuration = mins
+                            }
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(inlineDuration == mins ? store.activeTheme.primaryColor : Color.primary.opacity(0.06))
+                            .foregroundStyle(inlineDuration == mins ? Color.white : .primary)
+                            .clipShape(Capsule())
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                ForEach(MacaronTheme.allCases) { theme in
+                    Button {
+                        inlineMacaron = theme
+                    } label: {
+                        Circle()
+                            .fill(theme.accentColor)
+                            .frame(width: 18, height: 18)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.primary, lineWidth: inlineMacaron == theme ? 2 : 0)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+                Button("取消") {
+                    inlineTaskId = ""
+                }
+                .font(.caption)
+                .buttonStyle(.bordered)
+
+                Button(isSavingInline ? "保存中..." : "💾 保存") {
+                    saveInlineCalendarTask(memoryId: memoryId)
+                }
+                .font(.caption.bold())
+                .buttonStyle(.borderedProminent)
+                .tint(store.activeTheme.primaryColor)
+                .disabled(isSavingInline || inlineTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(12)
+        .background(.background)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(store.activeTheme.primaryColor, lineWidth: 2)
+        )
+    }
+
+    private func startInlineTaskEdit(
+        memoryId: String,
+        title: String,
+        ymd: String,
+        isAllDay: Bool,
+        startMinute: Int,
+        durationMinutes: Int,
+        macaron: MacaronTheme
+    ) {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        inlineTaskId = memoryId
+        inlineTitle = title
+        inlineDate = f.date(from: ymd) ?? Date()
+        inlineIsAllDay = isAllDay
+        inlineHour = max(0, min(23, startMinute / 60))
+        inlineMinute = max(0, min(59, startMinute % 60))
+        inlineDuration = max(15, durationMinutes)
+        inlineMacaron = macaron
+    }
+
+    private func saveInlineCalendarTask(memoryId: String) {
+        let cleanTitle = inlineTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTitle.isEmpty else { return }
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        let dateStr = f.string(from: inlineDate)
+
+        isSavingInline = true
+        dismissAppKeyboard()
+        Task {
+            defer { isSavingInline = false }
+            try? await store.client.scheduleCalendarSlot(body: [
+                "memory_id": memoryId,
+                "title": cleanTitle,
+                "date": dateStr,
+                "time": String(format: "%02d:%02d", inlineHour, inlineMinute),
+                "is_all_day": inlineIsAllDay,
+                "duration_minutes": inlineDuration,
+                "color_theme": inlineMacaron.rawValue
+            ])
+            selectedDate = dateStr
+            inlineTaskId = ""
+            store.showBanner("✅ 日历事项已原地保存")
+            await store.refresh()
+            await reloadCalendar()
+        }
+    }
+
+    private func unscheduleInlineTask(memoryId: String) {
+        isSavingInline = true
+        Task {
+            defer { isSavingInline = false }
+            try? await store.client.scheduleCalendarSlot(body: [
+                "memory_id": memoryId,
+                "unschedule": true
+            ])
+            inlineTaskId = ""
+            store.showBanner("📥 已移回待排期任务池")
+            await store.refresh()
+            await reloadCalendar()
         }
     }
 
@@ -1019,6 +1390,13 @@ struct CalendarTimelineView: View {
     private func openTaskEditor(memoryId: String) {
         if let found = (store.matrix?.sortedTasks ?? []).first(where: { $0.memoryId == memoryId }) {
             editingTask = found
+            return
+        }
+        Task {
+            if let fullMatrix = try? await store.client.fetchMatrix(sortBy: store.sortBy, includeDone: true),
+               let found = fullMatrix.sortedTasks.first(where: { $0.memoryId == memoryId }) {
+                editingTask = found
+            }
         }
     }
 

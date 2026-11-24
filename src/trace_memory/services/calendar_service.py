@@ -547,6 +547,10 @@ class CalendarService:
 
         if target_id:
             card_data["target_memory_id"] = target_id
+            if "title" in payload and str(payload["title"]).strip():
+                card_data["title"] = str(payload["title"]).strip()
+            if "summary" in payload and payload["summary"] is not None:
+                card_data["summary"] = str(payload["summary"]).strip()
             if "color_theme" in payload and payload["color_theme"]:
                 card_data["color_theme"] = str(payload["color_theme"])
         else:

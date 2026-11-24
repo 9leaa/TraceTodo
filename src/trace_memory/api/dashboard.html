@@ -3397,6 +3397,7 @@
     <button type="button" class="header-account" id="accountBtn" data-authed="0" onclick="openAuthModal()"><span class="control-icon" aria-hidden="true">🔐</span><span data-control-label>登录 / 注册</span></button>
   </header>
   <input type="file" id="sharedImageFileInput" class="sr-only-file-input" accept=".jpg,.jpeg,.png,.webp,.gif,.bmp" multiple tabindex="-1" aria-hidden="true" onchange="onImageFilesSelected(event)" oncancel="onImagePickerCancel()" />
+  <input type="file" id="sharedCameraFileInput" class="sr-only-file-input" accept=".jpg,.jpeg,.png" capture="environment" tabindex="-1" aria-hidden="true" onchange="onImageFilesSelected(event)" oncancel="onImagePickerCancel()" />
   <div id="quickMediaDraftBar" style="display:none;padding:6px 20px;background:var(--surface);border-bottom:1px solid var(--border);align-items:center;gap:10px;flex-wrap:wrap;">
     <span style="font-size:12px;color:var(--muted);font-weight:600;">🖼️ 待录入附图：</span>
     <div id="quickMediaDraftGrid" class="media-thumb-grid" style="margin-top:0;"></div>
@@ -4643,6 +4644,16 @@
         <button type="button" onclick="closeMediaLightbox()">关闭</button>
       </div>
       <div id="mediaLightboxBody" style="display:grid;gap:10px;"></div>
+    </div>
+  </div>
+
+  <!-- Mobile Camera vs Photo Library Action Modal -->
+  <div class="modal-backdrop" id="mobileImageSourceModal" style="z-index: 235;" onclick="if(event.target===this) closeMobileImageSourceModal()">
+    <div class="modal" style="max-width:360px;display:grid;gap:10px;padding:18px;">
+      <strong style="font-size:15.5px;color:var(--heading);text-align:center;">📷 选择附图方式</strong>
+      <button type="button" class="primary" style="width:100%;padding:11px 14px;font-size:14px;font-weight:700;" onclick="pickMobileImageSource('camera')">📷 打开相机拍摄</button>
+      <button type="button" style="width:100%;padding:11px 14px;font-size:14px;font-weight:600;" onclick="pickMobileImageSource('gallery')">🖼️ 从手机相册选择</button>
+      <button type="button" style="width:100%;padding:9px 14px;font-size:13px;color:var(--muted);" onclick="closeMobileImageSourceModal()">取消</button>
     </div>
   </div>
 
@@ -10646,27 +10657,65 @@
         paintMonthPanorama(days, data.period_label || '');
       }
 
-      // Selected day agenda (include both due_at date and start_at date for overnight tasks)
-      const byDateTasks = {};
-      const pushTaskToDate = (ymd, taskObj) => {
-        if (!ymd) return;
-        if (!byDateTasks[ymd]) byDateTasks[ymd] = [];
-        if (!byDateTasks[ymd].some(x => x.memory_id === taskObj.memory_id)) {
-          byDateTasks[ymd].push(taskObj);
+      // Selected day agenda (merge calendar day bucket items + loaded task objects, with inline quick edit)
+      const selDayObj = days.find(d => d.date === _calSelectedDate);
+      const agendaItems = [];
+      const seenAgendaIds = new Set();
+      if (selDayObj) {
+        for (const ad of (selDayObj.all_day_tasks || [])) {
+          if (seenAgendaIds.has(ad.memory_id)) continue;
+          seenAgendaIds.add(ad.memory_id);
+          agendaItems.push({
+            memory_id: ad.memory_id,
+            title: ad.title,
+            is_done: Boolean(ad.is_done),
+            is_all_day: true,
+            time_value: '09:00',
+            time_label: '全天',
+            duration_minutes: 60,
+            color_theme: ad.color_theme || 'sky',
+          });
         }
-      };
+        for (const tb of (selDayObj.timed_blocks || [])) {
+          if (seenAgendaIds.has(tb.memory_id)) continue;
+          seenAgendaIds.add(tb.memory_id);
+          const hh = String(Math.floor((tb.start_minute || 540) / 60)).padStart(2, '0');
+          const mm = String((tb.start_minute || 0) % 60).padStart(2, '0');
+          agendaItems.push({
+            memory_id: tb.memory_id,
+            title: tb.title,
+            is_done: Boolean(tb.is_done),
+            is_all_day: false,
+            time_value: `${hh}:${mm}`,
+            time_label: tb.time_range_label || `${hh}:${mm}`,
+            duration_minutes: tb.duration_minutes || 60,
+            color_theme: tb.color_theme || 'sky',
+          });
+        }
+      }
       for (const t of (lastLoadedTasks || [])) {
+        if (seenAgendaIds.has(t.memory_id)) continue;
         const stInfo = parseIsoYmdHhmm(t.payload?.start_at);
         const duInfo = parseIsoYmdHhmm(t.payload?.due_at);
-        if (stInfo?.ymd) pushTaskToDate(stInfo.ymd, t);
-        if (duInfo?.ymd) pushTaskToDate(duInfo.ymd, t);
+        if (stInfo?.ymd !== _calSelectedDate && duInfo?.ymd !== _calSelectedDate) continue;
+        seenAgendaIds.add(t.memory_id);
+        const allDay = Boolean(t.payload?.is_all_day);
+        const hm = stInfo?.hhmm || duInfo?.hhmm || '09:00';
+        agendaItems.push({
+          memory_id: t.memory_id,
+          title: t.title,
+          is_done: t.payload?.task_status === 'done',
+          is_all_day: allDay,
+          time_value: hm,
+          time_label: allDay ? '全天' : hm,
+          duration_minutes: t.payload?.duration_minutes || t.payload?.focus_minutes || 60,
+          color_theme: t.payload?.color_theme || 'sky',
+        });
       }
-      const selDayObj = days.find(d => d.date === _calSelectedDate);
-      const selTasks = byDateTasks[_calSelectedDate] || [];
       const focusExtra = selDayObj && selDayObj.focus_minutes > 0 ? ` · 🍅 专注 ${selDayObj.focus_minutes}m` : '';
-      document.getElementById('calDayAgendaTitle').textContent = `📅 ${_calSelectedDate} 排期详情 (${selTasks.length} 项${focusExtra})`;
-      document.getElementById('calDayAgendaList').innerHTML = selTasks.length
-        ? selTasks.map(renderTaskCard).join('')
+      document.getElementById('calDayAgendaTitle').textContent = `📅 ${_calSelectedDate} 排期详情 (${agendaItems.length} 项${focusExtra})`;
+      document.getElementById('calDayAgendaList').innerHTML = agendaItems.length
+        ? agendaItems.map(it => renderCalendarAgendaOrInlineEditor(it, true)).join('')
         : `<div style="color:var(--muted);font-size:13px;padding:14px 4px;">当日暂无排期事项，点击上方空白小时格或右侧「+ 添加时段事项」即可一键排期。</div>`;
 
       // Unscheduled pool
@@ -10675,16 +10724,98 @@
       if (pillEl) pillEl.textContent = `${pool.length} 项`;
       const poolEl = document.getElementById('calUnscheduledPoolList');
       if (poolEl) {
-        poolEl.innerHTML = pool.length ? pool.map(u => `
-          <div class="duodo-card cal-macaron-${esc(u.color_theme || 'sky')}" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 11px;">
-            <div style="min-width:0;flex:1;">
-              <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(u.title)}">${esc(u.title)}</div>
-              <div style="font-size:11px;opacity:0.8;">${esc(u.quadrant_label || u.quadrant || '')} · 预计 ${u.duration_minutes || 45}m</div>
-            </div>
-            <button type="button" style="font-size:11.5px;padding:4px 9px;" onclick="openSlotScheduleModalForTask('${esc(u.memory_id)}')">📅 排入选中日</button>
-          </div>
-        `).join('') : `<div style="color:var(--muted);font-size:12.5px;padding:12px 4px;">所有待办均已安排截止时间 🎉</div>`;
+        poolEl.innerHTML = pool.length ? pool.map(u => renderCalendarAgendaOrInlineEditor({
+          memory_id: u.memory_id,
+          title: u.title,
+          is_done: false,
+          is_all_day: false,
+          time_value: '10:00',
+          time_label: `${u.quadrant_label || u.quadrant || ''} · 预计 ${u.duration_minutes || 45}m`,
+          duration_minutes: u.duration_minutes || 60,
+          color_theme: u.color_theme || 'sky',
+        }, false)).join('') : `<div style="color:var(--muted);font-size:12.5px;padding:12px 4px;">所有待办均已安排截止时间 🎉</div>`;
       }
+    }
+
+    let _inlineEditCalTaskId = '';
+
+    function renderCalendarAgendaOrInlineEditor(it, isScheduled) {
+      if (_inlineEditCalTaskId === it.memory_id) {
+        return `
+          <div class="duodo-card" style="display:grid;gap:8px;padding:11px;border:2px solid var(--primary);">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+              <span class="tag" style="background:var(--primary);color:#fff;">✏️ 日历原地修改</span>
+              ${isScheduled ? `<button type="button" style="font-size:11px;padding:3px 8px;" onclick="unscheduleTaskFromCalendar('${esc(it.memory_id)}', event)">📥 移回待排期池</button>` : ''}
+            </div>
+            <input id="inlineCalTitleInput" value="${esc(it.title)}" placeholder="事项标题..." style="font-weight:700;" />
+            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+              <input type="date" id="inlineCalDateInput" value="${esc(_calSelectedDate)}" style="font-size:12px;padding:4px 6px;" />
+              <label style="font-size:12px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">
+                <input type="checkbox" id="inlineCalAllDayCheck" ${it.is_all_day ? 'checked' : ''} onchange="document.getElementById('inlineCalTimeSpan').style.display=this.checked?'none':'inline-flex'" /> 全天
+              </label>
+              <span id="inlineCalTimeSpan" style="display:${it.is_all_day ? 'none' : 'inline-flex'};gap:6px;align-items:center;">
+                <input type="time" id="inlineCalTimeInput" value="${esc(it.time_value || '09:00')}" style="font-size:12px;padding:4px 6px;" />
+                <select id="inlineCalDurSelect" style="font-size:12px;padding:4px 6px;">
+                  ${[30, 45, 60, 90, 120, 180].map(m => `<option value="${m}" ${Number(it.duration_minutes || 60) === m ? 'selected' : ''}>${m}m</option>`).join('')}
+                </select>
+              </span>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:6px;">
+              <button type="button" style="font-size:11.5px;padding:4px 10px;" onclick="cancelInlineCalendarEdit()">取消</button>
+              <button type="button" class="primary" style="font-size:11.5px;padding:4px 12px;" onclick="saveInlineCalendarEdit('${esc(it.memory_id)}', '${esc(it.color_theme || 'sky')}', this)">💾 保存</button>
+            </div>
+          </div>
+        `;
+      }
+      return `
+        <div class="duodo-card cal-macaron-${esc(it.color_theme || 'sky')}" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 11px;cursor:pointer;" onclick="openCalendarTaskEditor('${esc(it.memory_id)}')">
+          <div style="min-width:0;flex:1;">
+            <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${it.is_done ? 'text-decoration:line-through;opacity:0.65;' : ''}" title="${esc(it.title)}">${it.is_done ? '✓ ' : ''}${esc(it.title)}</div>
+            <div style="font-size:11px;opacity:0.8;">${isScheduled ? '⏰ ' : ''}${esc(it.time_label)}</div>
+          </div>
+          <div style="display:flex;gap:5px;align-items:center;flex-shrink:0;">
+            <button type="button" style="font-size:11px;padding:3px 8px;" onclick="event.stopPropagation(); openCalendarTaskEditor('${esc(it.memory_id)}')">🔍 详情</button>
+            <button type="button" style="font-size:11px;padding:3px 8px;" onclick="event.stopPropagation(); startInlineCalendarEdit('${esc(it.memory_id)}')">✏️ 原地改</button>
+            ${!isScheduled ? `<button type="button" class="primary" style="font-size:11px;padding:3px 8px;" onclick="event.stopPropagation(); openSlotScheduleModalForTask('${esc(it.memory_id)}')">📅 排入</button>` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    function startInlineCalendarEdit(memoryId) {
+      _inlineEditCalTaskId = memoryId || '';
+      if (_calOverviewCache) paintCalendarOverview(_calOverviewCache);
+    }
+
+    function cancelInlineCalendarEdit() {
+      _inlineEditCalTaskId = '';
+      if (_calOverviewCache) paintCalendarOverview(_calOverviewCache);
+    }
+
+    async function saveInlineCalendarEdit(memoryId, colorTheme, btn) {
+      const title = (document.getElementById('inlineCalTitleInput')?.value || '').trim();
+      const dateVal = document.getElementById('inlineCalDateInput')?.value || _calSelectedDate;
+      const isAllDay = Boolean(document.getElementById('inlineCalAllDayCheck')?.checked);
+      const timeVal = document.getElementById('inlineCalTimeInput')?.value || '09:00';
+      const durMin = Number(document.getElementById('inlineCalDurSelect')?.value || 60);
+      if (!title) return showToast('请输入事项标题');
+      await withBtnBusy(btn, '⏳', async () => {
+        const res = await apiPost('/api/calendar/schedule', {
+          memory_id: memoryId,
+          title,
+          date: dateVal,
+          time: timeVal,
+          is_all_day: isAllDay,
+          duration_minutes: durMin,
+          color_theme: colorTheme || 'sky',
+        });
+        if (res.error) return showToast(`保存失败: ${res.error}`, 'error');
+        _inlineEditCalTaskId = '';
+        _calSelectedDate = dateVal;
+        showToast('✅ 日历事项已原地修改保存');
+        await reloadAll();
+        await renderCalendarPanel();
+      });
     }
 
     async function openSlotScheduleModalForTask(memoryId) {
@@ -12236,6 +12367,28 @@
     let _imagePickerActive = false;
     let _imageUploadInFlight = false;
 
+    function isMobileCameraCapableDevice() {
+      if (window.TraceTodoNative) return true;
+      const ua = navigator.userAgent || '';
+      if (/Android|iPhone|iPad|iPod|HarmonyOS/i.test(ua)) return true;
+      return Boolean(window.matchMedia && window.matchMedia('(max-width: 850px) and (pointer: coarse)').matches);
+    }
+
+    function closeMobileImageSourceModal() {
+      document.getElementById('mobileImageSourceModal')?.classList.remove('open');
+    }
+
+    function pickMobileImageSource(mode) {
+      closeMobileImageSourceModal();
+      const inp = document.getElementById(mode === 'camera' ? 'sharedCameraFileInput' : 'sharedImageFileInput');
+      if (!inp) return;
+      _imagePickerActive = true;
+      window.addEventListener('focus', () => {
+        setTimeout(() => { _imagePickerActive = false; }, 600);
+      }, { once: true });
+      inp.click();
+    }
+
     function triggerImagePicker(targetKey) {
       const now = Date.now();
       if (_imageUploadInFlight) {
@@ -12245,6 +12398,10 @@
       if (now - _imagePickerLastTriggerMs < 400) return;
       _imagePickerLastTriggerMs = now;
       _activeImageTarget = normalizeMediaBucket(targetKey);
+      if (isMobileCameraCapableDevice()) {
+        document.getElementById('mobileImageSourceModal')?.classList.add('open');
+        return;
+      }
       const inp = document.getElementById('sharedImageFileInput');
       if (!inp) return;
       _imagePickerActive = true;

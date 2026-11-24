@@ -342,7 +342,7 @@ struct MainContentView: View {
                 .background(store.cardSurfaceBackground)
                 .overlay(Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1), alignment: .bottom)
 
-                // Main 3-Column Body: Converged 5-Tab Left Rail + Center Canvas + Right Timeline
+                // Main 2-Column Body: Converged 5-Tab Left Rail + Full-Width Center Canvas
                 HStack(spacing: 0) {
                     leftFloatingRail
                         .padding(.vertical, 16)
@@ -363,13 +363,11 @@ struct MainContentView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    RightTimelineRailView()
                 }
                 .background(Color.clear)
             }
             .preferredColorScheme(store.activeTheme.isDark ? .dark : .light)
-            .frame(minWidth: 1120, minHeight: 700)
+            .frame(minWidth: 920, minHeight: 660)
             .task {
                 NotificationManager.shared.refreshAuthorizationStatus()
                 await store.refresh()
