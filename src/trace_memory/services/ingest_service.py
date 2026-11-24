@@ -11,6 +11,7 @@ import threading
 import time
 from typing import Any, Callable
 
+from trace_memory.domain.exceptions import StructuredOutputError
 from trace_memory.domain.memories import MemoryEvidence, MemoryItem, parse_iso_datetime
 from trace_memory.domain.notes import (
     RawNote,
@@ -405,10 +406,25 @@ class IngestService:
             else:
                 batch = self._call_extract(extract_input, note.event_time, existing_active, window)
         except Exception as exc:
-            if raise_on_transient_llm_error and _is_transient_llm_error(exc):
+            will_retry = raise_on_transient_llm_error and _is_transient_llm_error(exc)
+            if isinstance(exc, StructuredOutputError):
+                if self.quota_service is not None:
+                    self.quota_service.record_usage(
+                        f"space:{space_id}", llm_calls=1, tokens_used=exc.tokens_used
+                    )
+                self.trace_repo.record_trace(
+                    space_id=space_id,
+                    operation="ingest_format_error",
+                    input_summary="",
+                    details={"note_id": note_id, "reason": exc.reason, "will_retry": will_retry},
+                    llm_calls=1,
+                    tokens_used=exc.tokens_used,
+                    duration_ms=(time.perf_counter() - t0) * 1000.0,
+                )
+            if will_retry:
                 if self.quota_service is not None and (vlm_calls or vlm_tokens):
                     self.quota_service.record_usage(
-                        f"space:{space_id}", llm_calls=vlm_calls, tokens_used=vlm_tokens
+                        f"space:{space_id}", llm_calls=vlm_calls, tokens_used=vlm_tokens,
                     )
                 raise
             base_art["kind"] = "error"

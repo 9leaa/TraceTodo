@@ -20,11 +20,14 @@ import threading
 import time
 from typing import Any, Callable, Iterator
 
+from trace_memory.domain.exceptions import StructuredOutputError
 from trace_memory.domain.notes import beijing_now_iso, new_id
 from trace_memory.storage.database import Database
 
 
 def _is_transient_llm_error(exc: Exception) -> bool:
+    if isinstance(exc, StructuredOutputError):
+        return True
     msg = str(exc).lower()
     transient_markers = (
         "429",

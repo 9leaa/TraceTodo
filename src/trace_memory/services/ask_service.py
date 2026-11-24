@@ -11,11 +11,12 @@ import re
 import time
 from typing import Any
 
+from trace_memory.domain.exceptions import StructuredOutputError
 from trace_memory.domain.memories import MemoryItem
 from trace_memory.domain.notes import RawNote
 from trace_memory.domain.proposals import ValidationError
 from trace_memory.llm.mock_provider import DeterministicLLMProvider
-from trace_memory.llm.protocol import AskSynthesis, AskToolModel, LLMProvider
+from trace_memory.llm.protocol import AskToolModel, LLMProvider
 from trace_memory.services.ask_plan import AskPlan, MAX_QUESTIONS
 from trace_memory.services.ask_react import AskReAct, AskTool, ToolObservation, ask_evidence
 from trace_memory.services.guard_service import InputGuardService, RateLimitAndQuotaService
@@ -244,25 +245,13 @@ class AskService:
                             seen_relations.add(rkey)
                             merged_relations.append(rel)
 
-                def _invoke_synth(
-                    provider: Any,
-                    memories_arg: list[MemoryItem] | None = None,
-                    notes_arg: list[RawNote] | None = None,
-                ) -> Any:
+                def _invoke_synth(provider: Any) -> Any:
                     sig = inspect.signature(provider.synthesize_answer)
                     kwargs: dict[str, Any] = {
                         "question": q_clean,
                         "query_mode": query_mode,
-                        "memories": (
-                            memories_arg
-                            if memories_arg is not None
-                            else list(evidence_memories.values())
-                        ),
-                        "notes": (
-                            notes_arg
-                            if notes_arg is not None
-                            else list(llm_note_by_id.values())
-                        ),
+                        "memories": list(evidence_memories.values()),
+                        "notes": list(llm_note_by_id.values()),
                         "history_versions": merged_versions,
                     }
                     if "graph_relations" in sig.parameters:
@@ -309,30 +298,8 @@ class AskService:
                             )
                         evidence_memories.update((m.memory_id, m) for m in outcome.memories)
                         evidence_notes.update((n.note_id, n) for n in outcome.notes)
-                        if outcome.stop_reason in ("invalid_answer", "unexpected_tool_call"):
-                            merged_memories = list(evidence_memories.values())
-                            merged_notes = [
-                                llm_note_by_id.get(n.note_id, n)
-                                for n in evidence_notes.values()
-                            ]
-                            try:
-                                recovered = _invoke_synth(self.llm, merged_memories, merged_notes)
-                            except Exception:
-                                recovered = _invoke_synth(
-                                    DeterministicLLMProvider(), merged_memories, merged_notes
-                                )
-                            synthesis = AskSynthesis(
-                                answer=recovered.answer,
-                                cited_memory_ids=recovered.cited_memory_ids,
-                                cited_note_ids=recovered.cited_note_ids,
-                                has_sufficient_evidence=recovered.has_sufficient_evidence,
-                                llm_calls=outcome.synthesis.llm_calls + recovered.llm_calls,
-                                tokens_used=outcome.synthesis.tokens_used + recovered.tokens_used,
-                            )
-                            react_trace["stop_reason"] = f"{outcome.stop_reason}_recovered"
-                        else:
-                            synthesis = outcome.synthesis
-                            react_trace["stop_reason"] = outcome.stop_reason
+                        synthesis = outcome.synthesis
+                        react_trace["stop_reason"] = outcome.stop_reason
                     except Exception:
                         synthesis = _invoke_synth(DeterministicLLMProvider())
                         react_trace["stop_reason"] = "fallback_rule_helper"
@@ -449,6 +416,9 @@ class AskService:
             if len(plan.questions) == 1:
                 plan = replace(plan, questions=(question,))
             return plan, 1, tokens
+        except StructuredOutputError as exc:
+            _LOGGER.warning("Ask plan format fallback: %s", exc.reason)
+            return AskPlan((question,), mode="fallback", format_error=exc.reason), 1, exc.tokens_used
         except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
             _LOGGER.warning("Ask plan fallback: %s", type(exc).__name__)
             return AskPlan((question,), mode="fallback"), 1, tokens
