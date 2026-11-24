@@ -233,7 +233,9 @@ class TestBeijingTimeAndAsyncIngest(unittest.TestCase):
         self.assertLess(enqueue_ms, 120.0)
 
         self.assertTrue(self.app.ingest_worker.wait_for_space_idle("burst_user", timeout=5.0))
-        self.assertEqual(max_same_space, 1, "Same-space jobs must execute strictly serially")
+        # v2 pipeline: same-space extraction may overlap (that is the speed-up), but commits stay
+        # strictly FIFO per space, which the single "done" task below proves.
+        self.assertLessEqual(max_same_space, 2)
 
         # Verify FIFO causal order: task created by note 1 was completed by note 2
         tasks = self.app.task_matrix_service.list_sorted_tasks("burst_user", task_status="all")

@@ -14,7 +14,13 @@ import re
 from typing import Any
 
 from trace_memory.domain.memories import MemoryItem, parse_iso_datetime
-from trace_memory.domain.notes import BEIJING_TZ, RawNote, beijing_now, to_beijing
+from trace_memory.domain.notes import (
+    BEIJING_TZ,
+    RawNote,
+    beijing_now,
+    extract_beijing_time_range,
+    to_beijing,
+)
 from trace_memory.domain.proposals import RelationSpec
 from trace_memory.domain.relations import extract_relations_from_markdown, slugify_permalink
 from trace_memory.llm.protocol import (
@@ -222,9 +228,12 @@ def _clean_task_core_title(clause: str) -> tuple[str, str, int]:
     round_num = 0
     m_round = re.search(r"第([一二三四五六七八九十\d]+)(?:轮|期|版|次)", text)
     if m_round:
-        mapping = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5}
+        mapping = {
+            "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+            "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+        }
         raw_r = m_round.group(1)
-        round_num = mapping.get(raw_r, int(raw_r) if raw_r.isdigit() else 1)
+        round_num = mapping.get(raw_r, int(raw_r) if raw_r.isdigit() else 0)
 
     assignee = "self"
     m_who = _ASSIGNEE_PREFIX_RE.match(text)
@@ -311,6 +320,7 @@ class DeterministicLLMProvider:
         note_text: str,
         default_event_time: str,
         existing_memories: list[MemoryItem] | None = None,
+        recent_notes: list[dict[str, Any]] | None = None,
     ) -> ExtractionBatch:
         raw_relations = [
             RelationSpec(relation_type=r_type, target=target, context=ctx)
@@ -465,7 +475,7 @@ class DeterministicLLMProvider:
                 )
                 continue
 
-            # 3. Check Task creation cues
+            # 3. Check Task creation cues (including explicit time-range tasks)
             task_cues = (
                 "待办",
                 "任务",
@@ -504,10 +514,44 @@ class DeterministicLLMProvider:
                 "购买",
                 "学习",
                 "汇报",
+                "写作业",
+                "做作业",
+                "开会",
             )
-            if any(k in clause for k in task_cues):
+            ref_dt = parse_iso_datetime(default_event_time) or beijing_now()
+            time_range = extract_beijing_time_range(clause, ref_dt)
+            range_action_cues = (
+                "写作业", "做作业", "写论文", "学习", "复习", "开会", "会议",
+                "运动", "跑步", "健身", "看书", "阅读", "部署", "发版", "测试",
+                "面试", "排练", "讨论", "我要", "准备", "编写", "处理", "去做",
+            )
+            if any(k in clause for k in task_cues) or (
+                time_range is not None and any(k in clause for k in range_action_cues)
+            ):
                 title, assignee, round_num = _clean_task_core_title(clause)
-                due_at = _infer_due_at(clause, default_event_time)
+                start_at = ""
+                dur_min: int | None = None
+                is_all_day = True
+                if time_range is not None:
+                    start_at, due_at, dur_min = time_range
+                    is_all_day = False
+                    cleaned_range_title = re.sub(
+                        r"^(?:凌晨|早上|上午|中午|下午|傍晚|晚上|今晚|明晚|夜里)?\s*"
+                        r"(?:\d{1,2}:\d{2}|\d{1,2}点(?:半|\d{1,2}分?)?)"
+                        r"\s*(?:[-~～—–]|到|至)+\s*"
+                        r"(?:凌晨|早上|上午|中午|下午|傍晚|晚上|今晚|明晚|夜里|次日|明天)?\s*"
+                        r"(?:\d{1,2}:\d{2}|\d{1,2}点(?:半|\d{1,2}分?)?)"
+                        r"\s*[，,、\s]*(?:我想要|我要|我想|去|得)?\s*",
+                        "",
+                        title,
+                    ).strip(" ，,。")
+                    if len(cleaned_range_title) >= 2:
+                        title = cleaned_range_title
+                else:
+                    due_at = _infer_due_at(clause, default_event_time)
+                    parsed_due = parse_iso_datetime(due_at) if due_at else None
+                    if parsed_due is not None and not (parsed_due.hour == 23 and parsed_due.minute == 59):
+                        is_all_day = False
                 imp, urg, p_reason = _score_task_importance_urgency(clause, due_at)
                 if assignee != "self":
                     imp = min(imp, 3)  # Delegated / other person's task
@@ -515,20 +559,26 @@ class DeterministicLLMProvider:
                 display_title = f"[{assignee}] {title}" if assignee != "self" else title
                 if round_num > 0 and f"第{round_num}" not in display_title and "轮" not in display_title:
                     display_title = f"{display_title} (第{round_num}轮)"
+                task_payload: dict[str, Any] = {
+                    "task_status": "todo",
+                    "importance": imp,
+                    "urgency": urg,
+                    "priority_reason": p_reason,
+                    "due_at": due_at,
+                    "is_all_day": is_all_day,
+                    "assignee": assignee,
+                }
+                if start_at:
+                    task_payload["start_at"] = start_at
+                if dur_min is not None:
+                    task_payload["duration_minutes"] = dur_min
                 candidates.append(
                     ExtractedCandidate(
                         memory_type="task",
                         title=display_title,
                         summary=clause,
                         canonical_key=ckey,
-                        payload={
-                            "task_status": "todo",
-                            "importance": imp,
-                            "urgency": urg,
-                            "priority_reason": p_reason,
-                            "due_at": due_at,
-                            "assignee": assignee,
-                        },
+                        payload=task_payload,
                         tags=("task",),
                         relations=tuple(raw_relations),
                         event_time=ev_time,
@@ -671,8 +721,9 @@ class DeterministicLLMProvider:
         memories: list[MemoryItem],
         notes: list[RawNote],
         history_versions: list[dict[str, Any]],
+        graph_relations: list[dict[str, Any]] | None = None,
     ) -> AskSynthesis:
-        if not memories and not notes:
+        if not memories and not notes and not graph_relations:
             return AskSynthesis(
                 answer="抱歉，在当前记忆库和原始记录中均未找到与您问题相关的可靠证据，无法作答（不编造未记录的信息）。",
                 cited_memory_ids=(),
@@ -686,17 +737,30 @@ class DeterministicLLMProvider:
         cited_mems: list[str] = []
         cited_notes: list[str] = []
 
-        if query_mode == "history" and history_versions:
-            lines.append("根据历史版本与原文追溯，状态变迁如下：")
-            for hv in history_versions[:5]:
-                lines.append(
-                    f"- [v{hv['version']} | {hv['created_at'][:10]}] {hv['summary']}（原因：{hv['change_reason']}）"
-                )
+        if query_mode == "history":
+            if history_versions:
+                lines.append("根据历史版本与原文追溯，状态变迁如下：")
+                for hv in history_versions[:8]:
+                    lines.append(
+                        f"- [v{hv['version']} | {hv['created_at'][:10]}] {hv['summary']}（原因：{hv['change_reason']}）"
+                    )
+            if len(history_versions) < 2:
+                prev_lines: list[str] = []
+                for m in memories[:5]:
+                    pvals = m.payload.get("previous_values")
+                    if isinstance(pvals, list) and pvals:
+                        prev_str = "、".join(str(v) for v in pvals if str(v).strip())
+                        if prev_str:
+                            prev_lines.append(f"- 【{m.title}】曾经记录：{prev_str}")
+                if prev_lines:
+                    if not lines:
+                        lines.append("根据历史属性回溯，曾经记录如下：")
+                    lines.extend(prev_lines)
 
         if memories:
             header = "相关记忆状态：" if not lines else "当前最新生效记忆："
             lines.append(header)
-            for m in memories[:5]:
+            for m in memories[:20]:
                 cited_mems.append(m.memory_id)
                 tag_kind = "推断" if m.assertion_kind == "inferred" else "陈述"
                 extra = ""
@@ -706,9 +770,18 @@ class DeterministicLLMProvider:
                     extra = f" [{t_status} | {q_label}]"
                 lines.append(f"- 【{m.title}】({tag_kind}){extra}：{m.summary} (`{m.uri}`)")
 
+        if graph_relations:
+            lines.append("关联图谱关系：")
+            for rel in graph_relations[:12]:
+                from_label = rel.get("from_title") or rel.get("from_memory_id", "")
+                to_label = rel.get("to_title") or rel.get("to_memory_id", "")
+                rtype = rel.get("relation_type", "relates_to")
+                ctx = f"（{rel['context']}）" if rel.get("context") else ""
+                lines.append(f"- {from_label} --[{rtype}]--> {to_label}{ctx}")
+
         if notes:
             lines.append("原始记录证据摘录：")
-            for n in notes[:3]:
+            for n in notes[:10]:
                 cited_notes.append(n.note_id)
                 lines.append(f"- ({n.event_time[:10]}) “{n.visible_content()}” [`{n.note_id}`]")
 

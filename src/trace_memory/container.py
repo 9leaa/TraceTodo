@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 
 from trace_memory.config import TraceMemoryConfig
 from trace_memory.llm.mock_provider import DeterministicLLMProvider, SemanticHashEmbedder
@@ -13,22 +14,30 @@ from trace_memory.services.ask_react import AskTool
 from trace_memory.services.ask_service import AskService
 from trace_memory.services.ask_task_tool import make_list_tasks_tool
 from trace_memory.services.auth_service import AdminService, AuthService
+from trace_memory.services.calendar_service import CalendarService
 from trace_memory.services.change_service import ChangeService
+from trace_memory.services.countdown_service import CountdownService
 from trace_memory.services.dream_service import DreamService
+from trace_memory.services.focus_service import FocusService
 from trace_memory.services.guard_service import (
     InputGuardService,
     RateLimitAndQuotaService,
     SystemSettingsStore,
 )
+from trace_memory.services.ingest_pipeline import IngestPipelineV2
 from trace_memory.services.ingest_queue import IngestJobRepository, IngestWorkerPool
 from trace_memory.services.ingest_service import IngestService
 from trace_memory.services.markdown_sync import MarkdownSyncService
+from trace_memory.services.media_service import MediaAttachmentService
+from trace_memory.services.memo_journal_service import MemoAndJournalService
+from trace_memory.services.preferences_service import PreferencesService
 from trace_memory.services.retrieval_service import RetrievalService
 from trace_memory.services.sync_and_scheduler import (
     DailyTaskMaintenanceScheduler,
     SpaceSyncTracker,
 )
 from trace_memory.services.task_matrix_service import TaskMatrixService
+from trace_memory.services.voice_service import VoiceTranscriptionService
 from trace_memory.storage.database import Database
 from trace_memory.storage.hybrid_search import HybridSearchIndex
 from trace_memory.storage.repositories import (
@@ -73,9 +82,16 @@ class AppContainer:
     auth_service: AuthService
     admin_service: AdminService
     job_repo: IngestJobRepository
-    ingest_worker: IngestWorkerPool
+    ingest_worker: IngestWorkerPool | IngestPipelineV2
     sync_tracker: SpaceSyncTracker
     daily_scheduler: DailyTaskMaintenanceScheduler
+    preferences_service: PreferencesService
+    focus_service: FocusService
+    voice_service: VoiceTranscriptionService
+    media_service: MediaAttachmentService
+    calendar_service: CalendarService
+    countdown_service: CountdownService
+    memo_journal_service: MemoAndJournalService
 
     @classmethod
     def build(
@@ -109,12 +125,14 @@ class AppContainer:
 
         if llm_override is not None:
             llm = llm_override
-        elif cfg.llm_provider == "openai" and cfg.openai_api_key:
+        elif cfg.llm_provider == "openai" and (cfg.openai_api_key or cfg.openai_api_keys):
             llm = OpenAICompatLLMProvider(
                 base_url=cfg.openai_base_url,
-                api_key=cfg.openai_api_key,
+                api_key=cfg.openai_api_key or cfg.openai_api_keys[0],
                 model=cfg.llm_model,
                 timeout_seconds=cfg.llm_timeout_seconds,
+                api_keys=cfg.openai_api_keys,
+                key_cooldown_seconds=cfg.llm_key_cooldown_seconds,
             )
         else:
             llm = DeterministicLLMProvider()
@@ -132,11 +150,23 @@ class AppContainer:
             vector_store = SQLiteVectorStore(db)
 
         vector_lifecycle = VectorLifecycleService(vector_store=vector_store, embedder=embedder)
+        effective_min_score = (
+            0.0
+            if (
+                embedder_override is None
+                and isinstance(embedder, SemanticHashEmbedder)
+                and cfg.llm_provider == "openai"
+                and not cfg.openai_api_key
+                and "TRACE_MEMORY_VECTOR_ONLY_MIN_SCORE" not in os.environ
+            )
+            else cfg.vector_only_min_score
+        )
         search_index = HybridSearchIndex(
             note_repo=note_repo,
             memory_repo=memory_repo,
             vector_store=vector_store,
             embedder=embedder,
+            vector_only_min_score=effective_min_score,
         )
         settings_store = SystemSettingsStore(db=db, config=cfg)
         input_guard = InputGuardService(settings=settings_store)
@@ -155,6 +185,8 @@ class AppContainer:
             guard=quota_service,
         )
         sync_tracker = SpaceSyncTracker(db=db)
+        preferences_service = PreferencesService(db=db, sync_tracker=sync_tracker)
+        media_service = MediaAttachmentService(db=db, config=cfg, sync_tracker=sync_tracker)
         change_service = ChangeService(
             note_repo=note_repo,
             memory_repo=memory_repo,
@@ -162,6 +194,7 @@ class AppContainer:
             trace_repo=trace_repo,
             vector_lifecycle=vector_lifecycle,
             sync_tracker=sync_tracker,
+            media_service=media_service,
         )
         job_repo = IngestJobRepository(db=db)
         ingest_service = IngestService(
@@ -176,14 +209,41 @@ class AppContainer:
             quota_service=quota_service,
             job_repo=job_repo,
             sync_tracker=sync_tracker,
+            media_service=media_service,
         )
-        ingest_worker = IngestWorkerPool(
-            job_repo=job_repo,
-            processor=ingest_service.process_persisted_note,
-            worker_count=cfg.ingest_worker_count,
-            llm_max_concurrency=cfg.llm_max_concurrency,
-            max_retries=cfg.ingest_max_retries,
-        )
+        ingest_service.context_notes = cfg.context_notes
+        ingest_service.context_chars = cfg.context_chars
+        ingest_service.context_note_chars = cfg.context_note_chars
+        ingest_service.context_hours = cfg.context_hours
+
+        def _on_job_settled(sp: str, st_name: str) -> None:
+            sync_tracker.bump(sp, reason=f"ingest_{st_name}")
+
+        ingest_worker: IngestWorkerPool | IngestPipelineV2
+        if cfg.ingest_pipeline == "v1":
+            ingest_worker = IngestWorkerPool(
+                job_repo=job_repo,
+                processor=ingest_service.process_persisted_note,
+                worker_count=cfg.ingest_worker_count,
+                max_parallel_per_space=cfg.ingest_space_concurrency,
+                llm_max_concurrency=cfg.llm_max_concurrency,
+                max_retries=cfg.ingest_max_retries,
+                on_job_settled=_on_job_settled,
+            )
+        else:
+            ingest_worker = IngestPipelineV2(
+                job_repo=job_repo,
+                ingest_service=ingest_service,
+                worker_count=cfg.ingest_worker_count,
+                max_parallel_per_space=cfg.ingest_space_concurrency,
+                llm_max_concurrency=cfg.llm_max_concurrency,
+                max_retries=cfg.ingest_max_retries,
+                commit_deadline_seconds=cfg.commit_deadline_seconds,
+                vector_worker_count=cfg.vector_worker_count,
+                on_job_settled=_on_job_settled,
+            )
+        ingest_service.worker_running = lambda: ingest_worker.is_running
+        ingest_service.worker_notify = ingest_worker.notify
         retrieval_service = RetrievalService(
             note_repo=note_repo,
             memory_repo=memory_repo,
@@ -208,6 +268,20 @@ class AppContainer:
             task_matrix_service=task_matrix_service,
             sync_tracker=sync_tracker,
         )
+        focus_service = FocusService(
+            db=db,
+            memory_repo=memory_repo,
+            task_matrix_service=task_matrix_service,
+            sync_tracker=sync_tracker,
+        )
+        countdown_service = CountdownService(db=db, sync_tracker=sync_tracker)
+        calendar_service = CalendarService(
+            db=db,
+            memory_repo=memory_repo,
+            task_matrix_service=task_matrix_service,
+            countdown_provider=countdown_service.project_range,
+        )
+        voice_service = VoiceTranscriptionService(config=cfg)
         if ask_tools is None:
             ask_tools = (
                 (make_list_tasks_tool(task_matrix_service), make_list_notes_by_date_tool(note_repo))
@@ -224,6 +298,7 @@ class AppContainer:
             input_guard=input_guard,
             quota_service=quota_service,
             job_repo=job_repo,
+            media_service=media_service,
             tools=ask_tools,
         )
         dream_service = DreamService(
@@ -243,6 +318,19 @@ class AppContainer:
             trace_repo=trace_repo,
             vector_lifecycle=vector_lifecycle,
             change_service=change_service,
+        )
+        memo_journal_service = MemoAndJournalService(
+            db=db,
+            config=cfg,
+            note_repo=note_repo,
+            ingest_service=ingest_service,
+            job_repo=job_repo,
+            ingest_worker=ingest_worker,
+            media_service=media_service,
+            task_matrix_service=task_matrix_service,
+            dream_service=dream_service,
+            quota_service=quota_service,
+            sync_tracker=sync_tracker,
         )
 
         return cls(
@@ -273,9 +361,21 @@ class AppContainer:
             ingest_worker=ingest_worker,
             sync_tracker=sync_tracker,
             daily_scheduler=daily_scheduler,
+            preferences_service=preferences_service,
+            focus_service=focus_service,
+            voice_service=voice_service,
+            media_service=media_service,
+            calendar_service=calendar_service,
+            countdown_service=countdown_service,
+            memo_journal_service=memo_journal_service,
         )
 
     def close(self) -> None:
         self.daily_scheduler.stop()
         self.ingest_worker.stop()
+        if hasattr(self.vector_store, "close"):
+            try:
+                self.vector_store.close()
+            except Exception:
+                pass
         self.db.close()

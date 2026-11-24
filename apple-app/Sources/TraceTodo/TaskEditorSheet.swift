@@ -40,10 +40,13 @@ struct TaskEditorSheet: View {
                 VStack(spacing: 14) {
                     // 1. Top Macaron Theme Header Card
                     VStack(alignment: .leading, spacing: 10) {
-                        TextField("请输入任务内容 ✍️", text: $title)
-                            .font(.system(size: 19, weight: .bold))
-                            .textFieldStyle(.plain)
-                            .foregroundStyle(Color(red: 0.08, green: 0.11, blue: 0.18))
+                        HStack(spacing: 8) {
+                            TextField("请输入任务内容 ✍️", text: $title)
+                                .font(.system(size: 19, weight: .bold))
+                                .textFieldStyle(.plain)
+                                .foregroundStyle(Color(red: 0.08, green: 0.11, blue: 0.18))
+                            VoiceMicButton(text: $title, compact: true)
+                        }
 
                         TextField("可选补充备注 / 验收标准...", text: $summary)
                             .font(.system(size: 13))
@@ -484,11 +487,7 @@ struct TaskEditorSheet: View {
         manualQuadrant = t.userLocked ? p.quadrant : ""
 
         if let dueStr = p.dueAt, !dueStr.isEmpty {
-            let isoFrac = ISO8601DateFormatter()
-            isoFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let isoBasic = ISO8601DateFormatter()
-            isoBasic.formatOptions = [.withInternetDateTime]
-            if let parsed = isoFrac.date(from: dueStr) ?? isoBasic.date(from: dueStr) {
+            if let parsed = TraceTodoDateParser.parseBeijingDate(dueStr) {
                 hasDueDate = true
                 dueDate = parsed
             }

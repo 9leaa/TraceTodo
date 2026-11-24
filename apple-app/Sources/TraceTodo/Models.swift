@@ -268,6 +268,7 @@ struct TaskPayloadModel: Codable, Hashable {
     let quadrantLabel: String?
     let priorityScore: Double
     let priorityReason: String?
+    let startAt: String?
     let dueAt: String?
     let isOverdue: Bool?
     let assignee: String?
@@ -283,6 +284,7 @@ struct TaskPayloadModel: Codable, Hashable {
     let subtasks: [SubtaskItem]?
     let focusLockEnabled: Bool?
     let focusMinutes: Int?
+    let durationMinutes: Int?
     let focusSessionsCompleted: Int?
     let nudges: [NudgeItem]?
 
@@ -316,6 +318,7 @@ struct TaskPayloadModel: Codable, Hashable {
         case quadrantLabel = "quadrant_label"
         case priorityScore = "priority_score"
         case priorityReason = "priority_reason"
+        case startAt = "start_at"
         case dueAt = "due_at"
         case isOverdue = "is_overdue"
         case assignee
@@ -331,6 +334,7 @@ struct TaskPayloadModel: Codable, Hashable {
         case subtasks
         case focusLockEnabled = "focus_lock_enabled"
         case focusMinutes = "focus_minutes"
+        case durationMinutes = "duration_minutes"
         case focusSessionsCompleted = "focus_sessions_completed"
         case nudges
     }
@@ -346,6 +350,7 @@ struct TaskPayloadModel: Codable, Hashable {
         quadrantLabel = try c.decodeIfPresent(String.self, forKey: .quadrantLabel)
         priorityScore = try c.decodeIfPresent(Double.self, forKey: .priorityScore) ?? 0.0
         priorityReason = try c.decodeIfPresent(String.self, forKey: .priorityReason)
+        startAt = try c.decodeIfPresent(String.self, forKey: .startAt)
         dueAt = try c.decodeIfPresent(String.self, forKey: .dueAt)
         isOverdue = try c.decodeIfPresent(Bool.self, forKey: .isOverdue)
         assignee = try c.decodeIfPresent(String.self, forKey: .assignee)
@@ -361,6 +366,7 @@ struct TaskPayloadModel: Codable, Hashable {
         subtasks = try c.decodeIfPresent([SubtaskItem].self, forKey: .subtasks)
         focusLockEnabled = try c.decodeIfPresent(Bool.self, forKey: .focusLockEnabled)
         focusMinutes = try c.decodeIfPresent(Int.self, forKey: .focusMinutes)
+        durationMinutes = try c.decodeIfPresent(Int.self, forKey: .durationMinutes)
         focusSessionsCompleted = try c.decodeIfPresent(Int.self, forKey: .focusSessionsCompleted)
         nudges = try c.decodeIfPresent([NudgeItem].self, forKey: .nudges)
     }
@@ -592,6 +598,7 @@ struct CitedNoteItem: Codable, Identifiable, Hashable {
 struct AskCitations: Codable, Hashable {
     let memories: [CitedMemoryItem]?
     let notes: [CitedNoteItem]?
+    let media: [MediaAttachmentModel]?
 }
 
 enum JSONValue: Codable, Hashable {
@@ -775,6 +782,7 @@ struct MemoryDetailResponse: Codable {
     let memory: MemoryItemModel?
     let sources: [SourceNoteDetail]
     let history: [VersionHistoryItem]
+    let media: [MediaAttachmentModel]?
     let markdown: String?
 }
 
@@ -896,7 +904,16 @@ struct AuthSessionResponse: Codable {
     }
 }
 
+struct NoteBriefRef: Codable {
+    let noteId: String
+
+    enum CodingKeys: String, CodingKey {
+        case noteId = "note_id"
+    }
+}
+
 struct NoteRecordResponse: Codable {
+    let note: NoteBriefRef?
     let extractionStatus: String?
     let filtered: Bool?
     let filterReason: String?
@@ -904,11 +921,28 @@ struct NoteRecordResponse: Codable {
     let jobId: String?
 
     enum CodingKeys: String, CodingKey {
+        case note
         case extractionStatus = "extraction_status"
         case filtered
         case filterReason = "filter_reason"
         case errorMessage = "error_message"
         case jobId = "job_id"
+    }
+}
+
+struct RecentIngestJobModel: Codable {
+    let jobId: String
+    let noteId: String
+    let status: String
+    let errorMessage: String?
+    let changesCount: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case jobId = "job_id"
+        case noteId = "note_id"
+        case status
+        case errorMessage = "error_message"
+        case changesCount = "changes_count"
     }
 }
 
@@ -918,6 +952,8 @@ struct IngestStatusResponse: Codable {
     let processing: Int
     let pending: Int
     let lastCompletedAt: String?
+    let syncVersion: Int?
+    let recentJobs: [RecentIngestJobModel]?
 
     enum CodingKeys: String, CodingKey {
         case spaceId = "space_id"
@@ -925,6 +961,8 @@ struct IngestStatusResponse: Codable {
         case processing
         case pending
         case lastCompletedAt = "last_completed_at"
+        case syncVersion = "sync_version"
+        case recentJobs = "recent_jobs"
     }
 }
 
@@ -934,8 +972,10 @@ struct SyncStateResponse: Codable {
     let lastReason: String?
     let updatedAt: String?
     let pendingIngest: Int?
+    let lastCompletedAt: String?
     let serverTime: String?
     let beijingDate: String?
+    let recentJobs: [RecentIngestJobModel]?
 
     enum CodingKeys: String, CodingKey {
         case spaceId = "space_id"
@@ -943,9 +983,44 @@ struct SyncStateResponse: Codable {
         case lastReason = "last_reason"
         case updatedAt = "updated_at"
         case pendingIngest = "pending_ingest"
+        case lastCompletedAt = "last_completed_at"
         case serverTime = "server_time"
         case beijingDate = "beijing_date"
+        case recentJobs = "recent_jobs"
     }
+}
+
+struct BootstrapHealthModel: Codable {
+    let status: String?
+    let llmProvider: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case llmProvider = "llm_provider"
+    }
+}
+
+struct BootstrapResponse: Codable {
+    let health: BootstrapHealthModel?
+    let auth: AuthStatusResponse?
+    let preferences: SpacePreferencesResponse?
+    let syncState: SyncStateResponse?
+
+    enum CodingKeys: String, CodingKey {
+        case health
+        case auth
+        case preferences
+        case syncState = "sync_state"
+    }
+}
+
+struct OptimisticIngestItem: Identifiable, Equatable {
+    let id: String
+    let text: String
+    var noteId: String?
+    var jobId: String?
+    var ackReceived: Bool
+    let createdAt: Date
 }
 
 struct TaskStatusRefreshResponse: Codable {
@@ -1203,5 +1278,56 @@ struct GraphCanvasResponse: Codable {
         case nodes
         case edges
         case stats
+    }
+}
+
+enum TraceTodoDateParser {
+    static let beijingTimeZone = TimeZone(identifier: "Asia/Shanghai") ?? TimeZone(secondsFromGMT: 8 * 3600)!
+
+    static func parseBeijingDate(_ raw: String, defaultAllDayHour: Int = 9) -> Date? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let isoFrac = ISO8601DateFormatter()
+        isoFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = isoFrac.date(from: trimmed) {
+            return d
+        }
+
+        let isoBasic = ISO8601DateFormatter()
+        isoBasic.formatOptions = [.withInternetDateTime]
+        if let d = isoBasic.date(from: trimmed) {
+            return d
+        }
+
+        let naiveFormats = [
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd'T'HH:mm",
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd HH:mm",
+        ]
+        for fmtStr in naiveFormats {
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "en_US_POSIX")
+            df.timeZone = beijingTimeZone
+            df.dateFormat = fmtStr
+            if let d = df.date(from: trimmed) {
+                return d
+            }
+        }
+
+        if trimmed.count >= 10 {
+            let ymd = String(trimmed.prefix(10))
+            let dfDay = DateFormatter()
+            dfDay.locale = Locale(identifier: "en_US_POSIX")
+            dfDay.timeZone = beijingTimeZone
+            dfDay.dateFormat = "yyyy-MM-dd"
+            if let base = dfDay.date(from: ymd) {
+                var cal = Calendar(identifier: .gregorian)
+                cal.timeZone = beijingTimeZone
+                return cal.date(bySettingHour: max(0, min(23, defaultAllDayHour)), minute: 0, second: 0, of: base) ?? base
+            }
+        }
+        return nil
     }
 }

@@ -4,17 +4,22 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from dataclasses import replace
+from datetime import timedelta
 import hashlib
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import math
 from pathlib import Path
+import time
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 try:
     from fastapi import FastAPI, Request, Response
     from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.middleware.gzip import GZipMiddleware
     from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
     _HAS_FASTAPI = True
@@ -23,6 +28,7 @@ except ImportError:  # pragma: no cover
     Request = Any  # type: ignore[misc,assignment]
     Response = Any  # type: ignore[misc,assignment]
     CORSMiddleware = Any  # type: ignore[misc,assignment]
+    GZipMiddleware = Any  # type: ignore[misc,assignment]
     HTMLResponse = Any  # type: ignore[misc,assignment]
     JSONResponse = Any  # type: ignore[misc,assignment]
     StreamingResponse = Any  # type: ignore[misc,assignment]
@@ -101,6 +107,76 @@ from trace_memory.services.auth_service import UserAccount
 
 DASHBOARD_HTML_PATH = Path(__file__).with_name("dashboard.html")
 APP_ICON_PNG_PATH = Path(__file__).with_name("app_icon.png")
+SCENES_DIR = Path(__file__).with_name("scenes")
+def _scene_file(filename: str) -> Path | None:
+    """Resolve a scene image against the on-disk directory at request time.
+
+    The dashboard HTML is hot-reloaded from disk, so a whitelist frozen at process
+    start would 404 newly merged scenes until the server is restarted.
+    """
+    stem = filename[:-4] if filename.endswith(".jpg") else ""
+    if not stem or not all(c.isascii() and (c.isalnum() or c == "_") for c in stem):
+        return None
+    path = SCENES_DIR / filename
+    return path if path.is_file() else None
+
+
+def _scene_etag(path: Path) -> str:
+    st = path.stat()
+    return f'"{st.st_mtime_ns:x}-{st.st_size:x}"'
+
+_DASHBOARD_CACHE: dict[str, Any] = {
+    "key": None,
+    "bytes": b"",
+    "etag": "",
+}
+
+_GZIP_SKIP_PREFIXES = ("/api/sync/stream", "/api/media/file", "/scenes/")
+_GZIP_SKIP_EXACT = frozenset({"/icon.png", "/apple-touch-icon.png", "/favicon.ico"})
+
+
+def _load_dashboard_html_cached() -> tuple[bytes, str]:
+    """Return `(utf8_bytes, weak_etag)` for `DASHBOARD_HTML_PATH`, cached by `(path, mtime_ns, size)`."""
+    st = DASHBOARD_HTML_PATH.stat()
+    cache_key = (str(DASHBOARD_HTML_PATH), st.st_mtime_ns, st.st_size)
+    if _DASHBOARD_CACHE["key"] == cache_key:
+        return _DASHBOARD_CACHE["bytes"], _DASHBOARD_CACHE["etag"]
+    raw_bytes = DASHBOARD_HTML_PATH.read_bytes()
+    digest = hashlib.sha256(raw_bytes).hexdigest()[:16]
+    etag = f'W/"{digest}"'
+    _DASHBOARD_CACHE["key"] = cache_key
+    _DASHBOARD_CACHE["bytes"] = raw_bytes
+    _DASHBOARD_CACHE["etag"] = etag
+    return raw_bytes, etag
+
+
+def _normalize_etag_token(token: str) -> str:
+    t = token.strip()
+    if t.startswith(("W/", "w/")):
+        t = t[2:].strip()
+    if len(t) >= 2 and t[0] == '"' and t[-1] == '"':
+        t = t[1:-1]
+    if t.endswith("-gzip"):
+        t = t[:-5]
+    return t
+
+
+def _etag_matches(if_none_match: str | None, etag: str) -> bool:
+    """Return True when an `If-None-Match` header matches `etag` (weak comparison per RFC 9110)."""
+    if not if_none_match:
+        return False
+    raw = if_none_match.strip()
+    if not raw:
+        return False
+    if raw == "*":
+        return True
+    target = _normalize_etag_token(etag)
+    if not target:
+        return False
+    for candidate in raw.split(","):
+        if _normalize_etag_token(candidate) == target:
+            return True
+    return False
 
 
 def _extract_token(
@@ -148,13 +224,22 @@ def _safe_int(
     default: int | None = None,
     min_val: int | None = None,
     max_val: int | None = None,
+    strict: bool = False,
 ) -> int | None:
     if raw is None or (isinstance(raw, str) and not raw.strip()):
         return default
+    if isinstance(raw, bool):
+        raise ValidationError(f"参数 {name} 必须为整数")
     try:
         val = int(raw)
     except (TypeError, ValueError) as exc:
         raise ValidationError(f"参数 {name} 必须为整数") from exc
+    if strict:
+        if min_val is not None and val < min_val:
+            raise ValidationError(f"参数 {name} 不能小于 {min_val}")
+        if max_val is not None and val > max_val:
+            raise ValidationError(f"参数 {name} 不能大于 {max_val}")
+        return val
     if min_val is not None and val < min_val:
         val = min_val
     if max_val is not None and val > max_val:
@@ -172,10 +257,14 @@ def _safe_float(
 ) -> float:
     if raw is None or (isinstance(raw, str) and not raw.strip()):
         return default
+    if isinstance(raw, bool):
+        raise ValidationError(f"参数 {name} 必须为数值")
     try:
         val = float(raw)
     except (TypeError, ValueError) as exc:
         raise ValidationError(f"参数 {name} 必须为数值") from exc
+    if not math.isfinite(val):
+        raise ValidationError(f"参数 {name} 必须为有限数值")
     if min_val is not None and val < min_val:
         val = min_val
     if max_val is not None and val > max_val:
@@ -205,6 +294,7 @@ class ApiDispatcher:
             "/api/auth/status",
             "/api/auth/login",
             "/api/auth/register",
+            "/api/bootstrap",
         }
     )
 
@@ -264,9 +354,12 @@ class ApiDispatcher:
             if user.role == "admin":
                 eff_space = req_space or user.space_id
             else:
-                if req_space and req_space != user.space_id:
+                if path == "/api/bootstrap":
+                    eff_space = user.space_id
+                elif req_space and req_space != user.space_id:
                     raise PermissionDeniedError("无权访问其他用户的记忆空间")
-                eff_space = user.space_id
+                else:
+                    eff_space = user.space_id
             return user, eff_space, None
 
         return None, req_space or self.container.config.default_space, None
@@ -320,6 +413,92 @@ class ApiDispatcher:
             require_llm_slot=require_llm_slot,
         )
 
+    def resolve_media_file(
+        self,
+        query_params: dict[str, list[str]] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, str, bytes]:
+        """Serve raw binary image/thumbnail with Bearer auth OR HMAC-signed URL verification."""
+        qp = query_params or {}
+        media_id = (qp.get("id") or [""])[0].strip()
+        req_space = (qp.get("space_id") or [""])[0].strip() or self.container.config.default_space
+        sig = (qp.get("sig") or [""])[0].strip()
+        is_thumb = (qp.get("thumb") or [""])[0].strip().lower() in ("1", "true", "yes")
+
+        if not media_id:
+            return 400, "application/json; charset=utf-8", json.dumps({"error": "id is required"}).encode("utf-8")
+
+        try:
+            if sig and self.container.media_service.verify_media_sig(req_space, media_id, sig):
+                eff_space = req_space
+            else:
+                token = _extract_token(qp, headers)
+                _, eff_space, _ = self._resolve_auth_and_space("/api/media/file", qp, {}, token)
+            img_bytes, mime = self.container.media_service.read_binary_file(
+                eff_space, media_id, thumb=is_thumb
+            )
+            return 200, mime, img_bytes
+        except UnauthorizedError as exc:
+            return 401, "application/json; charset=utf-8", json.dumps({"error": str(exc)}).encode("utf-8")
+        except PermissionDeniedError as exc:
+            return 403, "application/json; charset=utf-8", json.dumps({"error": str(exc)}).encode("utf-8")
+        except NotFoundError as exc:
+            return 404, "application/json; charset=utf-8", json.dumps({"error": str(exc)}).encode("utf-8")
+
+    def _build_health_payload(self, settings: dict[str, Any] | None = None) -> dict[str, Any]:
+        cfg_settings = settings if settings is not None else self.container.settings_store.get_all()
+        return {
+            "status": "ok",
+            "default_space": self.container.config.default_space,
+            "vector_backend": self.container.vector_store.backend_name,
+            "llm_provider": self.container.llm.provider_name,
+            "vision_model": self.container.config.vision_model,
+            "auth_required": bool(self.container.config.auth_required),
+            "allow_registration": bool(cfg_settings["allow_registration"]),
+            "has_users": self.container.auth_service.has_users(),
+            "noise_filter_enabled": bool(cfg_settings["noise_filter_enabled"]),
+            "timezone": "Asia/Shanghai (UTC+8)",
+            "server_time": beijing_now_iso(),
+            "async_ingest_ready": self.container.ingest_worker.is_running,
+            "daily_scheduler_ready": self.container.daily_scheduler.is_running,
+        }
+
+    def _build_auth_status_payload(
+        self,
+        user: UserAccount | None,
+        settings: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        cfg_settings = settings if settings is not None else self.container.settings_store.get_all()
+        quota = (
+            self.container.quota_service.get_usage(f"space:{user.space_id}")
+            if user is not None
+            else None
+        )
+        return {
+            "auth_required": bool(self.container.config.auth_required),
+            "allow_registration": bool(cfg_settings["allow_registration"]),
+            "has_users": self.container.auth_service.has_users(),
+            "authenticated": user is not None,
+            "user": user.to_dict() if user is not None else None,
+            "quota": quota,
+            "defense": {
+                "noise_filter_enabled": bool(cfg_settings["noise_filter_enabled"]),
+                "max_note_chars": int(cfg_settings["max_note_chars"]),
+                "rate_limit_per_minute": int(cfg_settings["rate_limit_per_minute"]),
+            },
+        }
+
+    def _build_sync_state_payload(
+        self, space_id: str, *, include_recent_jobs: bool = False
+    ) -> dict[str, Any]:
+        st = self.container.sync_tracker.get_state(space_id)
+        ing = self.container.job_repo.get_space_status(space_id)
+        st["pending_ingest"] = int(ing.get("pending", 0))
+        st["last_completed_at"] = str(ing.get("last_completed_at", ""))
+        if include_recent_jobs:
+            st["recent_jobs"] = ing.get("recent_jobs", [])
+        return st
+
     def dispatch(
         self,
         method: str,
@@ -337,50 +516,40 @@ class ApiDispatcher:
         try:
             user, space_id, share_info = self._resolve_auth_and_space(path, qp, payload, eff_token)
 
-            if method == "GET" and path == "/api/health":
+            if method == "GET" and path == "/api/bootstrap":
                 settings = self.container.settings_store.get_all()
+                can_read_space = (user is not None) or (not self.container.config.auth_required)
                 return 200, {
-                    "status": "ok",
-                    "default_space": self.container.config.default_space,
-                    "vector_backend": self.container.vector_store.backend_name,
-                    "llm_provider": self.container.llm.provider_name,
-                    "auth_required": bool(self.container.config.auth_required),
-                    "allow_registration": bool(settings["allow_registration"]),
-                    "has_users": self.container.auth_service.has_users(),
-                    "noise_filter_enabled": bool(settings["noise_filter_enabled"]),
-                    "timezone": "Asia/Shanghai (UTC+8)",
-                    "server_time": beijing_now_iso(),
-                    "async_ingest_ready": self.container.ingest_worker.is_running,
-                    "daily_scheduler_ready": self.container.daily_scheduler.is_running,
+                    "health": self._build_health_payload(settings=settings),
+                    "auth": self._build_auth_status_payload(user, settings=settings),
+                    "preferences": (
+                        self.container.preferences_service.get_preferences(space_id)
+                        if can_read_space
+                        else None
+                    ),
+                    "sync_state": (
+                        self._build_sync_state_payload(space_id)
+                        if can_read_space
+                        else None
+                    ),
                 }
+
+            if method == "GET" and path == "/api/health":
+                return 200, self._build_health_payload()
+
+            if method == "GET" and path == "/api/preferences":
+                return 200, self.container.preferences_service.get_preferences(space_id)
+
+            if method == "POST" and path == "/api/preferences":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                updated_prefs = self.container.preferences_service.update_preferences(space_id, payload)
+                return 200, updated_prefs
 
             if method == "GET" and path == "/api/sync/state":
-                st = self.container.sync_tracker.get_state(space_id)
-                ing = self.container.job_repo.get_space_status(space_id)
-                st["pending_ingest"] = int(ing.get("pending", 0))
-                st["last_completed_at"] = str(ing.get("last_completed_at", ""))
-                return 200, st
+                return 200, self._build_sync_state_payload(space_id)
 
             if method == "GET" and path == "/api/auth/status":
-                settings = self.container.settings_store.get_all()
-                quota = (
-                    self.container.quota_service.get_usage(f"space:{user.space_id}")
-                    if user is not None
-                    else None
-                )
-                return 200, {
-                    "auth_required": bool(self.container.config.auth_required),
-                    "allow_registration": bool(settings["allow_registration"]),
-                    "has_users": self.container.auth_service.has_users(),
-                    "authenticated": user is not None,
-                    "user": user.to_dict() if user is not None else None,
-                    "quota": quota,
-                    "defense": {
-                        "noise_filter_enabled": bool(settings["noise_filter_enabled"]),
-                        "max_note_chars": int(settings["max_note_chars"]),
-                        "rate_limit_per_minute": int(settings["rate_limit_per_minute"]),
-                    },
-                }
+                return 200, self._build_auth_status_payload(user)
 
             if method == "POST" and path == "/api/auth/register":
                 out = self.container.auth_service.register(
@@ -451,7 +620,12 @@ class ApiDispatcher:
                 return 200, self.container.admin_service.get_overview(user)
 
             if method == "GET" and path == "/api/admin/users":
-                return 200, {"users": self.container.admin_service.list_users(user)}
+                q_str = qp.get("q", [""])[0].strip()
+                lim = _safe_int(qp.get("limit", ["50"])[0], name="limit", default=50, min_val=1, max_val=200)
+                off = _safe_int(qp.get("offset", ["0"])[0], name="offset", default=0, min_val=0, max_val=100000)
+                return 200, self.container.admin_service.list_users_page(
+                    user, q=q_str, limit=int(lim or 50), offset=int(off or 0)
+                )
 
             if method == "POST" and path == "/api/admin/users/create":
                 created = self.container.admin_service.create_user(
@@ -536,7 +710,7 @@ class ApiDispatcher:
                 res = self.container.task_matrix_service.save_task_card(
                     space_id=space_id,
                     data=payload,
-                    actor_id=str(payload.get("actor_id", user.username if user else "user")),
+                    actor_id=user.username if user else "user",
                 )
                 if res.status != "idempotent_replay":
                     self.container.quota_service.record_usage(
@@ -596,15 +770,168 @@ class ApiDispatcher:
                 elapsed_s = _safe_int(
                     payload.get("elapsed_seconds", 0), name="elapsed_seconds", default=0, min_val=0, max_val=86400
                 )
+                ev_str = str(payload.get("event", "complete_session"))
+                reason_str = str(payload.get("reason", ""))[:200]
                 res = self.container.task_matrix_service.record_focus_event(
                     space_id=space_id,
                     memory_id=str(payload.get("memory_id", "")),
-                    event=str(payload.get("event", "complete_session")),
-                    reason=str(payload.get("reason", ""))[:200],
+                    event=ev_str,
+                    reason=reason_str,
                     elapsed_seconds=int(elapsed_s or 0),
                     expected_version=exp_ver,
                 )
+                if res.memory is not None:
+                    plan_m = int(res.memory.payload.get("focus_minutes", 25) or 25)
+                    self.container.focus_service.insert_session_row(
+                        space_id=space_id,
+                        task_memory_id=res.memory.memory_id,
+                        task_title=res.memory.title,
+                        mode=str(payload.get("mode", "pomodoro")),
+                        planned_minutes=plan_m,
+                        duration_seconds=int(elapsed_s or 0) or (plan_m * 60),
+                        status="completed" if ev_str == "complete_session" else "aborted",
+                        abort_reason=reason_str,
+                        actor_id=user.username if user else "user",
+                    )
                 return 200, res.to_dict()
+
+            if method == "GET" and path == "/api/focus/overview":
+                lim = _safe_int(qp.get("limit", ["50"])[0], name="limit", default=50, min_val=1, max_val=200)
+                off = _safe_int(qp.get("offset", ["0"])[0], name="offset", default=0, min_val=0, max_val=100000)
+                date_q = qp.get("date", [""])[0].strip()
+                return 200, self.container.focus_service.get_overview(
+                    space_id=space_id, limit=int(lim or 50), offset=int(off or 0), focus_date=date_q
+                )
+
+            if method == "POST" and path == "/api/focus/record":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                exp_ver = _safe_int(payload.get("expected_version"), name="expected_version", min_val=1)
+                plan_min = _safe_int(payload.get("planned_minutes", 25), name="planned_minutes", default=25, min_val=1, max_val=240)
+                dur_sec = _safe_int(payload.get("duration_seconds", 0), name="duration_seconds", default=0, min_val=0, max_val=86400)
+                out_focus = self.container.focus_service.record_session(
+                    space_id=space_id,
+                    mode=str(payload.get("mode", "pomodoro")),
+                    status=str(payload.get("status", "completed")),
+                    planned_minutes=int(plan_min or 25),
+                    duration_seconds=int(dur_sec or 0),
+                    task_memory_id=str(payload.get("task_memory_id", "")),
+                    task_title=str(payload.get("task_title", "")),
+                    abort_reason=str(payload.get("abort_reason", "")),
+                    note=str(payload.get("note", "")),
+                    started_at=str(payload.get("started_at", "")),
+                    ended_at=str(payload.get("ended_at", "")),
+                    expected_version=exp_ver,
+                    complete_task=bool(payload.get("complete_task", False)),
+                    actor_id=user.username if user else "user",
+                )
+                return 200, out_focus
+
+            if method == "POST" and path == "/api/focus/delete":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                deleted = self.container.focus_service.delete_session(
+                    space_id=space_id,
+                    session_id=str(payload.get("session_id", "")),
+                )
+                return 200, {"deleted": deleted}
+
+            if method == "GET" and path == "/api/calendar/overview":
+                cal_view = qp.get("view", ["week"])[0].strip()
+                anchor_d = qp.get("anchor_date", [""])[0].strip()
+                inc_done = qp.get("include_done", ["true"])[0].strip().lower() not in ("false", "0", "no")
+                return 200, self.container.calendar_service.get_overview(
+                    space_id=space_id,
+                    view=cal_view,
+                    anchor_date=anchor_d,
+                    include_done=inc_done,
+                )
+
+            if method == "POST" and path == "/api/calendar/schedule":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                out_sched = self.container.calendar_service.schedule_slot(
+                    space_id=space_id,
+                    payload=payload,
+                    actor_id=user.username if user else "user",
+                )
+                return 200, out_sched
+
+            if method == "GET" and path == "/api/countdowns/list":
+                return 200, self.container.countdown_service.list_countdowns(space_id=space_id)
+
+            if method == "POST" and path == "/api/countdowns/save":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                saved_cd = self.container.countdown_service.save_countdown(space_id=space_id, data=payload)
+                return 200, saved_cd
+
+            if method == "POST" and path == "/api/countdowns/delete":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                del_ok = self.container.countdown_service.delete_countdown(
+                    space_id=space_id,
+                    countdown_id=str(payload.get("countdown_id", "")),
+                )
+                return 200, {"deleted": del_ok}
+
+            if method == "GET" and path == "/api/memos/list":
+                lim = _safe_int(qp.get("limit", ["80"])[0], name="limit", default=80, min_val=1, max_val=200)
+                off = _safe_int(qp.get("offset", ["0"])[0], name="offset", default=0, min_val=0, max_val=100000)
+                q_str = qp.get("q", [""])[0].strip()
+                tag_str = qp.get("tag", [""])[0].strip()
+                pin_only = qp.get("pinned_only", ["false"])[0].strip().lower() in ("true", "1", "yes")
+                return 200, self.container.memo_journal_service.list_memos(
+                    space_id=space_id,
+                    q=q_str,
+                    tag=tag_str,
+                    pinned_only=pin_only,
+                    limit=int(lim or 80),
+                    offset=int(off or 0),
+                )
+
+            if method == "POST" and path == "/api/memos/save":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                actor_name = user.username if user else "user"
+                return 200, self.container.memo_journal_service.save_memo(
+                    space_id=space_id,
+                    payload=payload,
+                    actor_id=actor_name,
+                )
+
+            if method == "POST" and path == "/api/memos/pin":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                pinned_memo = self.container.memo_journal_service.toggle_pin(
+                    space_id=space_id,
+                    note_id=str(payload.get("note_id", "")),
+                    pinned=bool(payload.get("pinned", True)),
+                )
+                return 200, {"memo": pinned_memo}
+
+            if method == "GET" and path == "/api/journal/overview":
+                j_date = qp.get("date", [""])[0].strip()
+                j_lim = _safe_int(qp.get("limit", ["30"])[0], name="limit", default=30, min_val=1, max_val=120)
+                j_off = _safe_int(qp.get("offset", ["0"])[0], name="offset", default=0, min_val=0, max_val=100000)
+                return 200, self.container.memo_journal_service.get_journal_overview(
+                    space_id=space_id,
+                    date_str=j_date,
+                    limit=int(j_lim or 30),
+                    offset=int(j_off or 0),
+                )
+
+            if method == "POST" and path == "/api/journal/save":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                actor_name = user.username if user else "user"
+                return 200, self.container.memo_journal_service.save_journal(
+                    space_id=space_id,
+                    payload=payload,
+                    actor_id=actor_name,
+                )
+
+            if method == "POST" and path == "/api/journal/ai-summary":
+                self._enforce_rate_and_quota(user=user, space_id=space_id, client_ip=client_ip)
+                return 200, self.container.memo_journal_service.generate_ai_daily_summary(
+                    space_id=space_id,
+                    date_str=str(payload.get("date") or payload.get("journal_date") or ""),
+                    draft_content=str(payload.get("draft_content", "")),
+                    mood=str(payload.get("mood", "")),
+                    trigger_dream=bool(payload.get("trigger_dream", False)),
+                )
 
             if method == "GET" and path == "/api/supervision/board":
                 assignee = qp.get("assignee", [""])[0]
@@ -627,45 +954,128 @@ class ApiDispatcher:
                 )
                 return 200, res.to_dict()
 
+            if method == "POST" and path == "/api/voice/transcribe":
+                self._enforce_rate_and_quota(
+                    user=user, space_id=space_id, client_ip=client_ip, require_llm_slot=True
+                )
+                tr_out = self.container.voice_service.transcribe_short_audio(
+                    audio_base64=str(payload.get("audio_base64", "")),
+                    mime_type=str(payload.get("mime_type", "audio/webm")),
+                    language=str(payload.get("language", "zh-CN")),
+                    hint_text=str(payload.get("hint_text", "")),
+                )
+                if int(tr_out.get("tokens_used", 0) or 0) > 0:
+                    self.container.quota_service.record_usage(
+                        f"space:{space_id}", llm_calls=1, tokens_used=int(tr_out["tokens_used"])
+                    )
+                if bool(payload.get("auto_ingest", False)) and tr_out.get("text"):
+                    actor_name = user.username if user else "user"
+                    if self.container.ingest_worker.is_running:
+                        ing_res = self.container.ingest_service.enqueue_note(
+                            space_id=space_id,
+                            content=str(tr_out["text"]),
+                            source_type="web",
+                            actor_id=actor_name,
+                        )
+                        if ing_res.extraction_status == "queued":
+                            self.container.ingest_worker.notify()
+                    else:
+                        ing_res = self.container.ingest_service.record_note(
+                            space_id=space_id,
+                            content=str(tr_out["text"]),
+                            source_type="web",
+                            actor_id=actor_name,
+                        )
+                    tr_out["ingest"] = ing_res.to_dict()
+                return 200, tr_out
+
+            if method == "POST" and path == "/api/media/upload":
+                self._enforce_rate_and_quota(
+                    user=user, space_id=space_id, client_ip=client_ip, require_note_slot=False
+                )
+                w = _safe_int(payload.get("width", 0), name="width", default=0, min_val=0, max_val=20000)
+                h = _safe_int(payload.get("height", 0), name="height", default=0, min_val=0, max_val=20000)
+                media_obj = self.container.media_service.upload_image(
+                    space_id=space_id,
+                    image_base64=str(payload.get("image_base64", "")),
+                    thumb_base64=str(payload.get("thumb_base64", "")),
+                    width=int(w or 0),
+                    height=int(h or 0),
+                    note_id=str(payload.get("note_id", "")),
+                    vision_hint=str(payload.get("vision_hint", "")),
+                    analyze_immediately=bool(payload.get("analyze_immediately", False)),
+                )
+                return 200, {"media": media_obj, "used_bytes": self.container.media_service.get_space_used_bytes(space_id)}
+
+            if method == "GET" and path == "/api/media/list":
+                lim = _safe_int(qp.get("limit", ["60"])[0], name="limit", default=60, min_val=1, max_val=200)
+                items = self.container.media_service.list_for_space(space_id, limit=int(lim or 60))
+                return 200, {
+                    "space_id": space_id,
+                    "count": len(items),
+                    "used_bytes": self.container.media_service.get_space_used_bytes(space_id),
+                    "quota_bytes": int(self.container.config.space_media_quota_mb) * 1024 * 1024,
+                    "media": items,
+                }
+
+            if method == "POST" and path == "/api/media/delete":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                deleted = self.container.media_service.delete_media(
+                    space_id=space_id, media_id=str(payload.get("media_id", ""))
+                )
+                return 200, {"deleted": deleted}
+
             if method == "POST" and path == "/api/notes/record":
                 self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
                 content = str(payload.get("content", "")).strip()
-                if not content:
+                raw_media_ids = payload.get("media_ids") or []
+                media_ids = [
+                    str(m).strip()
+                    for m in (raw_media_ids if isinstance(raw_media_ids, list) else [])
+                    if str(m).strip()
+                ][:12]
+                if not content and not media_ids:
                     raise ValidationError("content is required")
                 idem = str(payload.get("idempotency_key", "")).strip()
-                actor_name = str(payload.get("actor_id") or (user.username if user else "user"))
+                actor_name = user.username if user else "user"
 
-                # Fast length & noise check BEFORE consuming note/LLM quota
-                guard_res = self.container.input_guard.inspect_note(content)
-                if guard_res.allowed and not idem:
-                    is_dup, dup_reason = self.container.quota_service.check_duplicate_note(space_id, content)
-                    if is_dup:
-                        self.container.quota_service.record_usage(f"space:{space_id}", blocked_noise=1)
-                        self.container.quota_service.log_security_event(
-                            action="ingest_duplicate_blocked",
-                            status="duplicate",
-                            actor_user_id=user.user_id if user else actor_name,
-                            space_id=space_id,
-                            detail={"preview": content[:40]},
-                            client_ip=client_ip,
-                        )
-                        return 200, {
-                            "note": RawNote(
-                                note_id="filtered_duplicate",
+                # Fast length & noise check BEFORE consuming note/LLM quota (skip noise filter when images attached)
+                if media_ids:
+                    guard_allowed = True
+                    if len(content) > int(self.container.settings_store.get_all().get("max_note_chars", 2000)):
+                        raise ValidationError("单条记录字数超出上限")
+                else:
+                    guard_res = self.container.input_guard.inspect_note(content)
+                    guard_allowed = guard_res.allowed
+                    if guard_allowed and not idem:
+                        is_dup, dup_reason = self.container.quota_service.check_duplicate_note(space_id, content)
+                        if is_dup:
+                            self.container.quota_service.record_usage(f"space:{space_id}", blocked_noise=1)
+                            self.container.quota_service.log_security_event(
+                                action="ingest_duplicate_blocked",
+                                status="duplicate",
+                                actor_user_id=user.user_id if user else actor_name,
                                 space_id=space_id,
-                                content=content,
-                                source_type="web",
-                                actor_id=actor_name,
-                            ).to_dict(),
-                            "extraction_status": "filtered_noise",
-                            "filtered": True,
-                            "filter_reason": dup_reason,
-                            "changes": [],
-                            "error_message": dup_reason,
-                            "trace_id": "",
-                        }
+                                detail={"preview": content[:40]},
+                                client_ip=client_ip,
+                            )
+                            return 200, {
+                                "note": RawNote(
+                                    note_id="filtered_duplicate",
+                                    space_id=space_id,
+                                    content=content,
+                                    source_type="web",
+                                    actor_id=actor_name,
+                                ).to_dict(),
+                                "extraction_status": "filtered_noise",
+                                "filtered": True,
+                                "filter_reason": dup_reason,
+                                "changes": [],
+                                "error_message": dup_reason,
+                                "trace_id": "",
+                            }
 
-                if guard_res.allowed:
+                if guard_allowed:
                     self._check_daily_quota(
                         user=user,
                         space_id=space_id,
@@ -693,11 +1103,17 @@ class ApiDispatcher:
                         actor_id=actor_name,
                         event_time=str(payload.get("event_time", "")),
                         idempotency_key=idem,
+                        media_ids=media_ids,
                     )
+                    out_dict = res_ing.to_dict()
+                    if media_ids:
+                        out_dict["media"] = self.container.media_service.list_for_notes(
+                            space_id, [res_ing.note.note_id]
+                        ).get(res_ing.note.note_id, [])
                     if res_ing.extraction_status == "queued":
                         self.container.ingest_worker.notify()
-                        return 202, res_ing.to_dict()
-                    return 200, res_ing.to_dict()
+                        return 202, out_dict
+                    return 200, out_dict
 
                 res_ing = self.container.ingest_service.record_note(
                     space_id=space_id,
@@ -706,17 +1122,99 @@ class ApiDispatcher:
                     actor_id=actor_name,
                     event_time=str(payload.get("event_time", "")),
                     idempotency_key=idem,
+                    media_ids=media_ids,
                 )
-                return 200, res_ing.to_dict()
+                out_dict = res_ing.to_dict()
+                if media_ids:
+                    out_dict["media"] = self.container.media_service.list_for_notes(
+                        space_id, [res_ing.note.note_id]
+                    ).get(res_ing.note.note_id, [])
+                return 200, out_dict
 
             if method == "GET" and path == "/api/notes/ingest-status":
-                status_obj = self.container.job_repo.get_space_status(space_id)
+                wait_ms = int(
+                    _safe_int(
+                        qp.get("wait_ms", ["0"])[0],
+                        name="wait_ms",
+                        default=0,
+                        min_val=0,
+                        max_val=12000,
+                    )
+                    or 0
+                )
+                since_ver = int(
+                    _safe_int(
+                        qp.get("since_version", ["-1"])[0],
+                        name="since_version",
+                        default=-1,
+                        min_val=-1,
+                    )
+                    or -1
+                )
                 job_id = qp.get("job_id", [""])[0].strip()
+                status_obj = self.container.job_repo.get_space_status(space_id)
+                sync_st = self.container.sync_tracker.get_state(space_id)
+                cur_ver = int(sync_st.get("sync_version", 0))
+
+                if wait_ms > 0:
+                    deadline = time.monotonic() + (wait_ms / 1000.0)
+                    init_completed_at = str(status_obj.get("last_completed_at", ""))
+                    while True:
+                        already_done = False
+                        if job_id:
+                            j_probe = self.container.job_repo.get_job(job_id)
+                            if j_probe is not None and j_probe["space_id"] == space_id:
+                                already_done = j_probe["status"] in ("completed", "failed", "cancelled")
+                        elif since_ver >= 0 and cur_ver > since_ver and int(status_obj.get("pending", 0)) == 0:
+                            already_done = True
+                        elif int(status_obj.get("pending", 0)) == 0 and since_ver < 0:
+                            already_done = True
+                        elif (
+                            not job_id
+                            and str(status_obj.get("last_completed_at", "")) != init_completed_at
+                        ):
+                            already_done = True
+
+                        rem = deadline - time.monotonic()
+                        if already_done or rem <= 0.005:
+                            break
+                        if int(status_obj.get("pending", 0)) <= 0 and since_ver < 0:
+                            break
+                        wait_base = since_ver if (since_ver >= 0 and cur_ver <= since_ver) else cur_ver
+                        sync_st = self.container.sync_tracker.wait_for_update(
+                            space_id, wait_base, timeout_seconds=rem
+                        )
+                        cur_ver = int(sync_st.get("sync_version", 0))
+                        status_obj = self.container.job_repo.get_space_status(space_id)
+
+                status_obj["sync_version"] = int(sync_st.get("sync_version", 0))
                 if job_id:
                     job_obj = self.container.job_repo.get_job(job_id)
                     if job_obj is not None and job_obj["space_id"] == space_id:
                         status_obj["job"] = job_obj
                 return 200, status_obj
+
+            if method == "GET" and path == "/api/notes/list":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                q = qp.get("q", [""])[0].strip()[:300]
+                lim = _safe_int(qp.get("limit", ["40"])[0], name="limit", default=40, min_val=1, max_val=200)
+                if q:
+                    hits = self.container.note_repo.search_bm25(space_id=space_id, query=q, limit=int(lim or 40))
+                    notes_out = [
+                        {**n.to_dict(), "bm25_score": round(score, 4)}
+                        for n, score in hits
+                    ]
+                else:
+                    notes_out = [
+                        n.to_dict()
+                        for n in self.container.note_repo.list_notes(space_id=space_id, limit=int(lim or 40))
+                    ]
+                media_by_note = self.container.media_service.list_for_notes(
+                    space_id, [n["note_id"] for n in notes_out]
+                )
+                for n_obj in notes_out:
+                    n_obj["media"] = media_by_note.get(n_obj["note_id"], [])
+                return 200, {"space_id": space_id, "count": len(notes_out), "notes": notes_out}
 
             if method == "POST" and path == "/api/notes/forget":
                 self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
@@ -728,17 +1226,26 @@ class ApiDispatcher:
                 return 200, out
 
             if method == "GET" and path == "/api/memories":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
                 memory_type = qp.get("memory_type", [""])[0]
                 limit = _safe_int(
-                    qp.get("limit", [None])[0], name="limit", default=30, min_val=1, max_val=100
-                ) or 30
+                    qp.get("limit", [None])[0],
+                    name="limit",
+                    default=30,
+                    min_val=1,
+                    max_val=100,
+                    strict=True,
+                )
+                assert limit is not None
                 offset = _safe_int(
                     qp.get("offset", [None])[0],
                     name="offset",
                     default=0,
                     min_val=0,
-                    max_val=2**63 - 1,
-                ) or 0
+                    max_val=100_000,
+                    strict=True,
+                )
+                assert offset is not None
                 items, total = self.container.memory_repo.page_active_memories(
                     space_id, memory_type, limit, offset
                 )
@@ -749,18 +1256,31 @@ class ApiDispatcher:
                 }
 
             if method == "GET" and path == "/api/memories/search":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
                 q = qp.get("q", [""])[0][:500]
                 mtype = qp.get("memory_type", [""])[0]
                 top_k = _safe_int(
-                    qp.get("top_k", ["20"])[0], name="top_k", default=20, min_val=1, max_val=100
+                    qp.get("top_k", [None])[0],
+                    name="top_k",
+                    default=20,
+                    min_val=1,
+                    max_val=100,
+                    strict=True,
                 )
+                assert top_k is not None
                 return 200, self.container.retrieval_service.search(
-                    space_id=space_id, query=q, memory_type=mtype, top_k=int(top_k or 20)
+                    space_id=space_id, query=q, memory_type=mtype, top_k=top_k
                 )
 
             if method == "GET" and path == "/api/memories/detail":
                 ident = qp.get("id", [""])[0]
                 detail = self.container.retrieval_service.read_memory_detail(space_id, ident)
+                src_nids = [str(s.get("note_id", "")) for s in detail.get("sources", []) if s.get("note_id")]
+                media_grouped = self.container.media_service.list_for_notes(space_id, src_nids)
+                flat_media: list[dict[str, Any]] = []
+                for nid in src_nids:
+                    flat_media.extend(media_grouped.get(nid, []))
+                detail["media"] = flat_media
                 try:
                     detail["markdown"] = self.container.markdown_sync.render_memory_markdown(
                         space_id, ident
@@ -781,7 +1301,9 @@ class ApiDispatcher:
                 md_text = str(payload.get("markdown", ""))
                 if not mem_id or not md_text.strip():
                     raise ValidationError("memory_id and markdown are required")
-                exp_v = _safe_int(payload.get("expected_version"), name="expected_version", min_val=1)
+                exp_v = _safe_int(
+                    payload.get("expected_version"), name="expected_version", min_val=1, strict=True
+                )
                 can_export_disk = (not self.container.config.auth_required) or (
                     user is not None and user.role == "admin"
                 )
@@ -790,7 +1312,7 @@ class ApiDispatcher:
                     identifier=mem_id,
                     markdown_text=md_text,
                     expected_version=exp_v,
-                    actor_id=str(payload.get("actor_id", user.username if user else "markdown_editor")),
+                    actor_id=user.username if user else "markdown_editor",
                     export_to_disk=can_export_disk,
                 )
                 self.container.quota_service.record_usage(f"space:{space_id}", notes=1, embed_calls=2)
@@ -808,30 +1330,30 @@ class ApiDispatcher:
                 max_chars = int(cfg.get("max_note_chars", 2000))
                 if len(title_txt) > 200 or len(raw_summary) > max_chars:
                     raise ValidationError(f"标题或摘要超出长度上限（摘要上限 {max_chars} 字）")
-                evidences: tuple[MemoryEvidence, ...] = ()
-                if action != "forget":
-                    self._check_daily_quota(
-                        user=user, space_id=space_id, require_note_slot=True, require_llm_slot=False
-                    )
-                    src_note = RawNote(
-                        note_id=new_id("note"),
-                        space_id=space_id,
-                        content=f"[Web Edit] {summary_txt}",
-                        source_type="web",
-                        actor_id=user.username if user else "user",
-                    )
-                    self.container.note_repo.save(src_note)
-                    self.container.vector_lifecycle.sync_note(src_note)
-                    evidences = (
-                        MemoryEvidence(note_id=src_note.note_id, note_revision=1, quote=summary_txt[:160]),
-                    )
-                exp_v = _safe_int(payload.get("expected_version"), name="expected_version", min_val=1)
-                raw_tags = payload.get("tags") or []
-                clean_tags = tuple(str(t).strip()[:32] for t in raw_tags[:20] if str(t).strip())
+
+                raw_inner_payload = payload.get("payload")
+                if raw_inner_payload is not None and not isinstance(raw_inner_payload, dict):
+                    raise ValidationError("参数 payload 必须为 JSON 对象")
+                inner_payload = dict(raw_inner_payload or {})
+                top_event_time = str(payload.get("event_time", "") or "").strip()
+                if top_event_time and not str(inner_payload.get("event_time", "")).strip():
+                    inner_payload["event_time"] = top_event_time
+
+                raw_tags = payload.get("tags")
+                if raw_tags is not None and not isinstance(raw_tags, list):
+                    raise ValidationError("参数 tags 必须为数组")
+                clean_tags = tuple(str(t).strip()[:32] for t in (raw_tags or [])[:20] if str(t).strip())
+
+                has_relations_field = "relations" in payload
+                raw_relations = payload.get("relations")
+                if raw_relations is not None and not isinstance(raw_relations, list):
+                    raise ValidationError("参数 relations 必须为数组")
                 rel_specs: list[RelationSpec] = []
                 if action in ("create", "update"):
-                    for r_obj in payload.get("relations") or []:
-                        if isinstance(r_obj, dict) and str(r_obj.get("target") or "").strip():
+                    for r_obj in raw_relations or []:
+                        if not isinstance(r_obj, dict):
+                            raise ValidationError("relations 每一项必须为对象")
+                        if str(r_obj.get("target") or "").strip():
                             rel_specs.append(
                                 RelationSpec(
                                     relation_type=str(r_obj.get("relation_type") or "relates_to").strip()[:48],
@@ -839,29 +1361,83 @@ class ApiDispatcher:
                                     context=str(r_obj.get("context") or "").strip()[:160],
                                 )
                             )
-                    if not rel_specs and raw_summary:
+                    if not has_relations_field and raw_summary:
                         for rt, tgt, ctx in extract_relations_from_markdown(raw_summary):
                             rel_specs.append(RelationSpec(relation_type=rt, target=tgt, context=ctx))
+
+                exp_v = _safe_int(
+                    payload.get("expected_version"), name="expected_version", min_val=1, strict=True
+                )
+                idem_key = str(payload.get("idempotency_key", "")).strip()
                 prop = ChangeProposal(
                     space_id=space_id,
                     action=action,
                     memory_type=str(payload.get("memory_type", "semantic")),
                     target_memory_id=str(payload.get("target_memory_id", "")),
                     expected_version=exp_v,
-                    idempotency_key=str(payload.get("idempotency_key", "")),
+                    idempotency_key=idem_key,
                     actor_id=user.username if user else "user",
                     origin="user_direct",
                     title=title_txt,
                     summary=raw_summary,
-                    payload=dict(payload.get("payload") or {}),
+                    payload=inner_payload,
+                    event_time=top_event_time,
                     permalink=str(payload.get("permalink", ""))[:120],
                     canonical_key=str(payload.get("canonical_key", ""))[:120],
                     tags=clean_tags,
                     lock_for_user=bool(payload.get("lock_for_user", True)),
-                    evidences=evidences,
+                    evidences=(),
                     relations=tuple(rel_specs),
+                    replace_relations=has_relations_field,
                     reason=str(payload.get("reason", "Web console mutation"))[:200],
                 )
+                is_replay = bool(
+                    idem_key and self.container.trace_repo.get_idempotent_result(space_id, idem_key) is not None
+                )
+                if is_replay:
+                    res = self.container.change_service.apply(prop)
+                    return 200, res.to_dict()
+
+                if action != "create":
+                    any_mem = self.container.memory_repo.get_any_space(prop.target_memory_id)
+                    if any_mem is not None and any_mem.space_id != space_id:
+                        raise PermissionDeniedError("无权访问其他记忆空间的记忆")
+                    target_mem = self.container.memory_repo.get(
+                        space_id, prop.target_memory_id, include_forgotten=True
+                    )
+                    if target_mem is None:
+                        raise NotFoundError(f"Memory {prop.target_memory_id!r} not found in space {space_id!r}")
+                    if target_mem.status == "forgotten":
+                        if action == "forget":
+                            return 200, self.container.change_service.apply(prop).to_dict()
+                        raise ValidationError("已遗忘的记忆不可恢复或修改")
+                    if exp_v is not None and exp_v != target_mem.version:
+                        raise VersionConflictError(target_mem.memory_id, exp_v, target_mem.version)
+
+                if action != "forget":
+                    self._check_daily_quota(
+                        user=user, space_id=space_id, require_note_slot=True, require_llm_slot=False
+                    )
+                    note_body = (
+                        f"{title_txt}：{summary_txt}"
+                        if (title_txt and title_txt not in summary_txt)
+                        else summary_txt
+                    )
+                    src_note = RawNote(
+                        note_id=new_id("note"),
+                        space_id=space_id,
+                        content=f"[Web Edit] {note_body}",
+                        source_type="web",
+                        actor_id=user.username if user else "user",
+                    )
+                    self.container.note_repo.save(src_note)
+                    self.container.vector_lifecycle.sync_note(src_note)
+                    prop = replace(
+                        prop,
+                        evidences=(
+                            MemoryEvidence(note_id=src_note.note_id, note_revision=1, quote=summary_txt[:160]),
+                        ),
+                    )
                 res = self.container.change_service.apply(prop)
                 if action != "forget" and res.status != "idempotent_replay":
                     self.container.quota_service.record_usage(
@@ -934,23 +1510,51 @@ class ApiDispatcher:
                 question = str(payload.get("question", "")).strip()
                 if not question:
                     raise ValidationError("question is required")
+                raw_top_k = payload.get("top_k")
+                ask_top_k: int | None = None
+                if raw_top_k is not None and str(raw_top_k).strip() != "":
+                    if isinstance(raw_top_k, bool):
+                        raise ValidationError("参数 top_k 必须为正整数")
+                    try:
+                        parsed_tk = int(raw_top_k)
+                    except (TypeError, ValueError) as exc:
+                        raise ValidationError("参数 top_k 必须为正整数") from exc
+                    if parsed_tk < 1:
+                        raise ValidationError("参数 top_k 必须大于或等于 1")
+                    ask_top_k = min(25, parsed_tk)
                 guard_ask = self.container.input_guard.inspect_ask(question)
                 if guard_ask.allowed:
                     self._check_daily_quota(
                         user=user, space_id=space_id, require_llm_slot=True
                     )
-                return 200, self.container.ask_service.ask(space_id=space_id, question=question)
+                return 200, self.container.ask_service.ask(
+                    space_id=space_id, question=question, top_k=ask_top_k
+                )
 
             if method == "POST" and path == "/api/dream":
                 self._enforce_rate_and_quota(
                     user=user, space_id=space_id, client_ip=client_ip, require_llm_slot=True
                 )
-                max_calls = payload.get("max_llm_calls")
-                max_tokens = payload.get("max_tokens")
+
+                def _dream_opt_pos_int(raw_v: Any, name: str, cap: int) -> int | None:
+                    if raw_v is None or (isinstance(raw_v, str) and not raw_v.strip()):
+                        return None
+                    if isinstance(raw_v, bool):
+                        raise ValidationError(f"参数 {name} 必须为正整数")
+                    try:
+                        parsed_v = int(raw_v)
+                    except (TypeError, ValueError) as exc:
+                        raise ValidationError(f"参数 {name} 必须为正整数") from exc
+                    if parsed_v < 1:
+                        raise ValidationError(f"参数 {name} 必须大于或等于 1")
+                    return min(cap, parsed_v)
+
+                max_calls = _dream_opt_pos_int(payload.get("max_llm_calls"), "max_llm_calls", 50)
+                max_tokens = _dream_opt_pos_int(payload.get("max_tokens"), "max_tokens", 200_000)
                 return 200, self.container.dream_service.run_dream(
                     space_id=space_id,
-                    max_llm_calls=int(max_calls) if max_calls is not None else None,
-                    max_tokens=int(max_tokens) if max_tokens is not None else None,
+                    max_llm_calls=max_calls,
+                    max_tokens=max_tokens,
                 )
 
             if method == "GET" and path == "/api/markdown/bundle":
@@ -1072,6 +1676,7 @@ class ApiDispatcher:
                 "auto_rollover": True,
                 "focus_lock_enabled": True,
                 "focus_minutes": 25,
+                "duration_minutes": 60,
                 "subtasks": [
                     {"id": "demo_sub_1", "title": "梳理四象限与长期记忆架构主线", "done": True},
                     {"id": "demo_sub_2", "title": "录制 Mac + iPhone 局域网同步演示", "done": False},
@@ -1082,6 +1687,108 @@ class ApiDispatcher:
         )
         if rich_res.status != "idempotent_replay":
             created += 1
+
+        # Seed sample Pomodoro & Stopwatch focus sessions idempotently
+        demo_task_id = rich_res.memory.memory_id if rich_res.memory else ""
+        self.container.focus_service.insert_session_row(
+            space_id=space_id,
+            session_id=f"fcs_demo_pomo_{hashlib.md5(space_id.encode('utf-8')).hexdigest()[:8]}",
+            task_memory_id=demo_task_id,
+            task_title="完成周六技术分享 PPT 与现场 Demo 联调",
+            mode="pomodoro",
+            planned_minutes=25,
+            duration_seconds=1500,
+            status="completed",
+        )
+        self.container.focus_service.insert_session_row(
+            space_id=space_id,
+            session_id=f"fcs_demo_sw_{hashlib.md5(space_id.encode('utf-8')).hexdigest()[:8]}",
+            task_memory_id="",
+            task_title="深度阅读向量检索论文（自由专注）",
+            mode="stopwatch",
+            planned_minutes=0,
+            duration_seconds=1080,
+            status="completed",
+        )
+
+        # Seed showcase Solar/Lunar Countdowns & Anniversary idempotently
+        now_d = beijing_now().date()
+        sp_hash = hashlib.md5(space_id.encode("utf-8")).hexdigest()[:8]
+        self.container.countdown_service.save_countdown(
+            space_id=space_id,
+            data={
+                "countdown_id": f"cd_demo_cny_{sp_hash}",
+                "allow_custom_id": True,
+                "title": "春节团圆",
+                "kind": "countdown",
+                "calendar_type": "lunar",
+                "lunar_year": now_d.year,
+                "lunar_month": 1,
+                "lunar_day": 1,
+                "repeat_rule": "yearly",
+                "icon": "🧧",
+                "color_theme": "crimson",
+                "pinned": True,
+            },
+        )
+        self.container.countdown_service.save_countdown(
+            space_id=space_id,
+            data={
+                "countdown_id": f"cd_demo_next_{sp_hash}",
+                "allow_custom_id": True,
+                "title": "里程碑版本发布",
+                "kind": "countdown",
+                "calendar_type": "solar",
+                "target_date": (now_d + timedelta(days=1)).isoformat(),
+                "repeat_rule": "none",
+                "icon": "🚀",
+                "color_theme": "lavender",
+                "pinned": True,
+            },
+        )
+        self.container.countdown_service.save_countdown(
+            space_id=space_id,
+            data={
+                "countdown_id": f"cd_demo_anniv_{sp_hash}",
+                "allow_custom_id": True,
+                "title": "开启双链记忆之旅",
+                "kind": "anniversary",
+                "calendar_type": "solar",
+                "target_date": (now_d - timedelta(days=78)).isoformat(),
+                "repeat_rule": "yearly",
+                "icon": "🌱",
+                "color_theme": "mint",
+                "pinned": False,
+            },
+        )
+
+        # Seed showcase Pinned Memo + Today's Mood Journal idempotently
+        existing_memos = self.container.memo_journal_service.list_memos(space_id=space_id, pinned_only=True)
+        if existing_memos["pinned_count"] == 0:
+            self.container.memo_journal_service.save_memo(
+                space_id=space_id,
+                payload={
+                    "title": "TraceTodo 防臃肿设计备忘",
+                    "content": "坚持「一套可追溯记忆内核 + 5 栏收敛导航 + 可插拔开关 + 磁盘轻附件」。\n- 支持 **Markdown** 与置顶瀑布流\n- #架构灵感 #防臃肿",
+                    "pinned": True,
+                    "tags": ["架构灵感", "防臃肿"],
+                    "extract_memory": False,
+                },
+            )
+        today_journal = self.container.memo_journal_service.get_journal_overview(
+            space_id=space_id, date_str=now_d.isoformat()
+        )
+        if today_journal["current_entry"] is None:
+            self.container.memo_journal_service.save_journal(
+                space_id=space_id,
+                payload={
+                    "journal_date": now_d.isoformat(),
+                    "mood": "focused",
+                    "title": f"{now_d.isoformat()} 每日复盘",
+                    "content": "今天把待办、日历时间轴与番茄钟串联在同一个记忆空间里，节奏感明显更稳了。 #每日复盘",
+                    "extract_memory": False,
+                },
+            )
         return {"seeded_notes": created, "space_id": space_id}
 
     def dispatch_mcp_http(
@@ -1176,8 +1883,27 @@ def create_fastapi_app(container: AppContainer) -> Any:
             container.daily_scheduler.stop()
             container.ingest_worker.stop()
 
+    class _SelectiveGZipMiddleware:
+        """GZip compress HTML/JSON >= 1 KB while skipping SSE streams and binary images."""
+
+        def __init__(self, app_inner: Any) -> None:
+            self.app_inner = app_inner
+            try:
+                self.gzip_app = GZipMiddleware(app_inner, minimum_size=1000, compresslevel=6)
+            except TypeError:  # pragma: no cover - older Starlette without compresslevel
+                self.gzip_app = GZipMiddleware(app_inner, minimum_size=1000)
+
+        async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+            if scope.get("type") == "http":
+                req_path = scope.get("path", "")
+                if req_path in _GZIP_SKIP_EXACT or req_path.startswith(_GZIP_SKIP_PREFIXES):
+                    await self.app_inner(scope, receive, send)
+                    return
+            await self.gzip_app(scope, receive, send)
+
     dispatcher = ApiDispatcher(container)
     app = FastAPI(title="Trace-Memory Console & API", version="0.1.0", lifespan=_lifespan)
+    app.add_middleware(_SelectiveGZipMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -1186,11 +1912,20 @@ def create_fastapi_app(container: AppContainer) -> Any:
     )
 
     @app.get("/", response_class=HTMLResponse)
+    @app.get("/index.html", response_class=HTMLResponse)
     @app.get("/console", response_class=HTMLResponse)
-    async def index() -> HTMLResponse:
-        return HTMLResponse(
-            DASHBOARD_HTML_PATH.read_text(encoding="utf-8"),
-            headers={"Cache-Control": "no-cache"},
+    async def index(request: Request) -> Response:
+        html_bytes, etag = _load_dashboard_html_cached()
+        resp_headers = {
+            "Cache-Control": "no-cache",
+            "ETag": etag,
+        }
+        if _etag_matches(request.headers.get("if-none-match"), etag):
+            return Response(status_code=304, headers=resp_headers)
+        return Response(
+            content=html_bytes,
+            media_type="text/html; charset=utf-8",
+            headers=resp_headers,
         )
 
     @app.get("/manifest.webmanifest")
@@ -1208,6 +1943,17 @@ def create_fastapi_app(container: AppContainer) -> Any:
     @app.get("/icon.svg")
     async def icon_svg() -> Response:
         return Response(content=PWA_ICON_SVG, media_type="image/svg+xml")
+
+    @app.get("/scenes/{filename}")
+    async def scene_image(filename: str, request: Request) -> Response:
+        path = _scene_file(filename)
+        if path is not None:
+            etag = _scene_etag(path)
+            headers = {"Cache-Control": "no-cache", "ETag": etag}
+            if _etag_matches(request.headers.get("if-none-match"), etag):
+                return Response(status_code=304, headers=headers)
+            return Response(content=path.read_bytes(), media_type="image/jpeg", headers=headers)
+        return JSONResponse(content={"error": "scene not found"}, status_code=404)
 
     @app.get("/sw.js")
     async def service_worker() -> Response:
@@ -1253,6 +1999,23 @@ def create_fastapi_app(container: AppContainer) -> Any:
             return Response(status_code=202)
         return JSONResponse(content=resp_obj, status_code=code)
 
+    @app.get("/api/media/file")
+    async def api_media_file(request: Request) -> Response:
+        qp: dict[str, list[str]] = {}
+        for k, v in request.query_params.multi_items():
+            qp.setdefault(k, []).append(v)
+        hdrs = {k: v for k, v in request.headers.items()}
+        code, mime, raw = await asyncio.to_thread(dispatcher.resolve_media_file, qp, hdrs)
+        return Response(
+            content=raw,
+            status_code=code,
+            media_type=mime,
+            headers={
+                "X-Content-Type-Options": "nosniff",
+                "Cache-Control": "private, max-age=3600" if code == 200 else "no-store",
+            },
+        )
+
     @app.get("/api/sync/stream")
     async def api_sync_stream(request: Request) -> Response:
         qp: dict[str, list[str]] = {}
@@ -1275,7 +2038,9 @@ def create_fastapi_app(container: AppContainer) -> Any:
 
         async def _event_gen():
             nonlocal known_ver
-            init_st = await asyncio.to_thread(container.sync_tracker.get_state, space_id)
+            init_st = await asyncio.to_thread(
+                dispatcher._build_sync_state_payload, space_id, include_recent_jobs=True
+            )
             known_ver = max(known_ver, int(init_st["sync_version"]))
             yield f"event: sync_state\ndata: {json.dumps(init_st, ensure_ascii=False)}\n\n"
             while True:
@@ -1288,8 +2053,11 @@ def create_fastapi_app(container: AppContainer) -> Any:
                     break
                 cur_ver = int(st["sync_version"])
                 if cur_ver > known_ver:
-                    known_ver = cur_ver
-                    yield f"event: space_updated\ndata: {json.dumps(st, ensure_ascii=False)}\n\n"
+                    full_st = await asyncio.to_thread(
+                        dispatcher._build_sync_state_payload, space_id, include_recent_jobs=True
+                    )
+                    known_ver = max(cur_ver, int(full_st["sync_version"]))
+                    yield f"event: space_updated\ndata: {json.dumps(full_st, ensure_ascii=False)}\n\n"
                 else:
                     yield ": keepalive\n\n"
 
@@ -1315,7 +2083,11 @@ def create_fastapi_app(container: AppContainer) -> Any:
         body: dict[str, Any] = {}
         if request.method == "POST":
             raw_bytes = await request.body()
-            max_bytes = max(1024, int(container.config.max_request_body_bytes))
+            is_media_route = rest_of_path in ("voice/transcribe", "media/upload")
+            max_bytes = max(
+                1024,
+                int(container.config.max_media_body_bytes if is_media_route else container.config.max_request_body_bytes),
+            )
             if len(raw_bytes) > max_bytes:
                 return JSONResponse(
                     content={"error": f"请求体过大（上限 {max_bytes} 字节）", "code": "PAYLOAD_TOO_LARGE"},
@@ -1324,7 +2096,7 @@ def create_fastapi_app(container: AppContainer) -> Any:
             if raw_bytes.strip():
                 try:
                     body = json.loads(raw_bytes.decode("utf-8"))
-                except json.JSONDecodeError:
+                except (UnicodeDecodeError, json.JSONDecodeError):
                     return JSONResponse(content={"error": "Invalid JSON body"}, status_code=400)
                 if not isinstance(body, dict):
                     return JSONResponse(content={"error": "JSON body must be an object"}, status_code=400)
@@ -1364,11 +2136,19 @@ def run_web_server(container: AppContainer, host: str = "127.0.0.1", port: int =
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             if parsed.path in ("/", "/index.html", "/console"):
+                html_bytes, etag = _load_dashboard_html_cached()
+                if _etag_matches(self.headers.get("If-None-Match"), etag):
+                    self.send_response(HTTPStatus.NOT_MODIFIED)
+                    self._send_cors()
+                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("ETag", etag)
+                    self.end_headers()
+                    return
                 self._write_raw(
                     200,
                     "text/html; charset=utf-8",
-                    DASHBOARD_HTML_PATH.read_bytes(),
-                    extra_headers={"Cache-Control": "no-cache"},
+                    html_bytes,
+                    extra_headers={"Cache-Control": "no-cache", "ETag": etag},
                 )
                 return
             if parsed.path == "/manifest.webmanifest":
@@ -1386,6 +2166,27 @@ def run_web_server(container: AppContainer, host: str = "127.0.0.1", port: int =
             if parsed.path == "/sw.js":
                 self._write_raw(200, "application/javascript", PWA_SW_JS.encode("utf-8"))
                 return
+            if parsed.path.startswith("/scenes/"):
+                fname = parsed.path[len("/scenes/"):]
+                path = _scene_file(fname)
+                if path is not None:
+                    etag = _scene_etag(path)
+                    if _etag_matches(self.headers.get("If-None-Match"), etag):
+                        self.send_response(HTTPStatus.NOT_MODIFIED)
+                        self._send_cors()
+                        self.send_header("Cache-Control", "no-cache")
+                        self.send_header("ETag", etag)
+                        self.end_headers()
+                        return
+                    self._write_raw(
+                        200,
+                        "image/jpeg",
+                        path.read_bytes(),
+                        extra_headers={"Cache-Control": "no-cache", "ETag": etag},
+                    )
+                else:
+                    self._write_json(404, {"error": "scene not found"})
+                return
             if parsed.path == "/mcp":
                 self._write_json(
                     200,
@@ -1397,6 +2198,67 @@ def run_web_server(container: AppContainer, host: str = "127.0.0.1", port: int =
                         "auth_header": "Authorization: Bearer <token>",
                     },
                 )
+                return
+
+            if parsed.path == "/api/media/file":
+                qp_m = parse_qs(parsed.query, keep_blank_values=True)
+                hdrs_m = {k: v for k, v in self.headers.items()}
+                code_m, mime_m, raw_m = dispatcher.resolve_media_file(qp_m, hdrs_m)
+                self._write_raw(
+                    code_m,
+                    mime_m,
+                    raw_m,
+                    extra_headers={
+                        "X-Content-Type-Options": "nosniff",
+                        "Cache-Control": "private, max-age=3600" if code_m == 200 else "no-store",
+                    },
+                )
+                return
+
+            if parsed.path == "/api/sync/stream":
+                qp_s = parse_qs(parsed.query, keep_blank_values=True)
+                hdrs_s = {k: v for k, v in self.headers.items()}
+                eff_tok = _extract_token(qp_s, hdrs_s)
+                try:
+                    _, sp_s, _ = dispatcher._resolve_auth_and_space("/api/sync/stream", qp_s, {}, eff_tok)
+                except UnauthorizedError as exc:
+                    self._write_json(401, {"error": str(exc), "code": "AUTH_REQUIRED"})
+                    return
+                except PermissionDeniedError as exc:
+                    self._write_json(403, {"error": str(exc)})
+                    return
+                try:
+                    known_v = int((qp_s.get("since") or ["0"])[0])
+                except ValueError:
+                    known_v = 0
+                self.send_response(HTTPStatus.OK)
+                self._send_cors()
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "keep-alive")
+                self.send_header("X-Accel-Buffering", "no")
+                self.end_headers()
+                try:
+                    init_payload = dispatcher._build_sync_state_payload(sp_s, include_recent_jobs=True)
+                    known_v = max(known_v, int(init_payload["sync_version"]))
+                    self.wfile.write(
+                        f"event: sync_state\ndata: {json.dumps(init_payload, ensure_ascii=False)}\n\n".encode("utf-8")
+                    )
+                    self.wfile.flush()
+                    while not container.ingest_worker._stop_event.is_set():
+                        st_s = container.sync_tracker.wait_for_update(sp_s, known_v, 15.0)
+                        cur_v = int(st_s["sync_version"])
+                        if cur_v > known_v:
+                            full_s = dispatcher._build_sync_state_payload(sp_s, include_recent_jobs=True)
+                            known_v = max(cur_v, int(full_s["sync_version"]))
+                            self.wfile.write(
+                                f"event: space_updated\ndata: {json.dumps(full_s, ensure_ascii=False)}\n\n".encode("utf-8")
+                            )
+                        else:
+                            self.wfile.write(b": keepalive\n\n")
+                        self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    return
                 return
 
             qp = parse_qs(parsed.query, keep_blank_values=True)
@@ -1421,7 +2283,11 @@ def run_web_server(container: AppContainer, host: str = "127.0.0.1", port: int =
             except ValueError:
                 self._write_json(400, {"error": "Invalid Content-Length"})
                 return
-            max_bytes = max(1024, int(container.config.max_request_body_bytes))
+            is_media_route = parsed.path in ("/api/voice/transcribe", "/api/media/upload")
+            max_bytes = max(
+                1024,
+                int(container.config.max_media_body_bytes if is_media_route else container.config.max_request_body_bytes),
+            )
             if length > max_bytes:
                 self._write_json(413, {"error": f"请求体过大（上限 {max_bytes} 字节）", "code": "PAYLOAD_TOO_LARGE"})
                 return
@@ -1440,10 +2306,10 @@ def run_web_server(container: AppContainer, host: str = "127.0.0.1", port: int =
                     )
                 return
 
-            raw = raw_bytes.decode("utf-8", errors="replace") if raw_bytes else "{}"
             try:
+                raw = raw_bytes.decode("utf-8") if raw_bytes else "{}"
                 body = json.loads(raw) if raw.strip() else {}
-            except json.JSONDecodeError:
+            except (UnicodeDecodeError, json.JSONDecodeError):
                 self._write_json(400, {"error": "Invalid JSON body"})
                 return
             if not isinstance(body, dict):

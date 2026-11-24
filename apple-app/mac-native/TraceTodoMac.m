@@ -273,21 +273,35 @@
     NSString *text = [self.quickInput.stringValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if (text.length == 0) return;
     self.quickInput.stringValue = @"";
-    self.popoverHeaderLabel.stringValue = @"⏳ 正在通过 Qwen3.8-flash 抽取四象限...";
+    self.popoverHeaderLabel.stringValue = [NSString stringWithFormat:@"✨ AI 解析中：%@", text];
 
     NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"%@/api/notes/record", self.serverBaseURL]];
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
     req.HTTPMethod = @"POST";
     [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    NSDictionary *body = @{@"content": text, @"space_id": self.spaceId};
+    NSDictionary *body = @{@"content": text, @"space_id": self.spaceId, @"async_mode": @YES};
     req.HTTPBody = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
 
     [[[NSURLSession sharedSession] dataTaskWithRequest:req
                                      completionHandler:^(NSData *d, NSURLResponse *r, NSError *e) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self refreshStatusFromAPI];
-            [self.webView reload];
-        });
+        if (e || !d) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self refreshStatusFromAPI];
+            });
+            return;
+        }
+        NSDictionary *ack = [NSJSONSerialization JSONObjectWithData:d options:0 error:nil];
+        NSString *jobId = ([ack isKindOfClass:[NSDictionary class]] && [ack[@"job_id"] isKindOfClass:[NSString class]]) ? ack[@"job_id"] : @"";
+        NSString *waitURLStr = [NSString stringWithFormat:@"%@/api/notes/ingest-status?space_id=%@&job_id=%@&wait_ms=8000",
+                                self.serverBaseURL, self.spaceId, jobId];
+        NSURL *waitURL = [NSURL URLWithString:waitURLStr];
+        [[[NSURLSession sharedSession] dataTaskWithURL:waitURL
+                                     completionHandler:^(NSData *wd, NSURLResponse *wr, NSError *we) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self refreshStatusFromAPI];
+                [self.webView evaluateJavaScript:@"if (typeof refreshAfterIngestChange === 'function') { refreshAfterIngestChange(); } else if (typeof loadTasks === 'function') { loadTasks(); }" completionHandler:nil];
+            });
+        }] resume];
     }] resume];
 }
 
@@ -335,21 +349,30 @@
         NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
         if (![json isKindOfClass:[NSDictionary class]]) return;
 
-        NSDictionary *counts = json[@"summary_counts"] ?: @{};
-        NSInteger totalTodo = [counts[@"total_todo"] integerValue];
-        NSInteger q1 = [counts[@"Q1_do_first"] integerValue];
-        NSArray *sorted = json[@"sorted_tasks"] ?: @[];
+        NSDictionary *rawCounts = json[@"summary_counts"];
+        NSDictionary *counts = [rawCounts isKindOfClass:[NSDictionary class]] ? rawCounts : @{};
+        NSInteger totalTodo = [counts[@"total_todo"] respondsToSelector:@selector(integerValue)] ? [counts[@"total_todo"] integerValue] : 0;
+        NSInteger q1 = [counts[@"Q1_do_first"] respondsToSelector:@selector(integerValue)] ? [counts[@"Q1_do_first"] integerValue] : 0;
+        id rawSorted = json[@"sorted_tasks"];
+        NSArray *sorted = [rawSorted isKindOfClass:[NSArray class]] ? rawSorted : @[];
 
         NSMutableArray<TodoQuickRow *> *rows = [NSMutableArray array];
-        for (NSDictionary *item in sorted) {
+        for (id rawItem in sorted) {
             if (rows.count >= 7) break;
+            if (![rawItem isKindOfClass:[NSDictionary class]]) continue;
+            NSDictionary *item = (NSDictionary *)rawItem;
             TodoQuickRow *row = [[TodoQuickRow alloc] init];
-            row.memoryId = item[@"memory_id"] ?: @"";
-            row.title = item[@"title"] ?: @"";
-            row.version = [item[@"version"] integerValue];
-            NSDictionary *pl = item[@"payload"] ?: @{};
-            row.quadrant = [pl[@"quadrant"] ?: @"Q4" substringToIndex:2];
-            row.score = [pl[@"priority_score"] doubleValue];
+            id rawMemId = item[@"memory_id"];
+            row.memoryId = [rawMemId isKindOfClass:[NSString class]] ? rawMemId : @"";
+            id rawTitle = item[@"title"];
+            row.title = [rawTitle isKindOfClass:[NSString class]] ? rawTitle : @"";
+            row.version = [item[@"version"] respondsToSelector:@selector(integerValue)] ? [item[@"version"] integerValue] : 1;
+            id rawPl = item[@"payload"];
+            NSDictionary *pl = [rawPl isKindOfClass:[NSDictionary class]] ? rawPl : @{};
+            id rawQuad = pl[@"quadrant"];
+            NSString *quadStr = [rawQuad isKindOfClass:[NSString class]] ? rawQuad : @"Q4";
+            row.quadrant = quadStr.length >= 2 ? [quadStr substringToIndex:2] : @"Q4";
+            row.score = [pl[@"priority_score"] respondsToSelector:@selector(doubleValue)] ? [pl[@"priority_score"] doubleValue] : 0.0;
             [rows addObject:row];
         }
 

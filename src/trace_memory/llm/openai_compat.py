@@ -8,12 +8,17 @@ falling back cleanly or surfacing explicit errors on misconfiguration.
 from __future__ import annotations
 
 from datetime import datetime
+import http.client
 import json
 import math
 import re
 import socket
+import ssl
+import threading
+import time
 from typing import Any
 import urllib.error
+from urllib.parse import urlsplit
 import urllib.request
 
 from trace_memory.domain.memories import MemoryItem, parse_iso_datetime
@@ -23,7 +28,7 @@ from trace_memory.domain.notes import (
     format_beijing_prompt_clock,
     to_beijing,
 )
-from trace_memory.domain.proposals import RelationSpec
+from trace_memory.domain.proposals import RelationSpec, TraceMemoryError
 from trace_memory.domain.relations import extract_relations_from_markdown, slugify_permalink
 from trace_memory.llm.mock_provider import DeterministicLLMProvider, SemanticHashEmbedder
 from trace_memory.llm.protocol import (
@@ -49,6 +54,193 @@ def _normalize_beijing_iso(value: str, fallback: str = "") -> str:
     return to_beijing(parsed).replace(microsecond=0).isoformat()
 
 
+class _KeepAliveConnectionPool:
+    """Thread-safe stdlib HTTP/1.1 Keep-Alive connection pool eliminating per-call TLS handshakes."""
+
+    def __init__(self, max_idle_per_origin: int = 16) -> None:
+        self._max_idle = max(1, int(max_idle_per_origin))
+        self._lock = threading.Lock()
+        self._idle: dict[tuple[str, str, int], list[http.client.HTTPConnection]] = {}
+        self._ssl_ctx = ssl.create_default_context()
+
+    def _checkout(
+        self, scheme: str, host: str, port: int, timeout: float
+    ) -> tuple[http.client.HTTPConnection, bool]:
+        key = (scheme, host, port)
+        with self._lock:
+            bucket = self._idle.get(key)
+            while bucket:
+                conn = bucket.pop()
+                if getattr(conn, "sock", None) is not None:
+                    conn.timeout = timeout
+                    try:
+                        conn.sock.settimeout(timeout)
+                    except OSError:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        continue
+                    return conn, True
+        if scheme == "https":
+            return (
+                http.client.HTTPSConnection(host, port, timeout=timeout, context=self._ssl_ctx),
+                False,
+            )
+        return http.client.HTTPConnection(host, port, timeout=timeout), False
+
+    def _checkin(self, scheme: str, host: str, port: int, conn: http.client.HTTPConnection) -> None:
+        if getattr(conn, "sock", None) is None:
+            return
+        key = (scheme, host, port)
+        with self._lock:
+            bucket = self._idle.setdefault(key, [])
+            if len(bucket) < self._max_idle:
+                bucket.append(conn)
+                return
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    def post_bytes(
+        self,
+        url: str,
+        body: bytes,
+        headers: dict[str, str],
+        timeout_seconds: float,
+    ) -> tuple[int, bytes]:
+        parts = urlsplit(url)
+        scheme = (parts.scheme or "https").lower()
+        host = parts.hostname or ""
+        if scheme not in ("http", "https") or not host:
+            raise urllib.error.URLError(f"Unsupported URL: {url}")
+        port = parts.port or (443 if scheme == "https" else 80)
+        target_path = parts.path or "/"
+        if parts.query:
+            target_path = f"{target_path}?{parts.query}"
+
+        req_headers = {
+            **headers,
+            "Connection": "keep-alive",
+            "Content-Length": str(len(body)),
+        }
+
+        # If a pooled socket was closed while idle, transparently retry once on a fresh socket
+        for stale_retry in range(2):
+            conn, reused = self._checkout(scheme, host, port, timeout_seconds)
+            try:
+                conn.request("POST", target_path, body=body, headers=req_headers)
+                resp = conn.getresponse()
+                raw = resp.read()
+                status = int(resp.status)
+                if not resp.will_close:
+                    self._checkin(scheme, host, port, conn)
+                else:
+                    conn.close()
+                return status, raw
+            except (
+                http.client.RemoteDisconnected,
+                http.client.CannotSendRequest,
+                http.client.ResponseNotReady,
+                BrokenPipeError,
+                ConnectionResetError,
+                EOFError,
+            ):
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                if reused and stale_retry == 0:
+                    continue
+                raise
+            except Exception:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                raise
+        raise ConnectionResetError("Keep-alive connection reset")
+
+
+# Sized for the v2 ingest pipeline (~80 concurrent model calls) so busy bursts reuse warm TLS sockets.
+_HTTP_POOL = _KeepAliveConnectionPool(max_idle_per_origin=128)
+
+
+class _ApiKeyPool:
+    """Round-robin over several API keys; a key that hits HTTP 429 cools down for a while."""
+
+    def __init__(self, keys: tuple[str, ...], cooldown_seconds: float = 15.0) -> None:
+        uniq: list[str] = []
+        for k in keys:
+            k = str(k or "").strip()
+            if k and k not in uniq:
+                uniq.append(k)
+        self.keys = tuple(uniq)
+        self.cooldown_seconds = max(0.0, float(cooldown_seconds))
+        self._lock = threading.Lock()
+        self._next = 0
+        self._cool_until: dict[str, float] = {}
+
+    def __len__(self) -> int:
+        return len(self.keys)
+
+    def candidates(self) -> list[str]:
+        """Keys to try for one request: available ones first (round-robin), cooling ones last."""
+        now = time.monotonic()
+        with self._lock:
+            n = len(self.keys)
+            start = self._next % n if n else 0
+            self._next += 1
+            order = [self.keys[(start + i) % n] for i in range(n)]
+            ready = [k for k in order if self._cool_until.get(k, 0.0) <= now]
+            cooling = sorted(
+                (k for k in order if self._cool_until.get(k, 0.0) > now),
+                key=lambda k: self._cool_until.get(k, 0.0),
+            )
+        return ready + cooling
+
+    def cool(self, key: str) -> None:
+        with self._lock:
+            self._cool_until[key] = time.monotonic() + self.cooldown_seconds
+
+    def is_cooling(self, key: str) -> bool:
+        with self._lock:
+            return self._cool_until.get(key, 0.0) > time.monotonic()
+
+
+def _is_rate_limited(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "http 429" in msg or "rate limit" in msg or "too many requests" in msg
+
+
+_ALLOWED_CHANGED_FIELDS = frozenset(
+    {
+        "title",
+        "summary",
+        "due_at",
+        "start_at",
+        "duration_minutes",
+        "is_all_day",
+        "importance",
+        "urgency",
+        "assignee",
+        "task_status",
+        "location",
+        "details",
+        "value",
+        "target",
+        "polarity",
+        "conditions",
+        "exceptions",
+        "event_summary",
+        "occurred_at",
+        "participants",
+        "tags",
+    }
+)
+
+
 def _post_json_with_retry(
     url: str,
     api_key: str,
@@ -60,35 +252,66 @@ def _post_json_with_retry(
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
     }
+    use_proxy = bool(urllib.request.getproxies())
     last_err: Exception | None = None
     # At most 1 retry strictly on socket timeout (mirroring Suixinji's LLM boundary rule)
     for attempt in range(2):
-        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
-                return json.loads(resp.read().decode("utf-8"))
+            if use_proxy:
+                req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+                with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
+                    raw_bytes = resp.read()
+            else:
+                status_code, raw_bytes = _HTTP_POOL.post_bytes(
+                    url, body, headers, timeout_seconds=timeout_seconds
+                )
+                if status_code < 200 or status_code >= 300:
+                    detail = raw_bytes.decode("utf-8", errors="replace")[:500]
+                    raise TraceMemoryError(f"LLM API HTTP {status_code}: {detail}")
+            parsed = json.loads(raw_bytes.decode("utf-8"))
+            if not isinstance(parsed, dict):
+                raise TraceMemoryError("LLM API returned non-object JSON payload")
+            return parsed
+        except TraceMemoryError:
+            raise
         except socket.timeout as exc:
             last_err = exc
             if attempt == 0:
                 continue
-            raise
+            raise TraceMemoryError(f"LLM API timed out: {exc}") from exc
+        except TimeoutError as exc:
+            last_err = exc
+            if attempt == 0:
+                continue
+            raise TraceMemoryError(f"LLM API timed out: {exc}") from exc
         except urllib.error.HTTPError as exc:
             detail = ""
             try:
                 detail = exc.read().decode("utf-8", errors="replace")[:500]
             except Exception:
                 detail = str(exc)
-            raise RuntimeError(f"LLM API HTTP {exc.code}: {detail}") from exc
+            raise TraceMemoryError(f"LLM API HTTP {exc.code}: {detail}") from exc
         except urllib.error.URLError as exc:
             if isinstance(exc.reason, socket.timeout) and attempt == 0:
                 last_err = exc
                 continue
-            raise RuntimeError(f"LLM API request failed: {exc}") from exc
-    raise RuntimeError(f"LLM API timed out: {last_err}")
+            raise TraceMemoryError(f"LLM API request failed: {exc}") from exc
+        except (
+            http.client.HTTPException,
+            ConnectionError,
+            ssl.SSLError,
+        ) as exc:
+            raise TraceMemoryError(f"LLM API request failed: {exc}") from exc
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise TraceMemoryError(f"LLM API response parse error: {exc}") from exc
+    raise TraceMemoryError(f"LLM API timed out: {last_err}")
 
 
 class OpenAICompatEmbedder:
     """Calls `/embeddings` endpoint on OpenAI / DashScope / SiliconFlow compatible servers."""
+
+    # DashScope text-embedding-v3 enforces <= 10 inputs per batch request
+    MAX_BATCH_SIZE = 10
 
     def __init__(
         self,
@@ -105,8 +328,20 @@ class OpenAICompatEmbedder:
         self.timeout_seconds = timeout_seconds
         self._fallback = SemanticHashEmbedder(dimension=dimension)
 
+    def _normalize_vector(self, raw_embedding: Any) -> list[float]:
+        try:
+            raw_vec = [float(v) for v in raw_embedding]
+        except (TypeError, ValueError) as exc:
+            raise TraceMemoryError(f"Embedding API schema error: {exc}") from exc
+        if len(raw_vec) > self.dimension:
+            raw_vec = raw_vec[: self.dimension]
+        norm = math.sqrt(sum(v * v for v in raw_vec))
+        if norm > 1e-12:
+            raw_vec = [round(v / norm, 6) for v in raw_vec]
+        return raw_vec
+
     def embed(self, text: str) -> list[float]:
-        if not self.api_key:
+        if not self.api_key or not str(text or "").strip():
             return self._fallback.embed(text)
         data = _post_json_with_retry(
             f"{self.base_url}/embeddings",
@@ -114,13 +349,54 @@ class OpenAICompatEmbedder:
             {"model": self.model, "input": text},
             timeout_seconds=self.timeout_seconds,
         )
-        raw_vec: list[float] = data["data"][0]["embedding"]
-        if len(raw_vec) > self.dimension:
-            raw_vec = raw_vec[: self.dimension]
-        norm = math.sqrt(sum(v * v for v in raw_vec))
-        if norm > 1e-12:
-            raw_vec = [round(v / norm, 6) for v in raw_vec]
-        return raw_vec
+        try:
+            first_emb = data["data"][0]["embedding"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise TraceMemoryError(f"Embedding API schema error: {exc}") from exc
+        return self._normalize_vector(first_emb)
+
+    def embed_many(self, texts: list[str]) -> list[list[float]]:
+        """Batch-embed multiple texts in minimal `/embeddings` round-trips (<= 10 per call)."""
+        if not texts:
+            return []
+        if not self.api_key:
+            return [self._fallback.embed(t) for t in texts]
+
+        out: list[list[float] | None] = [None] * len(texts)
+        non_empty_indices: list[int] = []
+        for idx, t in enumerate(texts):
+            if not str(t or "").strip():
+                out[idx] = self._fallback.embed(t)
+            else:
+                non_empty_indices.append(idx)
+
+        if len(non_empty_indices) == 1:
+            only_idx = non_empty_indices[0]
+            out[only_idx] = self.embed(texts[only_idx])
+            return [v for v in out if v is not None]
+
+        for start in range(0, len(non_empty_indices), self.MAX_BATCH_SIZE):
+            batch_indices = non_empty_indices[start : start + self.MAX_BATCH_SIZE]
+            batch_inputs = [texts[i] for i in batch_indices]
+            data = _post_json_with_retry(
+                f"{self.base_url}/embeddings",
+                self.api_key,
+                {"model": self.model, "input": batch_inputs},
+                timeout_seconds=self.timeout_seconds,
+            )
+            raw_items = data.get("data")
+            if not isinstance(raw_items, list) or len(raw_items) != len(batch_indices):
+                raise TraceMemoryError("Embedding API batch schema mismatch")
+            ordered = sorted(
+                enumerate(raw_items),
+                key=lambda pair: int(pair[1].get("index", pair[0])) if isinstance(pair[1], dict) else pair[0],
+            )
+            for pos, (_, item) in enumerate(ordered):
+                if not isinstance(item, dict) or "embedding" not in item:
+                    raise TraceMemoryError("Embedding API item missing embedding vector")
+                out[batch_indices[pos]] = self._normalize_vector(item["embedding"])
+
+        return [v if v is not None else self._fallback.embed("") for v in out]
 
 
 class OpenAICompatLLMProvider:
@@ -134,14 +410,35 @@ class OpenAICompatLLMProvider:
         api_key: str,
         model: str,
         timeout_seconds: float = 30.0,
+        api_keys: tuple[str, ...] | list[str] = (),
+        key_cooldown_seconds: float = 15.0,
     ) -> None:
-        if not api_key:
+        if not api_key and not api_keys:
             raise ValueError("TRACE_MEMORY_OPENAI_API_KEY is required when provider='openai'")
         self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
+        self.api_key = api_key or tuple(api_keys)[0]
         self.model = model
         self.timeout_seconds = timeout_seconds
+        self._keys = _ApiKeyPool((self.api_key, *tuple(api_keys)), key_cooldown_seconds)
         self._rule_helper = DeterministicLLMProvider()
+
+    def _post(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """POST with the key pool: a 429 cools that key and immediately retries on the next one."""
+        if len(self._keys) <= 1:
+            return _post_json_with_retry(url, self.api_key, payload, timeout_seconds=self.timeout_seconds)
+        last_exc: Exception | None = None
+        for key in self._keys.candidates():
+            if last_exc is not None and self._keys.is_cooling(key):
+                break  # every remaining key is cooling: surface the 429 so the queue backs off
+            try:
+                return _post_json_with_retry(url, key, payload, timeout_seconds=self.timeout_seconds)
+            except TraceMemoryError as exc:
+                if not _is_rate_limited(exc):
+                    raise
+                self._keys.cool(key)
+                last_exc = exc
+        assert last_exc is not None
+        raise last_exc
 
     def _chat_turn(
         self, messages: list[dict[str, Any]], **options: Any
@@ -157,27 +454,40 @@ class OpenAICompatLLMProvider:
         if "dashscope.aliyuncs.com" in self.base_url:
             req_payload["enable_thinking"] = False
 
-        resp = _post_json_with_retry(
-            f"{self.base_url}/chat/completions",
-            self.api_key,
-            req_payload,
-            timeout_seconds=self.timeout_seconds,
-        )
-        return AskTurn(
-            message=resp["choices"][0]["message"],
-            tokens_used=int(resp.get("usage", {}).get("total_tokens", 0)),
-        )
+        resp = self._post(f"{self.base_url}/chat/completions", req_payload)
+        try:
+            msg = resp["choices"][0]["message"]
+            if not isinstance(msg, dict):
+                raise TypeError("message is not a dict")
+        except (KeyError, IndexError, TypeError) as exc:
+            raise TraceMemoryError(f"LLM API malformed choices payload: {exc}") from exc
+        usage_obj = resp.get("usage")
+        usage = usage_obj if isinstance(usage_obj, dict) else {}
+        try:
+            tokens = int(usage.get("total_tokens", 0) or 0)
+        except (TypeError, ValueError):
+            tokens = 0
+        return AskTurn(message=msg, tokens_used=tokens)
 
     def _chat_json(self, system_prompt: str, user_prompt: str) -> tuple[dict[str, Any], int]:
         turn = self._chat_turn([
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ])
-        content = str(turn.message["content"]).strip()
+        raw_content = turn.message.get("content")
+        if raw_content is None:
+            raise TraceMemoryError("LLM API returned empty message content")
+        content = str(raw_content).strip()
         # Strip optional markdown code fences if returned by compatible providers
         if content.startswith("```"):
             content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.DOTALL).strip()
-        return json.loads(content), turn.tokens_used
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise TraceMemoryError(f"LLM API returned invalid JSON content: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise TraceMemoryError("LLM API returned non-object structured JSON")
+        return parsed, turn.tokens_used
 
     def ask_turn(
         self,
@@ -195,6 +505,7 @@ class OpenAICompatLLMProvider:
         note_text: str,
         default_event_time: str,
         existing_memories: list[MemoryItem] | None = None,
+        recent_notes: list[dict[str, Any]] | None = None,
     ) -> ExtractionBatch:
         raw_relations = tuple(
             RelationSpec(relation_type=r_type, target=target, context=ctx)
@@ -204,20 +515,48 @@ class OpenAICompatLLMProvider:
         for m in (existing_memories or [])[:30]:
             extra_state = ""
             if m.memory_type == "task":
-                extra_state = f", task_status={m.payload.get('task_status', 'todo')}"
+                extra_state = (
+                    f", task_status={m.payload.get('task_status', 'todo')}"
+                    f", assignee={m.payload.get('assignee', 'self')}"
+                )
             existing_ctx_lines.append(
                 f"- [{m.memory_type}] canonical_key={m.canonical_key!r} | title={m.title!r}{extra_state}"
             )
         existing_block = (
             "\n当前已存在的活跃记忆（若用户是在完成/取消/更新其中某项任务或事实，即使有轻微错别字如“告警/告急”或简称，"
-            "也必须直接复用该条目的 canonical_key，并将任务完成设为 mutation_hint='complete_task'、取消设为 'cancel_task'）：\n"
+            "也必须直接复用该条目的 canonical_key，并将任务完成设为 mutation_hint='complete_task'、取消设为 'cancel_task'；"
+            "注意：不同负责人（assignee 不同，例如 self 与其他人的名字）的同类事项属于不同任务，严禁复用同一 canonical_key 合并）：\n"
             + "\n".join(existing_ctx_lines)
             if existing_ctx_lines
             else ""
         )
+        window = [w for w in (recent_notes or []) if isinstance(w, dict) and w.get("label")]
+        labels = {str(w["label"]) for w in window}
+        recent_block = ""
+        if window:
+            recent_block = (
+                "\n\n最近原话（仅供理解指代和上下文，按时间从早到晚；严禁从这些原话中抽取新记忆，它们已各自单独处理）：\n"
+                + "\n".join(
+                    f"[{w['label']} · {w.get('status') or '已处理'}] {w.get('content', '')}" for w in window
+                )
+            )
         ref_dt = parse_iso_datetime(default_event_time) or beijing_now()
         ref_iso = to_beijing(ref_dt).replace(microsecond=0).isoformat()
         clock_anchor = format_beijing_prompt_clock(ref_dt)
+        context_rules = (
+            "\n上下文指代规则（仅当提供了「最近原话」时适用）：\n"
+            "- 只从「用户最新原文」抽取候选；最近原话只用来理解“他/她/它/这个/那件事/改到/顺便”等指代与省略。\n"
+            "- 每个候选可额外输出 \"relation\": \"new|update|complete|cancel\"、\"refers_to_note\": \"N编号或空字符串\"、"
+            "\"changed_fields\": [本次真正改动的字段名]。\n"
+            "- 若最新原文是在补充、修改、完成或取消某条最近原话里提到的事项，refers_to_note 填那条原话的编号（如 \"N3\"），"
+            "relation 填 update/complete/cancel；若该原话状态显示已生成卡片，canonical_key 复用其 key。\n"
+            "- relation=update 时 payload 只需包含改动的字段，changed_fields 列出这些字段（如 [\"due_at\"]），"
+            "不要重写用户没提到的标题和其它字段。\n"
+            "- 拿不准是新事项还是对最近事项的补充时，优先判为 update 并给出 refers_to_note。\n"
+            "- 与最近原话无关的全新事项：relation=\"new\"，refers_to_note=\"\"。"
+            if window
+            else ""
+        )
         sys_prompt = (
             "你是可追溯个人记忆抽取与状态对账引擎。请从用户原文中抽取结构化记忆候选，输出严格 JSON 对象：\n"
             '{"candidates": [{"memory_type": "task|preference|semantic|episodic", '
@@ -236,20 +575,31 @@ class OpenAICompatLLMProvider:
             "必须直接返回 {\"candidates\": []}，严禁硬凑或编造记忆！严禁在没有明确任务指代时误把现有任务设为 complete_task 或 cancel_task。\n"
             "各类别 payload 必填字段规范：\n"
             "1. task: {\"task_status\": \"todo\"|\"done\", \"importance\": 1-5整数, \"urgency\": 1-5整数, "
-            "\"priority_reason\": \"四象限判定依据\", \"due_at\": \"北京时间ISO8601(+08:00)或空字符串\", \"assignee\": \"self\"}\n"
+            "\"priority_reason\": \"四象限判定依据（若涉及日期请写具体月日如 11-22，严禁只写明天/今天等相对词）\", "
+            "\"start_at\": \"北京时间ISO8601(+08:00)或空字符串\", "
+            "\"due_at\": \"北京时间ISO8601(+08:00)或空字符串\", "
+            "\"duration_minutes\": 15-1440整数或null, \"is_all_day\": true|false, \"assignee\": \"self\"}\n"
+            "   注意：当用户给出明确时间段（如「今天21:00-23:00，我要写作业」「晚上9点到11点」），"
+            "必须设置 start_at 为开始时间、due_at 为结束时间、duration_minutes 为持续分钟数（如 120）、is_all_day=false。\n"
             "   注意：当用户表达某事已做完/已修好/已买好时，必须设置 mutation_hint=\"complete_task\" 且 task_status=\"done\"！\n"
+            "   importance 评分标尺（与紧急度相互独立，切勿因为“不急”就压低重要度）：5=线上故障/核心交付/重大风险；"
+            "4=长期能力成长（学习新技能/考证）、健康、职业发展、重要关系等对长期目标有实质价值的事（不紧急时应落入 Q2）；"
+            "3=常规工作或生活事务；2=琐碎杂事（如“有空整理桌面”）；1=可有可无。\n"
             "2. preference: {\"target\": \"偏好对象名\", \"polarity\": \"positive\"|\"negative\"|\"conditional\", "
             "\"conditions\": [], \"exceptions\": [\"例外情况如晚上不喝\"], \"details\": \"补充说明\"}\n"
             "3. semantic: {\"subject\": \"user或实体名\", \"predicate\": \"属性名如residence/workplace\", \"value\": \"当前值\"}\n"
             "4. episodic: {\"event_summary\": \"事件概述\", \"occurred_at\": \"北京时间ISO8601(+08:00)\"}"
+            + context_rules
         )
         parsed, tokens = self._chat_json(
             sys_prompt,
-            f"当前北京时间锚点: {clock_anchor}\n默认记录时间(北京时间): {ref_iso}{existing_block}\n\n用户最新原文:\n{note_text}",
+            f"当前北京时间锚点: {clock_anchor}\n默认记录时间(北京时间): {ref_iso}{existing_block}{recent_block}"
+            f"\n\n用户最新原文:\n{note_text}",
         )
         type_alias = {"fact": "semantic", "experience": "episodic", "todo": "task", "pref": "preference"}
         items: list[ExtractedCandidate] = []
-        for raw in parsed.get("candidates") or []:
+        raw_cands = parsed.get("candidates")
+        for raw in (raw_cands if isinstance(raw_cands, list) else []):
             if not isinstance(raw, dict):
                 continue
             raw_type = str(raw.get("memory_type", "semantic")).lower().strip()
@@ -264,7 +614,8 @@ class OpenAICompatLLMProvider:
                 title = summary[:24]
             if not summary:
                 summary = title
-            raw_payload = dict(raw.get("payload") or {})
+            raw_payload_obj = raw.get("payload")
+            raw_payload = dict(raw_payload_obj) if isinstance(raw_payload_obj, dict) else {}
 
             # Normalize fallback defaults so LLM schema drift never causes HTTP 400
             if mtype == "preference":
@@ -283,6 +634,8 @@ class OpenAICompatLLMProvider:
                         str(raw_payload.get("occurred_at")), fallback=ref_iso
                     )
             elif mtype == "task":
+                if raw_payload.get("start_at"):
+                    raw_payload["start_at"] = _normalize_beijing_iso(str(raw_payload.get("start_at")))
                 if raw_payload.get("due_at"):
                     raw_payload["due_at"] = _normalize_beijing_iso(str(raw_payload.get("due_at")))
 
@@ -293,6 +646,29 @@ class OpenAICompatLLMProvider:
             if hint not in ("upsert", "complete_task", "cancel_task", "reopen_task"):
                 hint = "upsert"
 
+            raw_tags = raw.get("tags")
+            clean_tags = tuple(str(t) for t in (raw_tags if isinstance(raw_tags, list) else []) if t)
+
+            relation = str(raw.get("relation") or "new").strip().lower()
+            if relation not in ("new", "update", "complete", "cancel"):
+                relation = "new"
+            refers = str(raw.get("refers_to_note") or "").strip().upper()
+            if refers not in labels:
+                refers = ""
+            raw_changed = raw.get("changed_fields")
+            changed = tuple(
+                dict.fromkeys(
+                    str(f).strip()
+                    for f in (raw_changed if isinstance(raw_changed, list) else [])
+                    if str(f).strip() in _ALLOWED_CHANGED_FIELDS
+                )
+            )
+            if relation == "complete" and hint == "upsert":
+                hint = "complete_task"
+            elif relation == "cancel" and hint == "upsert":
+                hint = "cancel_task"
+            if relation == "new" and refers:
+                relation = "update"
             items.append(
                 ExtractedCandidate(
                     memory_type=mtype,
@@ -301,13 +677,50 @@ class OpenAICompatLLMProvider:
                     canonical_key=ckey,
                     payload=raw_payload,
                     mutation_hint=hint,
-                    tags=tuple(str(t) for t in (raw.get("tags") or []) if t),
+                    tags=clean_tags,
                     relations=raw_relations,
                     event_time=_normalize_beijing_iso(str(raw.get("event_time") or ""), fallback=ref_iso),
                     quote=str(raw.get("quote") or note_text[:120]),
+                    relation=relation,
+                    refers_to_label=refers,
+                    changed_fields=changed,
                 )
             )
         return ExtractionBatch(candidates=tuple(items), llm_calls=1, tokens_used=tokens)
+
+    def choose_reference_card(
+        self, note_text: str, candidate_title: str, options: list[dict[str, Any]]
+    ) -> tuple[int, int, int]:
+        """Pick which of several cards the latest note modifies. Returns (index or -1, llm_calls, tokens)."""
+        if not options:
+            return -1, 0, 0
+        lines = []
+        for i, o in enumerate(options[:8], start=1):
+            pl = o.get("payload") or {}
+            extra = ", ".join(
+                f"{k}={pl[k]}" for k in ("due_at", "start_at", "task_status", "assignee", "value") if pl.get(k)
+            )
+            lines.append(f"{i}. {o.get('title', '')}：{o.get('summary', '')}" + (f"（{extra}）" if extra else ""))
+        sys_prompt = (
+            "你是指代消解助手。用户上一条消息生成了多张卡片，现在用户发来一条新消息在修改/完成/取消其中一张。"
+            "请判断新消息指的是哪一张，只输出 JSON：{\"choice\": 编号整数, \"confident\": true|false}。"
+            "如果无法确定，输出 {\"choice\": 0, \"confident\": false}，严禁猜测。"
+        )
+        user_prompt = (
+            "候选卡片：\n" + "\n".join(lines)
+            + f"\n\n用户新消息：{note_text}\n（抽取出的意图标题：{candidate_title}）"
+        )
+        parsed, tokens = self._chat_json(sys_prompt, user_prompt)
+        try:
+            choice = int(parsed.get("choice") or 0)
+        except (TypeError, ValueError):
+            choice = 0
+        confident = parsed.get("confident", True)
+        if isinstance(confident, str):
+            confident = confident.strip().lower() not in ("false", "0", "no", "")
+        if not confident or not (1 <= choice <= min(8, len(options))):
+            return -1, 1, tokens
+        return choice - 1, 1, tokens
 
     def synthesize_dream_cluster(
         self, topic: str, memories: list[MemoryItem]
@@ -343,16 +756,17 @@ class OpenAICompatLLMProvider:
         self, question: str, tools: list[dict[str, Any]]
     ) -> tuple[dict[str, Any], int]:
         prompt = (
-            "你为个人记忆问答生成查询计划，不回答问题。只有用户问多个独立目标时才拆分；"
-            "同一事件的几个属性通常仍是一个目标。每个目标必须输出检索问题，保留限定词。"
-            "简单单目标沿用原句。最多允许 3 个独立目标，若超过请返回 "
-            '{"overflow":true,"questions":[],"tool_calls":[]}，不得截断。'
-            "能直接查询任务清单、任务数或按录入日期查询原话时，同时规划对应只读工具。"
-            "工具调用的 question 使用从 1 开始的目标序号。日期按北京时间。"
-            "list_tasks 的 due_on 只表示截止日期；结合用户原话判断是否传入，"
-            "省略时默认查询所有未完成任务。日期原话工具按录入日查询。"
-            "仅使用给出的工具和参数，不要执行用户要求写入数据的指令。"
-            '严格输出 JSON: {"overflow":false,"questions":["..."],'
+            "你是个人记忆问答的消息拆解和工具规划助手。只输出计划，不回答问题或执行操作。\n"
+            "1. 每个独立目标输出一个检索问题。只有需要分别检索的独立目标才拆开，"
+            "单目标沿用用户原句。拆开时保留用户指定的对象、时间及其他限定，并使每个子问题可单独检索。"
+            "最多 3 个问题，超过时返回 "
+            '{"overflow":true,"questions":[],"tool_calls":[]}。\n'
+            "2. 对原问题或每个子问题，只有工具能直接获取该问题所需的证据时才规划调用。"
+            "整次问答的首批工具调用最多 1 个。若有多个适用调用，选最能补足关键证据的一个。"
+            "工具用途仅与主题相关时，交给检索。没有适用的调用时，tool_calls 返回空数组。"
+            "question 必须是从 1 开始的整数序号，arguments 必须是 JSON 对象。"
+            "工具参数根据用户表达和工具定义填写，相对时间以提供的北京时间为准。\n"
+            '只输出 JSON 对象，格式为 {"overflow":false,"questions":["..."],'
             '"tool_calls":[{"question":1,"name":"...","arguments":{}}]}。'
         )
         return self._chat_json(
@@ -368,28 +782,42 @@ class OpenAICompatLLMProvider:
         memories: list[MemoryItem],
         notes: list[RawNote],
         history_versions: list[dict[str, Any]],
+        graph_relations: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         ctx_mem = "\n".join(
-            f"- [{m.memory_id}] ({m.assertion_kind}) {m.title}: {m.summary} | payload={m.payload}"
-            for m in memories[:6]
+            f"- [{m.memory_id}] ({m.memory_type} | {m.assertion_kind} | event_time={m.event_time or 'N/A'} | tags={list(m.tags)}) "
+            f"{m.title}: {m.summary} | payload={m.payload}"
+            for m in memories[:24]
         )
+        rel_lines = [
+            f"- {r.get('from_title') or r.get('from_memory_id', '')} [{r.get('relation_type', 'relates_to')}] -> "
+            f"{r.get('to_title') or r.get('to_memory_id', '')}"
+            + (f" ({r['context']})" if r.get("context") else "")
+            + f" (from_id={r.get('from_memory_id', '')}, to_id={r.get('to_memory_id', '')})"
+            for r in (graph_relations or [])[:16]
+        ]
+        ctx_rels = "\n".join(rel_lines) if rel_lines else "（无）"
         ctx_note = "\n".join(
-            f"- [{n.note_id}] ({n.event_time}) {n.visible_content()}" for n in notes[:8]
+            f"- [{n.note_id}] ({n.event_time}) {n.visible_content()}" for n in notes[:12]
         )
         clock_anchor = format_beijing_prompt_clock()
         sys_prompt = (
-            "你是严格基于证据回答的个人记忆助手。只能依据提供的记忆和原文作答，不得编造。"
+            "你是严格基于证据回答的个人记忆助手。只能依据提供的记忆、关联图谱关系、历史版本和原文作答，不得编造。"
             "系统统一固定使用**北京时间（Asia/Shanghai，UTC+8 / +08:00）**："
             "用户提问中的「今天」「昨天」「前天」「明天」「后天」「最近」等相对时间均须严格对照提供的北京时间锚点判定，"
             "回答中提及日期和时间也统一使用北京时间。"
+            "请充分结合每条记忆的 `event_time`、`tags`、`payload` 结构化属性（如 task 的 assignee/quadrant/due_at，"
+            "semantic 的 subject/predicate/value/previous_values，episodic 的 occurred_at/participants，preference 的 exceptions）"
+            "以及「关联图谱关系」推理跨实体的因果或关联关系。"
             "注意：带有 `[刚录入·整理中]` 标记的原始记录属于用户刚刚提交、后台正在异步整理中的最新真实原话，应优先作为最新事实参考。"
-            "回答可使用清晰的中文分点结构，务必在 cited_memory_ids 和 cited_note_ids 中准确列出实际引用的 ID。"
+            "回答可使用清晰的中文分点结构，务必在 cited_memory_ids 和 cited_note_ids 中准确列出实际引用的 ID；若证据不足以回答问题，请如实说明并将 has_sufficient_evidence 设为 false。"
             '请输出 JSON: {"answer": "...", "cited_memory_ids": [...], "cited_note_ids": [...], '
             '"has_sufficient_evidence": true|false}'
         )
         user_msg = (
             f"当前北京时间: {clock_anchor}\n查询模式: {query_mode}\n问题: {question}\n\n"
-            f"候选记忆:\n{ctx_mem}\n\n原始记录:\n{ctx_note}\n\n历史版本:\n{history_versions[:5]}"
+            f"候选记忆:\n{ctx_mem}\n\n关联图谱关系:\n{ctx_rels}\n\n"
+            f"原始记录:\n{ctx_note}\n\n历史版本:\n{history_versions[:16]}"
         )
         return [
             {"role": "system", "content": sys_prompt},
@@ -403,20 +831,35 @@ class OpenAICompatLLMProvider:
         memories: list[MemoryItem],
         notes: list[RawNote],
         history_versions: list[dict[str, Any]],
+        graph_relations: list[dict[str, Any]] | None = None,
     ) -> AskSynthesis:
-        if not memories and not notes:
+        if not memories and not notes and not graph_relations:
             return self._rule_helper.synthesize_answer(
-                question, query_mode, memories, notes, history_versions
+                question, query_mode, memories, notes, history_versions, graph_relations=graph_relations
             )
         system, user = self.build_ask_messages(
-            question, query_mode, memories, notes, history_versions
+            question,
+            query_mode,
+            memories,
+            notes,
+            history_versions,
+            graph_relations=graph_relations,
         )
         parsed, tokens = self._chat_json(system["content"], user["content"])
+        raw_mem_ids = parsed.get("cited_memory_ids")
+        raw_note_ids = parsed.get("cited_note_ids")
+        raw_suff = parsed.get("has_sufficient_evidence", True)
+        if isinstance(raw_suff, bool):
+            has_sufficient = raw_suff
+        elif isinstance(raw_suff, str):
+            has_sufficient = raw_suff.strip().lower() not in ("false", "0", "no", "")
+        else:
+            has_sufficient = bool(raw_suff)
         return AskSynthesis(
             answer=str(parsed.get("answer", "")),
-            cited_memory_ids=tuple(str(x) for x in parsed.get("cited_memory_ids", [])),
-            cited_note_ids=tuple(str(x) for x in parsed.get("cited_note_ids", [])),
-            has_sufficient_evidence=bool(parsed.get("has_sufficient_evidence", True)),
+            cited_memory_ids=tuple(str(x) for x in raw_mem_ids) if isinstance(raw_mem_ids, list) else (),
+            cited_note_ids=tuple(str(x) for x in raw_note_ids) if isinstance(raw_note_ids, list) else (),
+            has_sufficient_evidence=has_sufficient,
             llm_calls=1,
             tokens_used=tokens,
         )
@@ -445,20 +888,28 @@ class OpenAICompatLLMProvider:
         )
         parsed, tokens = self._chat_json(sys_prompt, user_msg)
         steps: list[SubtaskSuggestion] = []
-        for raw in (parsed.get("subtasks") or [])[:6]:
+        raw_subtasks = parsed.get("subtasks")
+        for raw in (raw_subtasks if isinstance(raw_subtasks, list) else [])[:6]:
             if isinstance(raw, str):
                 t = raw.strip()
                 est = 15
             elif isinstance(raw, dict):
                 t = str(raw.get("title") or "").strip()
-                est = max(5, min(180, int(raw.get("estimated_minutes") or 15)))
+                try:
+                    est_val = int(raw.get("estimated_minutes") or 15)
+                except (TypeError, ValueError):
+                    est_val = 15
+                est = max(5, min(180, est_val))
             else:
                 continue
             if t:
                 steps.append(SubtaskSuggestion(title=t, estimated_minutes=est))
         if not steps:
             return self._rule_helper.decompose_task(task_title, task_summary, context_memories)
-        used_ctx = tuple(str(x) for x in (parsed.get("memory_context_used") or []) if str(x).strip())
+        raw_used = parsed.get("memory_context_used")
+        used_ctx = tuple(
+            str(x) for x in (raw_used if isinstance(raw_used, list) else []) if str(x).strip()
+        )
         return DecomposeBatch(
             subtasks=tuple(steps),
             memory_context_used=used_ctx,

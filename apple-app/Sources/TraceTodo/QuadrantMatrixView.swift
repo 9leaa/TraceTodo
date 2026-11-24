@@ -13,6 +13,8 @@ struct QuickCaptureBar: View {
                     .textFieldStyle(.plain)
                     .onSubmit { submit() }
 
+                VoiceMicButton(text: $inputText, compact: true)
+
                 if store.isBusy {
                     ProgressView()
                         .controlSize(.small)

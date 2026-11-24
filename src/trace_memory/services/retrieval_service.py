@@ -168,6 +168,9 @@ class RetrievalService:
         chars_limit = self.default_max_chars if max_chars is None else max(100, int(max_chars))
 
         seeds: list[MemoryItem] = []
+        any_seed = self.memory_repo.get_any_space(seed_identifier_or_query.strip())
+        if any_seed is not None and any_seed.space_id != space_id:
+            raise PermissionDeniedError("Cross-space graph access denied")
         direct = self.memory_repo.get(space_id, seed_identifier_or_query)
         if direct is not None and direct.status == "active":
             seeds.append(direct)
@@ -213,27 +216,32 @@ class RetrievalService:
                 continue
 
             for rel in self.relation_repo.get_neighbors(space_id, current.memory_id):
-                if rel.space_id != space_id:
+                if rel.space_id != space_id or rel.to_target_text == "[FORGOTTEN]":
                     continue
-                if rel.relation_id not in seen_edges:
-                    seen_edges.add(rel.relation_id)
-                    edges_out.append(rel.to_dict())
 
                 neighbor_id = (
                     rel.to_memory_id
                     if rel.from_memory_id == current.memory_id
                     else rel.from_memory_id
                 )
-                if not neighbor_id or neighbor_id in visited:
-                    continue
+                neighbor: MemoryItem | None = None
+                if neighbor_id:
+                    neighbor = self.memory_repo.get(space_id, neighbor_id)
+                    if neighbor is None or neighbor.space_id != space_id or neighbor.status != "active":
+                        continue
+                elif rel.to_memory_id == "" and rel.from_memory_id == current.memory_id:
+                    # Also hide unresolved edges whose target was previously forgotten
+                    tgt_check = self.memory_repo.get(space_id, rel.to_target_text, include_forgotten=True)
+                    if tgt_check is not None and tgt_check.status != "active":
+                        continue
 
-                # Re-validate neighbor status & space ownership before expanding!
-                neighbor = self.memory_repo.get(space_id, neighbor_id)
-                if neighbor is None or neighbor.space_id != space_id or neighbor.status != "active":
-                    continue
+                if rel.relation_id not in seen_edges:
+                    seen_edges.add(rel.relation_id)
+                    edges_out.append(rel.to_dict())
 
-                visited.add(neighbor.memory_id)
-                queue.append((neighbor, depth + 1))
+                if neighbor is not None and neighbor.memory_id not in visited:
+                    visited.add(neighbor.memory_id)
+                    queue.append((neighbor, depth + 1))
 
         return {
             "seed": seed_identifier_or_query,
@@ -542,6 +550,8 @@ class RetrievalService:
 
             if include_unresolved and not type_tokens and not subj_filter:
                 for e in candidate_edges:
+                    if len(hop_by_node_id) >= nodes_limit:
+                        break
                     if (
                         e["edge_kind"] == "ghost_ref"
                         and e["source"] in hop_by_node_id

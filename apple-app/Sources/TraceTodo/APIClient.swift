@@ -187,22 +187,145 @@ struct TraceMemoryAPIClient {
     }
 
     @discardableResult
-    func recordNote(content: String, idempotencyKey: String = "", asyncMode: Bool = true) async throws -> NoteRecordResponse {
+    func recordNote(
+        content: String,
+        idempotencyKey: String = "",
+        asyncMode: Bool = true,
+        mediaIds: [String] = []
+    ) async throws -> NoteRecordResponse {
         var payload: [String: Any] = ["content": content, "async_mode": asyncMode]
         if !idempotencyKey.isEmpty {
             payload["idempotency_key"] = idempotencyKey
         }
+        if !mediaIds.isEmpty {
+            payload["media_ids"] = mediaIds
+        }
         let data = try await postRaw("/api/notes/record", body: payload)
         return (try? JSONDecoder().decode(NoteRecordResponse.self, from: data))
-            ?? NoteRecordResponse(extractionStatus: "completed", filtered: false, filterReason: nil, errorMessage: nil, jobId: nil)
+            ?? NoteRecordResponse(note: nil, extractionStatus: "completed", filtered: false, filterReason: nil, errorMessage: nil, jobId: nil)
     }
 
-    func fetchIngestStatus() async throws -> IngestStatusResponse {
-        try await get("/api/notes/ingest-status")
+    func fetchBootstrap() async throws -> BootstrapResponse {
+        try await get("/api/bootstrap")
+    }
+
+    func uploadMedia(
+        imageBase64: String,
+        thumbBase64: String = "",
+        width: Int = 0,
+        height: Int = 0
+    ) async throws -> MediaUploadResponse {
+        let data = try await postRaw(
+            "/api/media/upload",
+            body: [
+                "image_base64": imageBase64,
+                "thumb_base64": thumbBase64,
+                "width": width,
+                "height": height
+            ]
+        )
+        return try JSONDecoder().decode(MediaUploadResponse.self, from: data)
+    }
+
+    func deleteMedia(mediaId: String) async throws {
+        try await postRaw("/api/media/delete", body: ["media_id": mediaId])
+    }
+
+    func fetchIngestStatus(jobId: String = "", waitMs: Int = 0, sinceVersion: Int = -1) async throws -> IngestStatusResponse {
+        var items: [URLQueryItem] = []
+        if !jobId.isEmpty {
+            items.append(URLQueryItem(name: "job_id", value: jobId))
+        }
+        if waitMs > 0 {
+            items.append(URLQueryItem(name: "wait_ms", value: String(waitMs)))
+        }
+        if sinceVersion >= 0 {
+            items.append(URLQueryItem(name: "since_version", value: String(sinceVersion)))
+        }
+        return try await get("/api/notes/ingest-status", queryItems: items)
+    }
+
+    func streamSyncEvents(
+        sinceVersion: Int,
+        onEvent: @escaping (_ eventName: String, _ state: SyncStateResponse) async -> Void
+    ) async throws {
+        let url = try makeURL(
+            path: "/api/sync/stream",
+            queryItems: [URLQueryItem(name: "since", value: String(max(0, sinceVersion)))]
+        )
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 300
+        req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        let cleanTok = authToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanTok.isEmpty {
+            req.setValue("Bearer \(cleanTok)", forHTTPHeaderField: "Authorization")
+        }
+
+        let (bytes, resp) = try await URLSession.shared.bytes(for: req)
+        if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw APIError.serverError(http.statusCode, "", "SSE HTTP \(http.statusCode)")
+        }
+
+        var currentEvent = "message"
+        var dataLines: [String] = []
+        let decoder = JSONDecoder()
+
+        for try await line in bytes.lines {
+            if Task.isCancelled { break }
+            if line.isEmpty {
+                if !dataLines.isEmpty {
+                    let jsonText = dataLines.joined(separator: "\n")
+                    if let payloadData = jsonText.data(using: .utf8),
+                       let parsed = try? decoder.decode(SyncStateResponse.self, from: payloadData) {
+                        await onEvent(currentEvent, parsed)
+                    }
+                    dataLines.removeAll(keepingCapacity: true)
+                }
+                currentEvent = "message"
+                continue
+            }
+            if line.hasPrefix(":") {
+                continue
+            }
+            if line.hasPrefix("event:") {
+                currentEvent = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
+            } else if line.hasPrefix("data:") {
+                dataLines.append(line.dropFirst(5).trimmingCharacters(in: .whitespaces))
+            }
+        }
+        if !Task.isCancelled && !dataLines.isEmpty {
+            let jsonText = dataLines.joined(separator: "\n")
+            if let payloadData = jsonText.data(using: .utf8),
+               let parsed = try? decoder.decode(SyncStateResponse.self, from: payloadData) {
+                await onEvent(currentEvent, parsed)
+            }
+        }
     }
 
     func fetchSyncState() async throws -> SyncStateResponse {
         try await get("/api/sync/state")
+    }
+
+    func fetchPreferences() async throws -> SpacePreferencesResponse {
+        try await get("/api/preferences")
+    }
+
+    func updatePreferences(body: [String: Any]) async throws -> SpacePreferencesResponse {
+        let data = try await postRaw("/api/preferences", body: body)
+        return try JSONDecoder().decode(SpacePreferencesResponse.self, from: data)
+    }
+
+    func fetchNotesList(query: String = "", limit: Int = 50) async throws -> RawNoteListResponse {
+        var items = [URLQueryItem(name: "limit", value: String(limit))]
+        let clean = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !clean.isEmpty {
+            items.append(URLQueryItem(name: "q", value: clean))
+        }
+        return try await get("/api/notes/list", queryItems: items)
+    }
+
+    func forgetNote(noteId: String) async throws {
+        try await postRaw("/api/notes/forget", body: ["note_id": noteId])
     }
 
     func refreshTaskStatuses() async throws -> TaskStatusRefreshResponse {
@@ -281,6 +404,18 @@ struct TraceMemoryAPIClient {
         )
     }
 
+    func fetchFocusOverview(limit: Int = 60) async throws -> FocusOverviewResponse {
+        try await get("/api/focus/overview", queryItems: [URLQueryItem(name: "limit", value: String(limit))])
+    }
+
+    func recordFocusSession(body: [String: Any]) async throws {
+        try await postRaw("/api/focus/record", body: body)
+    }
+
+    func deleteFocusSession(sessionId: String) async throws {
+        try await postRaw("/api/focus/delete", body: ["session_id": sessionId])
+    }
+
     func fetchSupervisionBoard(assignee: String = "") async throws -> SupervisionBoardResponse {
         var items: [URLQueryItem] = []
         if !assignee.isEmpty {
@@ -354,7 +489,10 @@ struct TraceMemoryAPIClient {
                 URLQueryItem(name: "subject", value: subject),
                 URLQueryItem(name: "max_hops", value: String(maxHops)),
                 URLQueryItem(name: "include_semantic", value: includeSemantic ? "1" : "0"),
-                URLQueryItem(name: "semantic_threshold", value: String(format: "%.2f", semanticThreshold)),
+                URLQueryItem(
+                    name: "semantic_threshold",
+                    value: String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), semanticThreshold)
+                ),
                 URLQueryItem(name: "include_unresolved", value: includeUnresolved ? "1" : "0")
             ]
         )
@@ -366,5 +504,87 @@ struct TraceMemoryAPIClient {
 
     func seedDemoData() async throws {
         try await postRaw("/api/seed-demo", body: [:])
+    }
+
+    // MARK: - Phase 3: Calendar Timeline & Slot Scheduling
+
+    func fetchCalendarOverview(view: String = "week", anchorDate: String = "", includeDone: Bool = true) async throws -> CalendarOverviewResponse {
+        try await get(
+            "/api/calendar/overview",
+            queryItems: [
+                URLQueryItem(name: "view", value: view),
+                URLQueryItem(name: "anchor_date", value: anchorDate),
+                URLQueryItem(name: "include_done", value: includeDone ? "true" : "false")
+            ]
+        )
+    }
+
+    func scheduleCalendarSlot(body: [String: Any]) async throws {
+        try await postRaw("/api/calendar/schedule", body: body)
+    }
+
+    // MARK: - Phase 3: Countdowns & Anniversaries
+
+    func fetchCountdowns() async throws -> CountdownListResponse {
+        try await get("/api/countdowns/list")
+    }
+
+    func saveCountdown(body: [String: Any]) async throws -> CountdownItemModel {
+        let data = try await postRaw("/api/countdowns/save", body: body)
+        return try JSONDecoder().decode(CountdownItemModel.self, from: data)
+    }
+
+    func deleteCountdown(countdownId: String) async throws {
+        try await postRaw("/api/countdowns/delete", body: ["countdown_id": countdownId])
+    }
+
+    // MARK: - Phase 4: Pinned Memos & One-Page-Per-Day Mood Journal
+
+    func fetchMemos(query: String = "", tag: String = "", pinnedOnly: Bool = false, limit: Int = 80) async throws -> MemoListResponse {
+        try await get(
+            "/api/memos/list",
+            queryItems: [
+                URLQueryItem(name: "q", value: query),
+                URLQueryItem(name: "tag", value: tag),
+                URLQueryItem(name: "pinned_only", value: pinnedOnly ? "true" : "false"),
+                URLQueryItem(name: "limit", value: String(limit))
+            ]
+        )
+    }
+
+    func saveMemo(body: [String: Any]) async throws -> MemoSaveResponse {
+        let data = try await postRaw("/api/memos/save", body: body)
+        return try JSONDecoder().decode(MemoSaveResponse.self, from: data)
+    }
+
+    func toggleMemoPin(noteId: String, pinned: Bool) async throws {
+        try await postRaw("/api/memos/pin", body: ["note_id": noteId, "pinned": pinned])
+    }
+
+    func fetchJournalOverview(date: String = "", limit: Int = 30) async throws -> JournalOverviewResponse {
+        try await get(
+            "/api/journal/overview",
+            queryItems: [
+                URLQueryItem(name: "date", value: date),
+                URLQueryItem(name: "limit", value: String(limit))
+            ]
+        )
+    }
+
+    func saveJournal(body: [String: Any]) async throws -> JournalSaveResponse {
+        let data = try await postRaw("/api/journal/save", body: body)
+        return try JSONDecoder().decode(JournalSaveResponse.self, from: data)
+    }
+
+    func generateJournalAISummary(date: String, draftContent: String, triggerDream: Bool = false) async throws -> JournalAISummaryResponse {
+        let data = try await postRaw(
+            "/api/journal/ai-summary",
+            body: [
+                "date": date,
+                "draft_content": draftContent,
+                "trigger_dream": triggerDream
+            ]
+        )
+        return try JSONDecoder().decode(JournalAISummaryResponse.self, from: data)
     }
 }

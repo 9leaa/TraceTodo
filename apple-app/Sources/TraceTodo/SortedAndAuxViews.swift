@@ -546,9 +546,10 @@ struct AskMemoryView: View {
                 .background(Color.primary.opacity(0.035))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-            // Citations: Memories & Source RawNotes
+            // Citations: Memories, Source RawNotes & Visual Media
             let mems = res.citations?.memories ?? []
             let notes = res.citations?.notes ?? []
+            let mediaItems = res.citations?.media ?? []
 
             if !mems.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
@@ -611,6 +612,15 @@ struct AskMemoryView: View {
                     }
                 }
             }
+
+            if !mediaItems.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("🖼️ 关联视觉图片溯源（点击查看原图与 OCR）")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                    MediaThumbnailGridView(media: mediaItems)
+                }
+            }
         }
         .padding(16)
         .background(.background)
@@ -656,6 +666,8 @@ struct SettingsSyncView: View {
 
     var body: some View {
         Form {
+            ThemeAndModulesSettingsSections()
+
             Section("账号登录与今日配额") {
                 if let user = store.currentUser {
                     LabeledContent("当前账号", value: "\(user.displayName) (@\(user.username))")
@@ -701,15 +713,30 @@ struct SettingsSyncView: View {
                 HStack(spacing: 8) {
                     Button {
                         dismissAppKeyboard()
-                        store.switchServerURL(TodoStore.defaultServerURL)
+                        store.switchServerURL(TodoStore.testCloudServerURL)
                         Task { await store.refresh() }
                     } label: {
-                        Text("☁️ 线上云端")
+                        Text("🧪 云端测试服")
                             .font(.caption.bold())
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
-                            .background(store.serverURL == TodoStore.defaultServerURL ? Color.blue : Color.blue.opacity(0.12))
-                            .foregroundStyle(store.serverURL == TodoStore.defaultServerURL ? .white : .blue)
+                            .background(store.serverURL == TodoStore.testCloudServerURL ? Color.teal : Color.teal.opacity(0.14))
+                            .foregroundStyle(store.serverURL == TodoStore.testCloudServerURL ? .white : .teal)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.borderless)
+
+                    Button {
+                        dismissAppKeyboard()
+                        store.switchServerURL(TodoStore.prodCloudServerURL)
+                        Task { await store.refresh() }
+                    } label: {
+                        Text("☁️ 线上正式服")
+                            .font(.caption.bold())
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(store.serverURL == TodoStore.prodCloudServerURL ? Color.blue : Color.blue.opacity(0.12))
+                            .foregroundStyle(store.serverURL == TodoStore.prodCloudServerURL ? .white : .blue)
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.borderless)

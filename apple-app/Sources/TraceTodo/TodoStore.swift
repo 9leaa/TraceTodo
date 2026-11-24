@@ -35,11 +35,15 @@ final class TodoStore: ObservableObject {
     @Published private(set) var lastConnectionError: String?
     @Published private(set) var isBusy: Bool = false
     @Published private(set) var pendingIngestCount: Int = 0
+    @Published private(set) var optimisticIngestItems: [OptimisticIngestItem] = []
     @Published private(set) var lastKnownSyncVersion: Int = -1
     @Published private(set) var lastKnownBeijingDate: String = ""
     @Published var statusBanner: String?
     private var ingestPollTask: Task<Void, Never>?
     private var autoSyncTask: Task<Void, Never>?
+    private var sseStreamTask: Task<Void, Never>?
+    private var watchedIngestNoteIds: Set<String> = []
+    private var lastIngestCompletedAt: String = ""
 
     @Published private(set) var authRequired: Bool = false
     @Published private(set) var allowRegistration: Bool = true
@@ -49,11 +53,35 @@ final class TodoStore: ObservableObject {
     @Published var isPresentingAuthSheet: Bool = false
 
     @Published var isPresentingNewTaskSheet: Bool = false
+    @Published var isPresentingSettingsSheet: Bool = false
+    @Published var isPresentingSupervisionSheet: Bool = false
     @Published var editingTaskTarget: TaskItemModel?
     @Published var activeFocusTask: TaskItemModel?
+    @Published var activeFocusLaunch: ActiveFocusLaunchConfig?
+    @Published private(set) var focusOverview: FocusOverviewResponse?
+    @Published private(set) var countdownList: CountdownListResponse?
+
+    @Published var activeTheme: AppThemeKind = .classic
+    @Published var enabledModules: [String: Bool] = [
+        "calendar": true,
+        "focus": true,
+        "notes": true,
+        "journal": true,
+        "countdown": true,
+        "supervision": true
+    ]
+    @Published var defaultPomodoroMinutes: Int = 25
 
     static var defaultServerURL: String {
         SharedWidgetBridge.cloudServerURL
+    }
+
+    static var prodCloudServerURL: String {
+        SharedWidgetBridge.prodCloudServerURL
+    }
+
+    static var testCloudServerURL: String {
+        SharedWidgetBridge.testCloudServerURL
     }
 
     static var localServerURL: String {
@@ -72,6 +100,19 @@ final class TodoStore: ObservableObject {
         }
         self.spaceId = UserDefaults.standard.string(forKey: "tm_space_id") ?? "default"
         self.authToken = UserDefaults.standard.string(forKey: "tm_auth_token") ?? ""
+        if let savedTheme = UserDefaults.standard.string(forKey: "tm_theme_id"),
+           let parsedTheme = AppThemeKind(rawValue: savedTheme) {
+            self.activeTheme = parsedTheme
+        }
+        if let savedMods = UserDefaults.standard.dictionary(forKey: "tm_enabled_modules") as? [String: Bool] {
+            for (k, v) in savedMods {
+                self.enabledModules[k] = v
+            }
+        }
+        let savedPom = UserDefaults.standard.integer(forKey: "tm_pomodoro_minutes")
+        if savedPom > 0 {
+            self.defaultPomodoroMinutes = savedPom
+        }
         syncSharedWidgetConfig()
         loadOfflineState()
     }
@@ -82,6 +123,9 @@ final class TodoStore: ObservableObject {
         UserDefaults.standard.set(true, forKey: "tm_env_user_selected")
         self.serverURL = clean
         self.lastKnownSyncVersion = -1
+        sseStreamTask?.cancel()
+        sseStreamTask = nil
+        startSyncStreamIfNeeded()
     }
 
     func syncSharedWidgetConfig() {
@@ -119,7 +163,8 @@ final class TodoStore: ObservableObject {
 
     private var cacheDir: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = base.appendingPathComponent("TraceTodo", isDirectory: true)
+        let folder = SharedWidgetBridge.isTestBuild ? "TraceTodo-Test" : "TraceTodo"
+        let dir = base.appendingPathComponent(folder, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -156,25 +201,48 @@ final class TodoStore: ObservableObject {
         }
     }
 
+    func refreshTasksFast() async {
+        guard !needsLoginGate else { return }
+        do {
+            let fresh = try await client.fetchMatrix(sortBy: sortBy, includeDone: includeDone)
+            self.matrix = fresh
+            self.isOnline = true
+            self.lastConnectionError = nil
+            saveMatrixCache(fresh)
+            #if os(iOS)
+            WidgetCenter.shared.reloadAllTimelines()
+            #endif
+            NotificationManager.shared.syncReminders(for: fresh.sortedTasks)
+            if let currentFocus = activeFocusTask,
+               let updatedFocus = fresh.sortedTasks.first(where: { $0.memoryId == currentFocus.memoryId }) {
+                self.activeFocusTask = updatedFocus
+            }
+        } catch {
+            // Preserve current cached matrix on transient failure
+        }
+    }
+
     func refresh() async {
         loadOfflineState()
         do {
-            let authStatus = try await client.fetchAuthStatus()
-            self.authRequired = authStatus.authRequired
-            self.allowRegistration = authStatus.allowRegistration
-            self.hasUsers = authStatus.hasUsers
-            if authStatus.authenticated, let u = authStatus.user {
-                self.currentUser = u
-                self.currentQuota = authStatus.quota
-                if !u.isAdmin || self.spaceId == "default" {
-                    self.spaceId = u.spaceId
+            let boot = try await client.fetchBootstrap()
+            if let authStatus = boot.auth {
+                self.authRequired = authStatus.authRequired
+                self.allowRegistration = authStatus.allowRegistration
+                self.hasUsers = authStatus.hasUsers
+                if authStatus.authenticated, let u = authStatus.user {
+                    self.currentUser = u
+                    self.currentQuota = authStatus.quota
+                    if !u.isAdmin || self.spaceId == "default" {
+                        self.spaceId = u.spaceId
+                    }
+                } else {
+                    if !authToken.isEmpty {
+                        self.authToken = ""
+                    }
+                    self.currentUser = nil
+                    self.currentQuota = nil
                 }
-            } else {
-                if !authToken.isEmpty {
-                    self.authToken = ""
-                }
-                self.currentUser = nil
-                self.currentQuota = nil
             }
 
             if self.needsLoginGate {
@@ -184,23 +252,42 @@ final class TodoStore: ObservableObject {
                 return
             }
 
-            await flushOfflineQueueIfNeeded()
-            let health = try await client.checkHealth()
-            let fresh = try await client.fetchMatrix(sortBy: sortBy, includeDone: includeDone)
-            self.matrix = fresh
-            self.isOnline = true
-            self.lastConnectionError = nil
-            let llm = (health["llm_provider"] as? String) ?? "llm"
-            self.engineBadge = "在线 · \(llm)"
-            saveMatrixCache(fresh)
-            syncSharedWidgetConfig()
-            if let syncSt = try? await client.fetchSyncState() {
+            if let prefs = boot.preferences {
+                applyPreferencesResponse(prefs)
+            }
+            if let syncSt = boot.syncState {
                 self.lastKnownSyncVersion = syncSt.syncVersion
                 self.pendingIngestCount = syncSt.pendingIngest ?? 0
+                if let doneAt = syncSt.lastCompletedAt, !doneAt.isEmpty {
+                    self.lastIngestCompletedAt = doneAt
+                }
                 if let bjDate = syncSt.beijingDate, !bjDate.isEmpty {
                     self.lastKnownBeijingDate = bjDate
                 }
             }
+
+            await flushOfflineQueueIfNeeded()
+            async let matrixTask = client.fetchMatrix(sortBy: sortBy, includeDone: includeDone)
+            async let focusTask: FocusOverviewResponse? = try? client.fetchFocusOverview(limit: 60)
+            async let countdownTask: CountdownListResponse? = try? client.fetchCountdowns()
+
+            let fresh = try await matrixTask
+            let (foc, cd) = await (focusTask, countdownTask)
+
+            self.matrix = fresh
+            if let foc { self.focusOverview = foc }
+            if let cd {
+                self.countdownList = cd
+                if let encoded = try? JSONEncoder().encode(cd) {
+                    SharedWidgetBridge.saveCountdownsSnapshotData(encoded)
+                }
+            }
+            self.isOnline = true
+            self.lastConnectionError = nil
+            let llm = boot.health?.llmProvider ?? "llm"
+            self.engineBadge = "在线 · \(llm)"
+            saveMatrixCache(fresh)
+            syncSharedWidgetConfig()
             #if os(iOS)
             WidgetCenter.shared.reloadAllTimelines()
             #endif
@@ -230,8 +317,11 @@ final class TodoStore: ObservableObject {
         self.currentQuota = sess.quota
         self.spaceId = sess.user.spaceId
         self.isPresentingAuthSheet = false
+        sseStreamTask?.cancel()
+        sseStreamTask = nil
         showBanner("欢迎回来，\(sess.user.displayName)")
         await refresh()
+        startSyncStreamIfNeeded()
     }
 
     func register(username: String, password: String, displayName: String) async throws {
@@ -241,11 +331,16 @@ final class TodoStore: ObservableObject {
         self.currentQuota = sess.quota
         self.spaceId = sess.user.spaceId
         self.isPresentingAuthSheet = false
+        sseStreamTask?.cancel()
+        sseStreamTask = nil
         showBanner("注册并登录成功")
         await refresh()
+        startSyncStreamIfNeeded()
     }
 
     func logout() async {
+        sseStreamTask?.cancel()
+        sseStreamTask = nil
         try? await client.logout()
         self.authToken = ""
         self.currentUser = nil
@@ -281,13 +376,17 @@ final class TodoStore: ObservableObject {
     }
 
     func startAutoSyncLoop() {
+        startSyncStreamIfNeeded()
         guard autoSyncTask == nil else { return }
         autoSyncTask = Task { [weak self] in
             guard let self else { return }
             defer { self.autoSyncTask = nil }
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
                 if Task.isCancelled { break }
+                if self.sseStreamTask == nil {
+                    self.startSyncStreamIfNeeded()
+                }
                 await self.syncIfChanged()
             }
         }
@@ -296,6 +395,104 @@ final class TodoStore: ObservableObject {
     func stopAutoSyncLoop() {
         autoSyncTask?.cancel()
         autoSyncTask = nil
+        sseStreamTask?.cancel()
+        sseStreamTask = nil
+    }
+
+    private func startSyncStreamIfNeeded() {
+        guard sseStreamTask == nil, !needsLoginGate else { return }
+        sseStreamTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.sseStreamTask = nil }
+            while !Task.isCancelled && !self.needsLoginGate {
+                do {
+                    try await self.client.streamSyncEvents(sinceVersion: max(0, self.lastKnownSyncVersion)) { [weak self] evName, st in
+                        guard let self else { return }
+                        await self.handleRealtimeSyncState(st, isInitialSnapshot: evName == "sync_state")
+                    }
+                } catch {
+                    if Task.isCancelled { break }
+                    try? await Task.sleep(nanoseconds: 2_500_000_000)
+                }
+            }
+        }
+    }
+
+    private func reconcileRecentJobs(_ jobs: [RecentIngestJobModel]?, pending: Int) {
+        if let jobs, !jobs.isEmpty {
+            var settledNotes = Set<String>()
+            var settledJobs = Set<String>()
+            for j in jobs {
+                if j.status == "completed" || j.status == "failed" || j.status == "cancelled" {
+                    settledNotes.insert(j.noteId)
+                    settledJobs.insert(j.jobId)
+                    if watchedIngestNoteIds.remove(j.noteId) != nil {
+                        if j.status == "completed" && (j.changesCount ?? 1) == 0 {
+                            showBanner("🤔 AI 未识别出待办或记忆，原话已保存在「随记」中")
+                        } else if j.status == "failed" {
+                            showBanner("⚠️ AI 整理失败：\(j.errorMessage ?? "请稍后重试")")
+                        }
+                    }
+                }
+            }
+            if !settledNotes.isEmpty || !settledJobs.isEmpty {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    optimisticIngestItems.removeAll { item in
+                        (item.noteId != nil && settledNotes.contains(item.noteId!))
+                            || (item.jobId != nil && settledJobs.contains(item.jobId!))
+                    }
+                }
+            }
+        }
+        if pending <= 0 && !optimisticIngestItems.isEmpty {
+            let now = Date()
+            withAnimation(.easeOut(duration: 0.18)) {
+                optimisticIngestItems.removeAll { $0.ackReceived || now.timeIntervalSince($0.createdAt) > 15.0 }
+            }
+        }
+    }
+
+    private func handleRealtimeSyncState(_ st: SyncStateResponse, isInitialSnapshot: Bool) async {
+        let newVer = st.syncVersion
+        let bjDate = st.beijingDate ?? ""
+        let pending = st.pendingIngest ?? 0
+        self.pendingIngestCount = pending
+        reconcileRecentJobs(st.recentJobs, pending: pending)
+
+        let doneAt = st.lastCompletedAt ?? ""
+        let completedAdvanced = !doneAt.isEmpty && !lastIngestCompletedAt.isEmpty && doneAt != lastIngestCompletedAt
+        if !doneAt.isEmpty {
+            lastIngestCompletedAt = doneAt
+        }
+
+        let versionAdvanced = !isInitialSnapshot && lastKnownSyncVersion >= 0 && newVer > lastKnownSyncVersion
+        let dayRolled = !isInitialSnapshot && !lastKnownBeijingDate.isEmpty && !bjDate.isEmpty && bjDate != lastKnownBeijingDate
+
+        if lastKnownSyncVersion < 0 || newVer > lastKnownSyncVersion {
+            lastKnownSyncVersion = newVer
+        }
+        if !bjDate.isEmpty {
+            lastKnownBeijingDate = bjDate
+        }
+
+        if dayRolled && !isPresentingNewTaskSheet && editingTaskTarget == nil {
+            await refresh()
+            showBanner("🌅 已进入新的一天（\(bjDate)），自动刷新任务到期状态")
+            return
+        }
+
+        if completedAdvanced || versionAdvanced {
+            let prevIds = Set((matrix?.sortedTasks ?? []).map(\.memoryId))
+            await refreshTasksFast()
+            let reason = st.lastReason ?? ""
+            if versionAdvanced && reason != "note_queued" && watchedIngestNoteIds.isEmpty && optimisticIngestItems.isEmpty {
+                let newlyArrived = (matrix?.sortedTasks ?? []).filter { !$0.payload.isDone && !prevIds.contains($0.memoryId) }
+                if !newlyArrived.isEmpty {
+                    NotificationManager.shared.notifyRemoteTasksArrived(newlyArrived)
+                    showBanner("🔄 已自动同步跨端新任务：\(newlyArrived[0].title)")
+                }
+            }
+        }
     }
 
     func syncIfChanged() async {
@@ -304,44 +501,7 @@ final class TodoStore: ObservableObject {
         }
         do {
             let st = try await client.fetchSyncState()
-            let newVer = st.syncVersion
-            let bjDate = st.beijingDate ?? ""
-            self.pendingIngestCount = st.pendingIngest ?? 0
-
-            let versionAdvanced = lastKnownSyncVersion >= 0 && newVer > lastKnownSyncVersion
-            let dayRolled = !lastKnownBeijingDate.isEmpty && !bjDate.isEmpty && bjDate != lastKnownBeijingDate
-
-            if lastKnownSyncVersion < 0 {
-                lastKnownSyncVersion = newVer
-            }
-            if !bjDate.isEmpty && lastKnownBeijingDate.isEmpty {
-                lastKnownBeijingDate = bjDate
-            }
-
-            if versionAdvanced || dayRolled {
-                let prevIds = Set((matrix?.sortedTasks ?? []).map(\.memoryId))
-                lastKnownSyncVersion = newVer
-                if !bjDate.isEmpty { lastKnownBeijingDate = bjDate }
-
-                let fresh = try await client.fetchMatrix(sortBy: sortBy, includeDone: includeDone)
-                self.matrix = fresh
-                self.isOnline = true
-                saveMatrixCache(fresh)
-                #if os(iOS)
-                WidgetCenter.shared.reloadAllTimelines()
-                #endif
-                NotificationManager.shared.syncReminders(for: fresh.sortedTasks)
-
-                if dayRolled {
-                    showBanner("🌅 已进入新的一天（\(bjDate)），自动刷新任务到期状态")
-                } else if versionAdvanced {
-                    let newlyArrived = fresh.sortedTasks.filter { !$0.payload.isDone && !prevIds.contains($0.memoryId) }
-                    if !newlyArrived.isEmpty {
-                        NotificationManager.shared.notifyRemoteTasksArrived(newlyArrived)
-                        showBanner("🔄 已自动同步跨端新任务：\(newlyArrived[0].title)")
-                    }
-                }
-            }
+            await handleRealtimeSyncState(st, isInitialSnapshot: false)
         } catch {
             // Silent ignore on transient polling errors
         }
@@ -364,57 +524,103 @@ final class TodoStore: ObservableObject {
         ingestPollTask = Task { [weak self] in
             guard let self else { return }
             defer { self.ingestPollTask = nil }
-            var lastDone = ""
-            for _ in 0..<60 {
+            for attempt in 0..<40 {
                 if Task.isCancelled { break }
-                try? await Task.sleep(nanoseconds: 1_800_000_000)
+                if attempt > 0 {
+                    try? await Task.sleep(nanoseconds: 220_000_000)
+                }
                 if self.needsLoginGate { break }
                 do {
-                    let st = try await self.client.fetchIngestStatus()
+                    let st = try await self.client.fetchIngestStatus(
+                        waitMs: 4500,
+                        sinceVersion: self.lastKnownSyncVersion
+                    )
                     self.pendingIngestCount = st.pending
-                    let doneAt = st.lastCompletedAt ?? ""
-                    if !doneAt.isEmpty && !lastDone.isEmpty && doneAt != lastDone {
-                        await self.refresh()
+                    if let sv = st.syncVersion, sv > self.lastKnownSyncVersion {
+                        self.lastKnownSyncVersion = sv
                     }
-                    if !doneAt.isEmpty { lastDone = doneAt }
+                    self.reconcileRecentJobs(st.recentJobs, pending: st.pending)
+                    let doneAt = st.lastCompletedAt ?? ""
+                    let doneAdvanced = !doneAt.isEmpty && !self.lastIngestCompletedAt.isEmpty && doneAt != self.lastIngestCompletedAt
+                    if !doneAt.isEmpty {
+                        self.lastIngestCompletedAt = doneAt
+                    }
+                    if doneAdvanced {
+                        await self.refreshTasksFast()
+                    }
                     if st.pending == 0 {
-                        await self.refresh()
+                        await self.refreshTasksFast()
                         break
                     }
                 } catch {
-                    break
+                    try? await Task.sleep(nanoseconds: 600_000_000)
                 }
             }
             self.pendingIngestCount = 0
+            self.reconcileRecentJobs(nil, pending: 0)
         }
     }
 
-    func submitQuickNote(_ rawText: String) async {
+    func submitQuickNote(_ rawText: String, mediaIds: [String] = []) async {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty || !mediaIds.isEmpty else { return }
 
-        let key = "app:\(UUID().uuidString)"
+        let optId = UUID().uuidString
+        let displayLabel = text.isEmpty ? "[图片记录 × \(mediaIds.count)]" : text
+        let optItem = OptimisticIngestItem(
+            id: optId,
+            text: displayLabel,
+            noteId: nil,
+            jobId: nil,
+            ackReceived: false,
+            createdAt: Date()
+        )
+        withAnimation(.easeOut(duration: 0.18)) {
+            optimisticIngestItems.insert(optItem, at: 0)
+        }
+
+        let key = "app:\(optId)"
         do {
-            let res = try await client.recordNote(content: text, idempotencyKey: key, asyncMode: true)
+            let res = try await client.recordNote(content: text, idempotencyKey: key, asyncMode: true, mediaIds: mediaIds)
             if res.filtered == true || res.extractionStatus == "filtered_noise" {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    optimisticIngestItems.removeAll { $0.id == optId }
+                }
                 let reason = res.filterReason ?? res.errorMessage ?? "无效或水话输入"
                 showBanner("🛡️ 已拦截：\(reason)（0 Token 消耗）")
                 return
             }
             if res.extractionStatus == "queued" {
+                if let idx = optimisticIngestItems.firstIndex(where: { $0.id == optId }) {
+                    optimisticIngestItems[idx].noteId = res.note?.noteId
+                    optimisticIngestItems[idx].jobId = res.jobId
+                    optimisticIngestItems[idx].ackReceived = true
+                }
+                if let nid = res.note?.noteId, !nid.isEmpty {
+                    watchedIngestNoteIds.insert(nid)
+                }
                 pendingIngestCount = max(1, pendingIngestCount + 1)
-                showBanner("⚡ 已秒存，AI 后台整理中（问答现已立即可查）")
+                startSyncStreamIfNeeded()
                 startIngestPollingIfNeeded()
                 return
             }
+            withAnimation(.easeOut(duration: 0.15)) {
+                optimisticIngestItems.removeAll { $0.id == optId }
+            }
             showBanner("已通过 AI 抽取并更新四象限")
-            await refresh()
+            await refreshTasksFast()
         } catch let apiErr as APIError {
+            withAnimation(.easeOut(duration: 0.15)) {
+                optimisticIngestItems.removeAll { $0.id == optId }
+            }
             if apiErr.statusCode == 401 {
                 self.isPresentingAuthSheet = true
             }
             showBanner("⚠️ \(apiErr.localizedDescription)")
         } catch {
+            withAnimation(.easeOut(duration: 0.15)) {
+                optimisticIngestItems.removeAll { $0.id == optId }
+            }
             let queued = PendingOfflineNote(
                 id: UUID().uuidString,
                 content: text,
@@ -494,6 +700,64 @@ final class TodoStore: ObservableObject {
         }
     }
 
+    func refreshFocusOverview() async {
+        if let ov = try? await client.fetchFocusOverview(limit: 60) {
+            self.focusOverview = ov
+        }
+    }
+
+    func recordUnifiedFocusSession(
+        mode: FocusTimerMode,
+        status: String,
+        plannedMinutes: Int,
+        durationSeconds: Int,
+        task: TaskItemModel?,
+        customTitle: String,
+        abortReason: String = "",
+        completeTask: Bool = false,
+        startedAtIso: String = ""
+    ) async {
+        var body: [String: Any] = [
+            "mode": mode.rawValue,
+            "status": status,
+            "planned_minutes": plannedMinutes,
+            "duration_seconds": max(1, durationSeconds),
+            "task_memory_id": task?.memoryId ?? "",
+            "task_title": task?.title ?? (customTitle.isEmpty ? "自由专注" : customTitle),
+            "abort_reason": abortReason,
+            "complete_task": completeTask
+        ]
+        if let v = task?.version {
+            body["expected_version"] = v
+        }
+        if !startedAtIso.isEmpty {
+            body["started_at"] = startedAtIso
+        }
+        do {
+            try await client.recordFocusSession(body: body)
+            if status == "aborted" {
+                showBanner("已记录中断原因：「\(abortReason)」")
+            } else {
+                showBanner(mode == .stopwatch ? "🎉 正计时专注已记录" : "🍅 已完成一轮番茄专注")
+            }
+        } catch {
+            showBanner("记录专注失败：\(error.localizedDescription)")
+        }
+        activeFocusTask = nil
+        activeFocusLaunch = nil
+        await refresh()
+        await refreshFocusOverview()
+    }
+
+    func removeFocusSession(_ sessionId: String) async {
+        do {
+            try await client.deleteFocusSession(sessionId: sessionId)
+            await refreshFocusOverview()
+        } catch {
+            showBanner("删除记录失败：\(error.localizedDescription)")
+        }
+    }
+
     func completeFocusSession(_ task: TaskItemModel, markTaskDone: Bool) async {
         do {
             try await client.recordFocusEvent(
@@ -562,6 +826,59 @@ final class TodoStore: ObservableObject {
             await refresh()
         } catch {
             showBanner("载入失败，请确认 trace-memory 服务已启动")
+        }
+    }
+
+    func isModuleEnabled(_ key: ModuleToggleKey) -> Bool {
+        enabledModules[key.rawValue] ?? true
+    }
+
+    func refreshPreferences() async {
+        guard let prefs = try? await client.fetchPreferences() else { return }
+        applyPreferencesResponse(prefs)
+    }
+
+    func refreshCountdowns() async {
+        guard let cd = try? await client.fetchCountdowns() else { return }
+        self.countdownList = cd
+        if let encoded = try? JSONEncoder().encode(cd) {
+            SharedWidgetBridge.saveCountdownsSnapshotData(encoded)
+        }
+        #if os(iOS)
+        WidgetCenter.shared.reloadAllTimelines()
+        #endif
+    }
+
+    private func applyPreferencesResponse(_ prefs: SpacePreferencesResponse) {
+        if let th = AppThemeKind(rawValue: prefs.themeId) {
+            self.activeTheme = th
+            UserDefaults.standard.set(th.rawValue, forKey: "tm_theme_id")
+        }
+        for (k, v) in prefs.enabledModules {
+            self.enabledModules[k] = v
+        }
+        UserDefaults.standard.set(self.enabledModules, forKey: "tm_enabled_modules")
+        if let pm = prefs.pomodoroMinutes, pm > 0 {
+            self.defaultPomodoroMinutes = pm
+            UserDefaults.standard.set(pm, forKey: "tm_pomodoro_minutes")
+        }
+    }
+
+    func selectTheme(_ theme: AppThemeKind) async {
+        self.activeTheme = theme
+        UserDefaults.standard.set(theme.rawValue, forKey: "tm_theme_id")
+        if let updated = try? await client.updatePreferences(body: ["theme_id": theme.rawValue]) {
+            applyPreferencesResponse(updated)
+            showBanner("🎨 已切换主题：\(theme.title)")
+        }
+    }
+
+    func setModuleEnabled(_ key: ModuleToggleKey, enabled: Bool) async {
+        self.enabledModules[key.rawValue] = enabled
+        UserDefaults.standard.set(self.enabledModules, forKey: "tm_enabled_modules")
+        if let updated = try? await client.updatePreferences(body: ["module_key": key.rawValue, "enabled": enabled]) {
+            applyPreferencesResponse(updated)
+            showBanner(enabled ? "✅ 已启用 \(key.title)" : "🙈 已隐藏 \(key.title)")
         }
     }
 

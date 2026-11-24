@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any
 
 from trace_memory.domain.memories import MemoryItem
 from trace_memory.domain.notes import RawNote
+from trace_memory.storage.database import _CJK_CHAR_RE, build_fts_match_query
 from trace_memory.storage.repositories import MemoryRepository, NoteRepository
 from trace_memory.storage.vector_store import (
     MEMORIES_COLLECTION,
@@ -14,6 +16,27 @@ from trace_memory.storage.vector_store import (
     EmbeddingProviderProtocol,
     VectorStore,
 )
+
+
+_ASCII_IDENT_RE = re.compile(r"^[A-Za-z0-9_\-./:]+$")
+_HAS_DIGIT_OR_UNDERSCORE_RE = re.compile(r"[0-9_]")
+
+
+def _is_opaque_identifier_query(query: str) -> bool:
+    q = query.strip()
+    return bool(q and _ASCII_IDENT_RE.match(q) and _HAS_DIGIT_OR_UNDERSCORE_RE.search(q))
+
+
+def _extract_query_cjk_bigrams(query: str) -> list[str]:
+    match_expr = build_fts_match_query(query)
+    if not match_expr:
+        return []
+    bigrams: list[str] = []
+    for raw in match_expr.split(" OR "):
+        term = raw.strip().strip('"')
+        if len(term) >= 2 and _CJK_CHAR_RE.match(term[0]):
+            bigrams.append(term)
+    return bigrams
 
 
 @dataclass(frozen=True)
@@ -66,12 +89,16 @@ class HybridSearchIndex:
         vector_store: VectorStore,
         embedder: EmbeddingProviderProtocol,
         rrf_k: int = 60,
+        vector_only_min_score: float = 0.0,
     ) -> None:
         self.note_repo = note_repo
         self.memory_repo = memory_repo
         self.vector_store = vector_store
         self.embedder = embedder
         self.rrf_k = rrf_k
+        # Pure semantic hits (no BM25 keyword match) must clear this floor, otherwise
+        # gibberish queries surface every memory with a mediocre cosine score.
+        self.vector_only_min_score = max(0.0, float(vector_only_min_score))
 
     def search_memories(
         self,
@@ -101,21 +128,25 @@ class HybridSearchIndex:
         bm25_hits = self.memory_repo.search_bm25(
             space_id=space_id, query=query, memory_type=memory_type, limit=pool_size
         )
-        query_vec = self.embedder.embed(query)
-        vec_filters: dict[str, Any] = {"status": "active"}
-        if memory_type:
-            vec_filters["memory_type"] = memory_type
-        vec_hits = [
-            h
-            for h in self.vector_store.search(
-                collection=MEMORIES_COLLECTION,
-                space_id=space_id,
-                query_vector=query_vec,
-                top_k=pool_size,
-                filters=vec_filters,
-            )
-            if h.score >= min_vector_score
-        ]
+        vec_hits = []
+        try:
+            query_vec = self.embedder.embed(query)
+            vec_filters: dict[str, Any] = {"status": "active"}
+            if memory_type:
+                vec_filters["memory_type"] = memory_type
+            vec_hits = [
+                h
+                for h in self.vector_store.search(
+                    collection=MEMORIES_COLLECTION,
+                    space_id=space_id,
+                    query_vector=query_vec,
+                    top_k=pool_size,
+                    filters=vec_filters,
+                )
+                if h.score >= min_vector_score
+            ]
+        except Exception:
+            vec_hits = []
 
         items_by_id: dict[str, MemoryItem] = {}
         bm25_meta: dict[str, tuple[int, float]] = {}
@@ -134,15 +165,36 @@ class HybridSearchIndex:
                     if not memory_type or mem_obj.memory_type == memory_type:
                         items_by_id[vhit.doc_id] = mem_obj
 
+        q_low = query.strip().lower()
+        eff_vec_floor = (
+            max(self.vector_only_min_score, 0.65)
+            if (self.vector_only_min_score > 0.0 and _is_opaque_identifier_query(q_low))
+            else self.vector_only_min_score
+        )
+        cjk_bigrams = _extract_query_cjk_bigrams(query)
+        has_pref_cue = any(cue in q_low for cue in ("最喜欢", "最爱", "偏好"))
         fused: list[RankedMemoryHit] = []
         for mem_id, mem in items_by_id.items():
             b_rank, b_score = bm25_meta.get(mem_id, (None, 0.0))
             v_rank, v_score = vec_meta.get(mem_id, (None, 0.0))
+            if b_rank is None and v_score < eff_vec_floor:
+                continue
+            if self.vector_only_min_score > 0.0 and len(cjk_bigrams) >= 6:
+                mem_searchable_low = mem.searchable_text().lower()
+                matched_bgs = sum(1 for bg in cjk_bigrams if bg in mem_searchable_low)
+                if matched_bgs <= 1 and v_score < 0.45:
+                    continue
+            if has_pref_cue and mem.memory_type == "task" and len(cjk_bigrams) >= 2:
+                mem_searchable_low = mem.searchable_text().lower()
+                matched_bgs = sum(1 for bg in cjk_bigrams if bg in mem_searchable_low)
+                if matched_bgs < 2 and v_score < 0.65:
+                    continue
             rrf = 0.0
             if b_rank is not None:
-                rrf += 1.15 / (self.rrf_k + b_rank)
+                title_bonus = 0.008 if (q_low and q_low in mem.title.lower()) else 0.0
+                rrf += 1.15 / (self.rrf_k + b_rank) + 0.004 * min(b_score, 15.0) + title_bonus
             if v_rank is not None:
-                rrf += 1.0 / (self.rrf_k + v_rank) + 0.02 * v_score
+                rrf += 1.0 / (self.rrf_k + v_rank) + 0.015 * v_score
             fused.append(
                 RankedMemoryHit(
                     memory=mem,
@@ -169,18 +221,22 @@ class HybridSearchIndex:
 
         pool_size = max(top_k * 3, 16)
         bm25_hits = self.note_repo.search_bm25(space_id=space_id, query=query, limit=pool_size)
-        query_vec = self.embedder.embed(query)
-        vec_hits = [
-            h
-            for h in self.vector_store.search(
-                collection=NOTES_COLLECTION,
-                space_id=space_id,
-                query_vector=query_vec,
-                top_k=pool_size,
-                filters={"is_forgotten": False},
-            )
-            if h.score >= min_vector_score
-        ]
+        vec_hits = []
+        try:
+            query_vec = self.embedder.embed(query)
+            vec_hits = [
+                h
+                for h in self.vector_store.search(
+                    collection=NOTES_COLLECTION,
+                    space_id=space_id,
+                    query_vector=query_vec,
+                    top_k=pool_size,
+                    filters={"is_forgotten": False},
+                )
+                if h.score >= min_vector_score
+            ]
+        except Exception:
+            vec_hits = []
 
         notes_by_id: dict[str, RawNote] = {}
         bm25_meta: dict[str, tuple[int, float]] = {}
@@ -197,10 +253,18 @@ class HybridSearchIndex:
                 if note_obj is not None and not note_obj.is_forgotten:
                     notes_by_id[vhit.doc_id] = note_obj
 
+        q_low = query.strip().lower()
+        eff_vec_floor = (
+            max(self.vector_only_min_score, 0.65)
+            if (self.vector_only_min_score > 0.0 and _is_opaque_identifier_query(q_low))
+            else self.vector_only_min_score
+        )
         fused: list[RankedNoteHit] = []
         for note_id, note in notes_by_id.items():
             b_rank, b_score = bm25_meta.get(note_id, (None, 0.0))
             v_rank, v_score = vec_meta.get(note_id, (None, 0.0))
+            if b_rank is None and v_score < eff_vec_floor:
+                continue
             rrf = 0.0
             if b_rank is not None:
                 rrf += 1.15 / (self.rrf_k + b_rank)

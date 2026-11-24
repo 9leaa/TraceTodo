@@ -3,15 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import re
 from typing import Any
 
 MAX_QUESTIONS = 3
-
-_PLAN_CUES = re.compile(
-    r"[？?].+|[，,；;].*(?:我|哪里|什么|怎么)|分别|各自|另外|顺便|同时|以及|和|与|还有|哪些|多少|几[条个项件]|"
-    r"待办|任务|[Qq][1-4]|说了|提过|记了|录入|什么话|怎么说|说过|写了|记录|日志|\b(?:and|tasks?|today)\b"
-)
+MAX_INITIAL_TOOL_CALLS = 1
 
 
 @dataclass(frozen=True)
@@ -39,10 +34,10 @@ class AskPlan:
         ):
             raise ValueError("Invalid Ask plan questions")
         calls = data.get("tool_calls", [])
-        if not isinstance(calls, list) or len(calls) > MAX_QUESTIONS:
+        if not isinstance(calls, list):
             raise ValueError("Invalid Ask plan tool list")
         tools = []
-        for call in calls:
+        for call in calls[:MAX_INITIAL_TOOL_CALLS]:
             if not isinstance(call, dict):
                 raise ValueError("Invalid Ask plan tool call")
             goal, name, args = call.get("question"), call.get("name"), call.get("arguments")
@@ -67,7 +62,3 @@ class AskPlan:
                 for tool in self.tools
             ],
         }
-
-
-def needs_planning(question: str) -> bool:
-    return bool(_PLAN_CUES.search(question))

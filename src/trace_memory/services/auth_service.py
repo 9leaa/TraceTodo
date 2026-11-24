@@ -9,6 +9,7 @@ import hmac
 import json
 import os
 import re
+import sqlite3
 from typing import Any
 import uuid
 
@@ -671,10 +672,7 @@ class AdminService:
             "recent_traces": recent_traces,
         }
 
-    def list_users(self, actor: UserAccount | None) -> list[dict[str, Any]]:
-        self.require_admin(actor)
-        today = today_utc_date()
-        rows = self.db.query_all("SELECT * FROM users ORDER BY created_at ASC")
+    def _enrich_user_rows(self, rows: list[Any], today: str) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         for r in rows:
             u = AuthService._row_to_user(r)
@@ -699,6 +697,56 @@ class AdminService:
             out.append(item)
         return out
 
+    def list_users(self, actor: UserAccount | None) -> list[dict[str, Any]]:
+        self.require_admin(actor)
+        today = today_utc_date()
+        rows = self.db.query_all("SELECT * FROM users ORDER BY created_at ASC")
+        return self._enrich_user_rows(rows, today)
+
+    def list_users_page(
+        self,
+        actor: UserAccount | None,
+        *,
+        q: str = "",
+        limit: int = 20,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        self.require_admin(actor)
+        today = today_utc_date()
+        lim = max(1, min(200, int(limit or 20)))
+        off = max(0, int(offset or 0))
+        clean_q = (q or "").strip()
+
+        where_sql = ""
+        params: list[Any] = []
+        if clean_q:
+            escaped = clean_q.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            pat = f"%{escaped}%"
+            where_sql = (
+                "WHERE (LOWER(username) LIKE ? ESCAPE '\\' "
+                "OR LOWER(display_name) LIKE ? ESCAPE '\\' "
+                "OR LOWER(space_id) LIKE ? ESCAPE '\\')"
+            )
+            params.extend([pat, pat, pat])
+
+        cnt_row = self.db.query_one(
+            f"SELECT COUNT(*) AS cnt FROM users {where_sql}",
+            tuple(params),
+        )
+        total = int(cnt_row["cnt"] or 0) if cnt_row else 0
+        rows = self.db.query_all(
+            f"SELECT * FROM users {where_sql} ORDER BY created_at ASC LIMIT ? OFFSET ?",
+            tuple(params) + (lim, off),
+        )
+        out = self._enrich_user_rows(rows, today)
+        return {
+            "users": out,
+            "total": total,
+            "limit": lim,
+            "offset": off,
+            "has_more": (off + len(out)) < total,
+        }
+
     def create_user(
         self,
         actor: UserAccount | None,
@@ -722,9 +770,20 @@ class AdminService:
         now = utc_now_iso()
         user_id = new_id("usr")
         space_id = f"u_{uuid.uuid4().hex[:10]}"
-        note_lim = max(1, int(daily_note_limit or cfg["default_daily_note_limit"]))
-        llm_lim = max(1, int(daily_llm_limit or cfg["default_daily_llm_limit"]))
-        tok_lim = max(100, int(daily_token_limit or cfg["default_daily_token_limit"]))
+
+        def _parse_lim(raw: Any, default_val: int, min_val: int, name: str) -> int:
+            if raw is None or raw == "":
+                return max(min_val, int(default_val))
+            if isinstance(raw, bool):
+                raise ValidationError(f"{name} 必须为正整数")
+            try:
+                return max(min_val, int(raw))
+            except (TypeError, ValueError) as exc:
+                raise ValidationError(f"{name} 必须为正整数") from exc
+
+        note_lim = _parse_lim(daily_note_limit, int(cfg["default_daily_note_limit"]), 1, "daily_note_limit")
+        llm_lim = _parse_lim(daily_llm_limit, int(cfg["default_daily_llm_limit"]), 1, "daily_llm_limit")
+        tok_lim = _parse_lim(daily_token_limit, int(cfg["default_daily_token_limit"]), 100, "daily_token_limit")
 
         with self.db.transaction() as conn:
             conn.execute(
@@ -788,9 +847,21 @@ class AdminService:
                 raise ValidationError("无法禁用或降级最后一位活跃管理员")
 
         new_display = str(patch.get("display_name", target.display_name)).strip()[:40] or target.username
-        new_note_lim = max(1, int(patch.get("daily_note_limit", target.daily_note_limit)))
-        new_llm_lim = max(1, int(patch.get("daily_llm_limit", target.daily_llm_limit)))
-        new_tok_lim = max(100, int(patch.get("daily_token_limit", target.daily_token_limit)))
+
+        def _parse_upd_lim(key: str, default_val: int, min_val: int) -> int:
+            raw = patch.get(key, default_val)
+            if raw is None or raw == "":
+                return max(min_val, int(default_val))
+            if isinstance(raw, bool):
+                raise ValidationError(f"{key} 必须为正整数")
+            try:
+                return max(min_val, int(raw))
+            except (TypeError, ValueError) as exc:
+                raise ValidationError(f"{key} 必须为正整数") from exc
+
+        new_note_lim = _parse_upd_lim("daily_note_limit", target.daily_note_limit, 1)
+        new_llm_lim = _parse_upd_lim("daily_llm_limit", target.daily_llm_limit, 1)
+        new_tok_lim = _parse_upd_lim("daily_token_limit", target.daily_token_limit, 100)
         new_pw = str(patch.get("new_password", "") or "")
         if new_pw and (len(new_pw) < 6 or len(new_pw) > 128):
             raise ValidationError("重置密码长度需在 6 到 128 位之间")
@@ -827,6 +898,8 @@ class AdminService:
                 )
         if new_status == "disabled" or new_pw:
             self.auth.revoke_user_sessions(target.user_id)
+        if new_status == "disabled":
+            self.auth.revoke_supervision_share(target.space_id)
 
         self.guard.log_security_event(
             action="admin_update_user",
@@ -883,7 +956,10 @@ class AdminService:
             )
             pruned_traces = int(cur_traces.rowcount or 0)
         conn = self.db._get_conn()
-        row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        try:
+            row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        except sqlite3.OperationalError:
+            row = None
         size_bytes = int(self.config.sqlite_path.stat().st_size) if self.config.sqlite_path.exists() else 0
         self.guard.log_security_event(
             action="admin_db_maintenance",

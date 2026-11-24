@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 import sys
 from typing import Any, TextIO
@@ -14,10 +15,12 @@ from trace_memory.domain.memories import MemoryEvidence
 from trace_memory.domain.notes import RawNote, new_id
 from trace_memory.domain.proposals import (
     ChangeProposal,
+    NotFoundError,
     PermissionDeniedError,
     QuotaExceededError,
     RateLimitError,
     TraceMemoryError,
+    ValidationError,
     VersionConflictError,
 )
 
@@ -118,7 +121,13 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "question": {"type": "string", "description": "Question about current state or historical evolution"}
+                "question": {"type": "string", "description": "Question about current state or historical evolution"},
+                "top_k": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 25,
+                    "description": "Optional retrieval cap (auto-scales for summary/list questions when omitted)",
+                },
             },
             "required": ["question"],
         },
@@ -228,6 +237,17 @@ class MCPToolDispatcher:
             require_llm_slot=require_llm_slot,
         )
 
+    @staticmethod
+    def _parse_int_arg(raw: Any, default_val: int, name: str) -> int:
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            return default_val
+        if isinstance(raw, bool):
+            raise ValidationError(f"Argument {name} must be an integer")
+        try:
+            return int(raw)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(f"Argument {name} must be an integer") from exc
+
     def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         args = arguments or {}
         if len(json.dumps(args, ensure_ascii=False)) > 50_000:
@@ -239,7 +259,7 @@ class MCPToolDispatcher:
             if name == "tm_search":
                 q = str(args.get("query", ""))[:500]
                 mtype = str(args.get("memory_type", ""))
-                top_k = max(1, min(30, int(args.get("top_k", 8))))
+                top_k = max(1, min(30, self._parse_int_arg(args.get("top_k"), 8, "top_k")))
                 data = self.container.retrieval_service.search(
                     space_id=self.space_id, query=q, memory_type=mtype, top_k=top_k
                 )
@@ -252,8 +272,8 @@ class MCPToolDispatcher:
 
             if name == "tm_context":
                 seed = str(args.get("seed", ""))
-                hops = max(0, min(4, int(args.get("max_hops", 2))))
-                nodes = max(1, min(30, int(args.get("max_nodes", 10))))
+                hops = max(0, min(4, self._parse_int_arg(args.get("max_hops"), 2, "max_hops")))
+                nodes = max(1, min(30, self._parse_int_arg(args.get("max_nodes"), 10, "max_nodes")))
                 data = self.container.retrieval_service.build_graph_context(
                     space_id=self.space_id,
                     seed_identifier_or_query=seed,
@@ -278,10 +298,17 @@ class MCPToolDispatcher:
 
             if name == "tm_ask":
                 question = str(args.get("question", ""))[:2000]
+                raw_top_k = args.get("top_k")
+                ask_top_k: int | None = None
+                if raw_top_k is not None and str(raw_top_k).strip() != "":
+                    parsed_tk = self._parse_int_arg(raw_top_k, 10, "top_k")
+                    if parsed_tk < 1:
+                        raise ValidationError("Argument top_k must be >= 1")
+                    ask_top_k = min(25, parsed_tk)
                 guard_ask = self.container.input_guard.inspect_ask(question)
                 if guard_ask.allowed and self.enforce_remote_guards:
                     self._guard_daily_quota(require_llm_slot=True)
-                data = self.container.ask_service.ask(self.space_id, question)
+                data = self.container.ask_service.ask(self.space_id, question, top_k=ask_top_k)
                 return self._ok_payload(data)
 
             if name == "tm_record":
@@ -341,8 +368,57 @@ class MCPToolDispatcher:
                 max_chars = int(cfg.get("max_note_chars", 2000))
                 if len(summary_txt) > max_chars or len(str(args.get("title", ""))) > 200:
                     return self._error_payload(f"Input text exceeds max length ({max_chars} chars)")
+                raw_payload = args.get("payload")
+                if raw_payload is not None and not isinstance(raw_payload, dict):
+                    raise ValidationError("payload must be an object")
+
+                exp_ver_raw = args.get("expected_version")
+                exp_ver = (
+                    self._parse_int_arg(exp_ver_raw, 1, "expected_version")
+                    if exp_ver_raw is not None and str(exp_ver_raw).strip() != ""
+                    else None
+                )
+                idem = str(args.get("idempotency_key", ""))
+                prop = ChangeProposal(
+                    space_id=self.space_id,
+                    action=action,
+                    memory_type=str(args.get("memory_type", "semantic")),
+                    target_memory_id=str(args.get("target_memory_id", "")),
+                    expected_version=exp_ver,
+                    idempotency_key=idem,
+                    actor_id=self.actor_id,
+                    origin="mcp_agent",
+                    title=str(args.get("title", ""))[:200],
+                    summary=str(args.get("summary", ""))[:max_chars],
+                    payload=dict(raw_payload or {}),
+                    require_review=bool(args.get("require_review", False)),
+                    evidences=(),
+                    reason=str(args.get("reason", "MCP agent proposal"))[:200],
+                )
+                is_replay = bool(
+                    idem and self.container.trace_repo.get_idempotent_result(self.space_id, idem) is not None
+                )
+                if is_replay:
+                    res = self.container.change_service.apply(prop)
+                    return self._ok_payload(res.to_dict())
+
+                if action != "create":
+                    any_mem = self.container.memory_repo.get_any_space(prop.target_memory_id)
+                    if any_mem is not None and any_mem.space_id != self.space_id:
+                        raise PermissionDeniedError("Permission denied: resource does not belong to active space")
+                    target_mem = self.container.memory_repo.get(
+                        self.space_id, prop.target_memory_id, include_forgotten=True
+                    )
+                    if target_mem is None:
+                        raise NotFoundError(f"Target memory {prop.target_memory_id!r} not found")
+                    if target_mem.status == "forgotten":
+                        raise ValidationError("已遗忘的记忆不可恢复或修改")
+                    if exp_ver is not None and exp_ver != target_mem.version:
+                        raise VersionConflictError(target_mem.memory_id, exp_ver, target_mem.version)
+
                 if self.enforce_remote_guards:
                     self._guard_daily_quota(require_note_slot=True, require_llm_slot=False)
+
                 src_note = RawNote(
                     note_id=new_id("note"),
                     space_id=self.space_id,
@@ -352,22 +428,8 @@ class MCPToolDispatcher:
                 )
                 self.container.note_repo.save(src_note)
                 self.container.vector_lifecycle.sync_note(src_note)
-
-                exp_ver_raw = args.get("expected_version")
-                exp_ver = int(exp_ver_raw) if exp_ver_raw is not None else None
-                prop = ChangeProposal(
-                    space_id=self.space_id,
-                    action=action,
-                    memory_type=str(args.get("memory_type", "semantic")),
-                    target_memory_id=str(args.get("target_memory_id", "")),
-                    expected_version=exp_ver,
-                    idempotency_key=str(args.get("idempotency_key", "")),
-                    actor_id=self.actor_id,
-                    origin="mcp_agent",
-                    title=str(args.get("title", ""))[:200],
-                    summary=str(args.get("summary", ""))[:max_chars],
-                    payload=dict(args.get("payload") or {}),
-                    require_review=bool(args.get("require_review", False)),
+                prop = replace(
+                    prop,
                     evidences=(
                         MemoryEvidence(
                             note_id=src_note.note_id,
@@ -375,10 +437,9 @@ class MCPToolDispatcher:
                             quote=summary_txt[:160],
                         ),
                     ),
-                    reason=str(args.get("reason", "MCP agent proposal"))[:200],
                 )
                 res = self.container.change_service.apply(prop)
-                if self.enforce_remote_guards:
+                if self.enforce_remote_guards and res.status != "idempotent_replay":
                     self.container.quota_service.record_usage(
                         f"space:{self.space_id}", notes=1, embed_calls=2
                     )
@@ -427,6 +488,12 @@ def handle_jsonrpc_message(
     dispatcher: MCPToolDispatcher, message: dict[str, Any]
 ) -> dict[str, Any] | None:
     """Process one MCP JSON-RPC 2.0 request/notification without polluting stdout."""
+    if not isinstance(message, dict):
+        return {
+            "jsonrpc": "2.0",
+            "id": None,
+            "error": {"code": -32600, "message": "Invalid Request"},
+        }
     method = message.get("method", "")
     msg_id = message.get("id")
 
@@ -453,9 +520,24 @@ def handle_jsonrpc_message(
             "result": {"tools": dispatcher.list_tools()},
         }
     if method == "tools/call":
-        params = message.get("params") or {}
-        tool_name = str(params.get("name", ""))
-        tool_args = dict(params.get("arguments") or {})
+        raw_params = message.get("params")
+        if raw_params is None:
+            raw_params = {}
+        if not isinstance(raw_params, dict):
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {"code": -32602, "message": "Invalid params: params must be an object"},
+            }
+        tool_name = str(raw_params.get("name", ""))
+        raw_args = raw_params.get("arguments")
+        if raw_args is not None and not isinstance(raw_args, dict):
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {"code": -32602, "message": "Invalid params: arguments must be an object"},
+            }
+        tool_args = dict(raw_args or {})
         call_res = dispatcher.call_tool(tool_name, tool_args)
         return {"jsonrpc": "2.0", "id": msg_id, "result": call_res}
 

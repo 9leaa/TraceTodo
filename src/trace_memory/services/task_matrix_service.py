@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -27,6 +27,7 @@ from trace_memory.domain.proposals import (
     PermissionDeniedError,
     RelationSpec,
     ValidationError,
+    VersionConflictError,
 )
 from trace_memory.domain.relations import slugify_permalink
 from trace_memory.services.change_service import ChangeService
@@ -180,12 +181,12 @@ class TaskMatrixService:
         )
         by_id = {
             m.memory_id: m for m in items
-            if task_status == "all" or m.payload["task_status"] == task_status
+            if task_status == "all" or m.payload.get("task_status", "todo") == task_status
         }
         matches = []
         for item in by_id.values():
             if due_on is not None:
-                due = parse_iso_datetime(item.payload["due_at"])
+                due = parse_iso_datetime(str(item.payload.get("due_at") or ""))
                 if due is None or due.date() != due_on:
                     continue
             task = self._project_live_task_dict(item, now)
@@ -229,17 +230,36 @@ class TaskMatrixService:
             if due_local.date() >= today_date:
                 continue
 
+            new_rc = int(p.get("rollover_count", 0) or 0) + 1
+            patch_start_at: str | None = None
             if p.get("is_all_day", True):
-                next_due = ref_now.replace(hour=23, minute=59, second=59, microsecond=0).isoformat()
+                next_due_dt = ref_now.replace(hour=23, minute=59, second=59, microsecond=0)
+                next_due = next_due_dt.isoformat()
             else:
-                next_due = ref_now.replace(
+                next_due_dt = ref_now.replace(
                     hour=due_local.hour,
                     minute=due_local.minute,
                     second=due_local.second,
                     microsecond=0,
-                ).isoformat()
+                )
+                next_due = next_due_dt.isoformat()
+                start_raw = str(p.get("start_at", "") or "").strip()
+                if start_raw:
+                    start_dt = parse_iso_datetime(start_raw)
+                    if start_dt is not None:
+                        start_local = start_dt.astimezone(ref_now.tzinfo)
+                        span = due_local - start_local
+                        if span.total_seconds() >= 0:
+                            next_start_dt = next_due_dt - span
+                        else:
+                            next_start_dt = ref_now.replace(
+                                hour=start_local.hour,
+                                minute=start_local.minute,
+                                second=start_local.second,
+                                microsecond=0,
+                            )
+                        patch_start_at = next_start_dt.replace(microsecond=0).isoformat()
 
-            new_rc = int(p.get("rollover_count", 0) or 0) + 1
             imp = int(p.get("importance", 3))
             urg = int(p.get("urgency", 3))
             _, auto_quad, auto_score = compute_effective_urgency_and_quadrant(
@@ -250,6 +270,8 @@ class TaskMatrixService:
                 "rollover_count": new_rc,
                 "last_rollover_date": today_str,
             }
+            if patch_start_at is not None:
+                patch["start_at"] = patch_start_at
             if not item.user_locked:
                 patch["quadrant"] = auto_quad
                 patch["priority_score"] = auto_score
@@ -317,13 +339,17 @@ class TaskMatrixService:
             if not item.user_locked:
                 patch["quadrant"] = auto_quad
             if is_overdue:
-                old_r = str(p.get("priority_reason", "")).strip()
+                old_r = str(p.get("priority_reason", "")).strip().rstrip("。；;，, ")
                 if "已逾期" not in old_r:
-                    patch["priority_reason"] = f"{old_r}；任务已逾期自动提权".strip("；")
+                    patch["priority_reason"] = (
+                        f"{old_r}；任务已逾期自动提权" if old_r else "任务已逾期自动提权"
+                    )
             elif eff_urg > base_urg:
-                old_r = str(p.get("priority_reason", "")).strip()
+                old_r = str(p.get("priority_reason", "")).strip().rstrip("。；;，, ")
                 if "临近截止" not in old_r:
-                    patch["priority_reason"] = f"{old_r}；临近截止自动提权".strip("；")
+                    patch["priority_reason"] = (
+                        f"{old_r}；临近截止自动提权" if old_r else "临近截止自动提权"
+                    )
 
             res = self.change_service.apply(
                 ChangeProposal(
@@ -540,6 +566,17 @@ class TaskMatrixService:
             )
         )
 
+    @staticmethod
+    def _parse_int(raw: Any, default_val: int, name: str) -> int:
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            return default_val
+        if isinstance(raw, bool):
+            raise ValidationError(f"参数 {name} 必须为整数")
+        try:
+            return int(raw)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(f"参数 {name} 必须为整数") from exc
+
     def transition_task_state_with_repeat(
         self,
         space_id: str,
@@ -550,6 +587,8 @@ class TaskMatrixService:
         now: datetime | None = None,
     ) -> dict[str, Any]:
         """Transition task state and spawn next recurring cycle when completing a repeating task."""
+        prev_task = self.memory_repo.get(space_id, memory_id)
+        was_done = prev_task is not None and prev_task.payload.get("task_status") == "done"
         res = self.transition_task_state(
             space_id=space_id,
             memory_id=memory_id,
@@ -558,7 +597,12 @@ class TaskMatrixService:
             actor_id=actor_id,
         )
         next_task_dict: dict[str, Any] | None = None
-        if action == "complete_task" and res.memory is not None:
+        if (
+            action == "complete_task"
+            and res.memory is not None
+            and res.status != "idempotent_replay"
+            and not was_done
+        ):
             p = res.memory.payload
             repeat_rule = str(p.get("repeat_rule", "never") or "never")
             if repeat_rule in ("daily", "weekdays", "weekly", "monthly"):
@@ -625,13 +669,42 @@ class TaskMatrixService:
             any_mem = self.memory_repo.get_any_space(target_id)
             if any_mem is not None and any_mem.space_id != space_id:
                 raise PermissionDeniedError("Access denied to target memory in another space")
-            existing = self.memory_repo.get(space_id, target_id)
+            existing = self.memory_repo.get(space_id, target_id, include_forgotten=True)
             if existing is None:
                 raise NotFoundError(f"Task {target_id!r} not found")
+            if existing.status == "forgotten":
+                raise ValidationError("已遗忘的记忆不可恢复或修改")
+
+        exp_ver_raw = data.get("expected_version")
+        exp_ver: int | None = (
+            self._parse_int(exp_ver_raw, 1, "expected_version")
+            if exp_ver_raw is not None and str(exp_ver_raw).strip() != ""
+            else None
+        )
+        if existing is not None and exp_ver is not None and exp_ver != existing.version:
+            raise VersionConflictError(existing.memory_id, exp_ver, existing.version)
 
         base_payload = dict(existing.payload) if existing else {}
-        imp = max(1, min(5, int(data.get("importance", base_payload.get("importance", 3)) or 3)))
-        urg = max(1, min(5, int(data.get("urgency", base_payload.get("urgency", 3)) or 3)))
+        raw_imp = data.get("importance")
+        if "importance" in data and raw_imp is not None and str(raw_imp).strip() != "":
+            imp = self._parse_int(raw_imp, 3, "importance")
+            if not 1 <= imp <= 5:
+                raise ValidationError("importance 必须在 1 到 5 之间")
+        else:
+            imp = max(1, min(5, self._parse_int(base_payload.get("importance", 3), 3, "importance")))
+
+        raw_urg = data.get("urgency")
+        if "urgency" in data and raw_urg is not None and str(raw_urg).strip() != "":
+            urg = self._parse_int(raw_urg, 3, "urgency")
+            if not 1 <= urg <= 5:
+                raise ValidationError("urgency 必须在 1 到 5 之间")
+        else:
+            urg = max(1, min(5, self._parse_int(base_payload.get("urgency", 3), 3, "urgency")))
+        start_at = (
+            str(data["start_at"] or "").strip()
+            if "start_at" in data
+            else str(base_payload.get("start_at", "") or "").strip()
+        )
         due_at = (
             str(data["due_at"] or "")
             if "due_at" in data
@@ -642,6 +715,17 @@ class TaskMatrixService:
             if "is_all_day" in data
             else bool(base_payload.get("is_all_day", True))
         )
+        if is_all_day:
+            start_at = ""
+        else:
+            if start_at:
+                parsed_start = parse_iso_datetime(start_at)
+                if parsed_start is not None:
+                    start_at = to_beijing(parsed_start).replace(microsecond=0).isoformat()
+            if due_at and len(due_at.strip()) > 10:
+                parsed_due = parse_iso_datetime(due_at)
+                if parsed_due is not None:
+                    due_at = to_beijing(parsed_due).replace(microsecond=0).isoformat()
         color = str(data.get("color_theme", base_payload.get("color_theme", "sky")) or "sky")
         if color not in COLOR_THEMES:
             color = "sky"
@@ -654,7 +738,11 @@ class TaskMatrixService:
 
         if "reminder_offset_minutes" in data:
             rem_raw = data.get("reminder_offset_minutes")
-            rem_val = int(rem_raw) if rem_raw is not None and str(rem_raw).strip() != "" else None
+            rem_val = (
+                self._parse_int(rem_raw, 0, "reminder_offset_minutes")
+                if rem_raw is not None and str(rem_raw).strip() != ""
+                else None
+            )
         else:
             rem_val = base_payload.get("reminder_offset_minutes")
 
@@ -677,7 +765,34 @@ class TaskMatrixService:
             if "focus_lock_enabled" in data
             else bool(base_payload.get("focus_lock_enabled", False))
         )
-        focus_min = max(1, min(240, int(data.get("focus_minutes", base_payload.get("focus_minutes", 25)) or 25)))
+        focus_min = max(1, min(240, self._parse_int(data.get("focus_minutes", base_payload.get("focus_minutes", 25)), 25, "focus_minutes")))
+        explicit_dur = (
+            "duration_minutes" in data
+            and data.get("duration_minutes") is not None
+            and str(data.get("duration_minutes")).strip() != ""
+        )
+        if "duration_minutes" in data:
+            raw_dur = data.get("duration_minutes")
+            if raw_dur is None or str(raw_dur).strip() == "":
+                duration_min: int | None = None
+            else:
+                duration_min = max(15, min(1440, self._parse_int(raw_dur, 60, "duration_minutes")))
+        elif base_payload.get("duration_minutes") is not None:
+            duration_min = max(15, min(1440, self._parse_int(base_payload["duration_minutes"], 60, "duration_minutes")))
+        else:
+            duration_min = None
+
+        if not is_all_day and start_at and due_at:
+            st_dt = parse_iso_datetime(start_at)
+            du_dt = parse_iso_datetime(due_at)
+            if st_dt is not None and du_dt is not None:
+                if du_dt > st_dt:
+                    if not explicit_dur:
+                        duration_min = max(15, min(1440, int((du_dt - st_dt).total_seconds() // 60)))
+                else:
+                    eff_dur = duration_min or max(30, focus_min or 60)
+                    due_at = (st_dt + timedelta(minutes=eff_dur)).replace(microsecond=0).isoformat()
+                    duration_min = eff_dur
         raw_subtasks = (
             data["subtasks"]
             if "subtasks" in data
@@ -704,7 +819,9 @@ class TaskMatrixService:
         eff_urg, auto_quad, auto_score = compute_effective_urgency_and_quadrant(
             imp, urg, due_at, has_blockers=bool(base_payload.get("blockers"))
         )
-        manual_quad = str(data.get("quadrant") or "")
+        manual_quad = str(data.get("quadrant") or "").strip()
+        if manual_quad and manual_quad not in QUADRANTS:
+            raise ValidationError(f"非法的四象限枚举值: {manual_quad}")
         lock_quad = bool(data.get("lock_for_user", False))
         if lock_quad and manual_quad in QUADRANTS:
             quad = manual_quad
@@ -736,6 +853,7 @@ class TaskMatrixService:
             "quadrant": quad,
             "priority_score": score,
             "priority_reason": prio_reason,
+            "start_at": start_at,
             "due_at": due_at,
             "assignee": assignee,
             "color_theme": color,
@@ -748,6 +866,7 @@ class TaskMatrixService:
             "subtasks": subtasks,
             "focus_lock_enabled": focus_lock,
             "focus_minutes": focus_min,
+            "duration_minutes": duration_min,
         }
 
         evidences: tuple[MemoryEvidence, ...] = ()
@@ -801,14 +920,13 @@ class TaskMatrixService:
                 )
             )
 
-        exp_ver = data.get("expected_version")
         return self.change_service.apply(
             ChangeProposal(
                 space_id=space_id,
                 action="update",
                 memory_type="task",
                 target_memory_id=existing.memory_id,
-                expected_version=int(exp_ver) if exp_ver is not None else existing.version,
+                expected_version=exp_ver if exp_ver is not None else existing.version,
                 actor_id=actor_id,
                 origin="user_direct",
                 title=final_title,
@@ -817,6 +935,7 @@ class TaskMatrixService:
                 lock_for_user=lock_quad,
                 evidences=evidences,
                 relations=rels,
+                replace_relations="relations" in data,
                 reason="Updated task via DuoDo card sheet",
             )
         )
@@ -861,7 +980,10 @@ class TaskMatrixService:
         if provider is None or not hasattr(provider, "decompose_task"):
             provider = DeterministicLLMProvider()
 
-        batch = provider.decompose_task(clean_title, summary, ctx_memories[:8])
+        try:
+            batch = provider.decompose_task(clean_title, summary, ctx_memories[:8])
+        except Exception:
+            batch = DeterministicLLMProvider().decompose_task(clean_title, summary, ctx_memories[:8])
         formatted_subs = [
             {
                 "id": new_id("sub"),
@@ -964,7 +1086,7 @@ class TaskMatrixService:
             interrupts.append(
                 {
                     "reason": reason.strip() or "提前退出专注",
-                    "elapsed_seconds": max(0, int(elapsed_seconds)),
+                    "elapsed_seconds": max(0, self._parse_int(elapsed_seconds, 0, "elapsed_seconds")),
                     "created_at": utc_now_iso(),
                 }
             )

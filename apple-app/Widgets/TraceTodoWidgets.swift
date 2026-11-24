@@ -785,9 +785,447 @@ private struct TraceTodoWidgetContainer: View {
     }
 }
 
+// MARK: - Countdown & Anniversary Widget (Home Screen + Lock Screen)
+
+struct TraceCountdownConfigIntent: WidgetConfigurationIntent {
+    static var title: LocalizedStringResource = "TraceTodo 倒数纪念日"
+    static var description = IntentDescription("展示公农历倒数日与正数纪念日大字卡片（如春节、生日、周年纪念），自动跟随主 App 同步。")
+
+    @Parameter(title: "服务端地址（留空自动跟随主 App）", default: "")
+    var serverURL: String
+
+    @Parameter(title: "记忆空间 Space ID（留空自动跟随主 App）", default: "")
+    var spaceId: String
+
+    @Parameter(title: "访问令牌 Token（留空自动跟随主 App）", default: "")
+    var authToken: String
+}
+
+struct WidgetCountdownRow: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let icon: String
+    let headerBanner: String
+    let displayNumber: String
+    let unitLabel: String
+    let badgeLabel: String
+    let displaySolarDate: String
+    let lunarLabel: String
+    let colorTheme: String
+
+    var bannerGradient: LinearGradient {
+        let colors: [Color]
+        switch colorTheme {
+        case "crimson":
+            colors = [Color(red: 0.86, green: 0.15, blue: 0.15), Color(red: 0.96, green: 0.25, blue: 0.37)]
+        case "lavender":
+            colors = [Color(red: 0.49, green: 0.23, blue: 0.93), Color(red: 0.65, green: 0.55, blue: 0.98)]
+        case "pink":
+            colors = [Color(red: 0.86, green: 0.15, blue: 0.47), Color(red: 0.96, green: 0.45, blue: 0.71)]
+        case "mint":
+            colors = [Color(red: 0.02, green: 0.59, blue: 0.41), Color(red: 0.20, green: 0.83, blue: 0.60)]
+        case "peach":
+            colors = [Color(red: 0.92, green: 0.35, blue: 0.05), Color(red: 0.98, green: 0.57, blue: 0.24)]
+        default:
+            colors = [Color(red: 0.01, green: 0.52, blue: 0.78), Color(red: 0.22, green: 0.74, blue: 0.97)]
+        }
+        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+}
+
+private struct RawCountdownListDTO: Decodable {
+    let todayLunar: String?
+    let items: [RawCountdownItemDTO]
+
+    enum CodingKeys: String, CodingKey {
+        case todayLunar = "today_lunar"
+        case items
+    }
+}
+
+private struct RawCountdownItemDTO: Decodable {
+    let countdownId: String
+    let title: String
+    let icon: String?
+    let headerBanner: String?
+    let displayNumber: String?
+    let unitLabel: String?
+    let badgeLabel: String?
+    let displaySolarDate: String?
+    let lunarLabel: String?
+    let colorTheme: String?
+
+    enum CodingKeys: String, CodingKey {
+        case countdownId = "countdown_id"
+        case title, icon
+        case headerBanner = "header_banner"
+        case displayNumber = "display_number"
+        case unitLabel = "unit_label"
+        case badgeLabel = "badge_label"
+        case displaySolarDate = "display_solar_date"
+        case lunarLabel = "lunar_label"
+        case colorTheme = "color_theme"
+    }
+}
+
+struct TraceCountdownEntry: TimelineEntry {
+    let date: Date
+    let todayLunar: String
+    let items: [WidgetCountdownRow]
+
+    static func placeholder() -> TraceCountdownEntry {
+        TraceCountdownEntry(
+            date: Date(),
+            todayLunar: "丙午马年 · 农历冬月",
+            items: [
+                WidgetCountdownRow(
+                    id: "cd1",
+                    title: "春节团圆",
+                    icon: "🧧",
+                    headerBanner: "距离 春节团圆 还有",
+                    displayNumber: "76",
+                    unitLabel: "天",
+                    badgeLabel: "还有",
+                    displaySolarDate: "2027-02-06",
+                    lunarLabel: "农历正月初一",
+                    colorTheme: "crimson"
+                ),
+                WidgetCountdownRow(
+                    id: "cd2",
+                    title: "里程碑发布",
+                    icon: "🚀",
+                    headerBanner: "距离 里程碑发布 还有",
+                    displayNumber: "1",
+                    unitLabel: "天",
+                    badgeLabel: "还有",
+                    displaySolarDate: "明日",
+                    lunarLabel: "置顶目标",
+                    colorTheme: "lavender"
+                ),
+                WidgetCountdownRow(
+                    id: "cd3",
+                    title: "双链记忆之旅",
+                    icon: "🌱",
+                    headerBanner: "双链记忆之旅 已经",
+                    displayNumber: "78",
+                    unitLabel: "天",
+                    badgeLabel: "已经",
+                    displaySolarDate: "纪念日",
+                    lunarLabel: "正数纪念",
+                    colorTheme: "mint"
+                )
+            ]
+        )
+    }
+}
+
+struct TraceCountdownTimelineProvider: AppIntentTimelineProvider {
+    func placeholder(in context: Context) -> TraceCountdownEntry {
+        .placeholder()
+    }
+
+    func snapshot(for configuration: TraceCountdownConfigIntent, in context: Context) async -> TraceCountdownEntry {
+        if context.isPreview {
+            return .placeholder()
+        }
+        return await fetchCountdownEntry(config: configuration)
+    }
+
+    func timeline(for configuration: TraceCountdownConfigIntent, in context: Context) async -> Timeline<TraceCountdownEntry> {
+        let entry = await fetchCountdownEntry(config: configuration)
+        let nextRefresh = Calendar.current.date(byAdding: .minute, value: 30, to: Date()) ?? Date().addingTimeInterval(1800)
+        return Timeline(entries: [entry], policy: .after(nextRefresh))
+    }
+
+    private func decodeCountdownData(_ data: Data) throws -> TraceCountdownEntry {
+        let dto = try JSONDecoder().decode(RawCountdownListDTO.self, from: data)
+        let rows = dto.items.map { it in
+            WidgetCountdownRow(
+                id: it.countdownId,
+                title: it.title,
+                icon: it.icon ?? "⏳",
+                headerBanner: it.headerBanner ?? it.title,
+                displayNumber: it.displayNumber ?? "0",
+                unitLabel: it.unitLabel ?? "",
+                badgeLabel: it.badgeLabel ?? "还有",
+                displaySolarDate: it.displaySolarDate ?? "",
+                lunarLabel: it.lunarLabel ?? "",
+                colorTheme: it.colorTheme ?? "crimson"
+            )
+        }
+        return TraceCountdownEntry(date: Date(), todayLunar: dto.todayLunar ?? "", items: rows)
+    }
+
+    private func fetchCountdownEntry(config: TraceCountdownConfigIntent) async -> TraceCountdownEntry {
+        let shared = SharedWidgetBridge.loadConfig()
+        let base = WidgetAPI.normalizedBase(config.serverURL)
+        let rawSpace = config.spaceId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let space = rawSpace.isEmpty ? (shared.spaceId.isEmpty ? "default" : shared.spaceId) : rawSpace
+        let rawTok = config.authToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        let token = rawTok.isEmpty ? shared.authToken : rawTok
+
+        if var comps = URLComponents(string: "\(base)/api/countdowns/list") {
+            comps.queryItems = [URLQueryItem(name: "space_id", value: space)]
+            if let url = comps.url {
+                var req = URLRequest(url: url)
+                req.timeoutInterval = 8
+                if !token.isEmpty {
+                    req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                }
+                if let (data, resp) = try? await URLSession.shared.data(for: req),
+                   let http = resp as? HTTPURLResponse,
+                   (200...299).contains(http.statusCode),
+                   let parsed = try? decodeCountdownData(data) {
+                    SharedWidgetBridge.saveCountdownsSnapshotData(data)
+                    return parsed
+                }
+            }
+        }
+
+        if let cached = SharedWidgetBridge.loadCountdownsSnapshotData(),
+           let parsed = try? decodeCountdownData(cached) {
+            return parsed
+        }
+        return .placeholder()
+    }
+}
+
+struct TraceCountdownWidgetEntryView: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: TraceCountdownEntry
+
+    var body: some View {
+        switch family {
+        case .systemSmall:
+            smallCard
+        case .systemMedium:
+            mediumWall
+        case .accessoryCircular:
+            lockCircular
+        case .accessoryRectangular:
+            lockRectangular
+        case .accessoryInline:
+            lockInline
+        default:
+            smallCard
+        }
+    }
+
+    private var primaryItem: WidgetCountdownRow {
+        entry.items.first ?? TraceCountdownEntry.placeholder().items[0]
+    }
+
+    private var smallCard: some View {
+        let item = primaryItem
+        return VStack(spacing: 0) {
+            HStack {
+                Text("\(item.icon) \(item.headerBanner)")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(item.bannerGradient)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            Spacer(minLength: 4)
+
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(item.displayNumber)
+                    .font(.system(size: 38, weight: .heavy, design: .rounded))
+                    .monospacedDigit()
+                if !item.unitLabel.isEmpty {
+                    Text(item.unitLabel)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            VStack(spacing: 1) {
+                Text(item.displaySolarDate)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                if !item.lunarLabel.isEmpty {
+                    Text(item.lunarLabel)
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .widgetURL(URL(string: "tracetodo://countdown"))
+    }
+
+    private var mediumWall: some View {
+        let top = primaryItem
+        let others = Array(entry.items.dropFirst().prefix(2))
+        return HStack(spacing: 12) {
+            // Hero left card
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(top.icon) \(top.title)")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Text(top.badgeLabel)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                Spacer(minLength: 2)
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text(top.displayNumber)
+                        .font(.system(size: 32, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.white)
+                    Text(top.unitLabel)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+                Text(top.lunarLabel.isEmpty ? top.displaySolarDate : top.lunarLabel)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.88))
+                    .lineLimit(1)
+            }
+            .padding(11)
+            .frame(width: 126)
+            .frame(maxHeight: .infinity, alignment: .leading)
+            .background(top.bannerGradient)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            // Right list of next countdowns / anniversaries
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("⏳ 倒数纪念日")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(intent: RefreshTodoWidgetIntent()) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if others.isEmpty {
+                    Spacer()
+                    Text(entry.todayLunar.isEmpty ? "在 App 日历页添加更多公农历纪念日" : entry.todayLunar)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                } else {
+                    ForEach(others) { row in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("\(row.icon) \(row.title)")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .lineLimit(1)
+                                Text(row.lunarLabel.isEmpty ? row.displaySolarDate : row.lunarLabel)
+                                    .font(.system(size: 9.5))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 4)
+                            VStack(alignment: .trailing, spacing: 0) {
+                                Text("\(row.displayNumber)\(row.unitLabel)")
+                                    .font(.system(size: 14, weight: .heavy, design: .rounded))
+                                Text(row.badgeLabel)
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .widgetURL(URL(string: "tracetodo://countdown"))
+    }
+
+    private var lockCircular: some View {
+        let item = primaryItem
+        return ZStack {
+            AccessoryWidgetBackground()
+            VStack(spacing: 0) {
+                Text(item.displayNumber)
+                    .font(.system(size: 17, weight: .heavy, design: .rounded))
+                    .widgetAccentable()
+                Text(item.unitLabel.isEmpty ? item.icon : "\(item.badgeLabel)\(item.unitLabel)")
+                    .font(.system(size: 8, weight: .medium))
+            }
+        }
+        .widgetURL(URL(string: "tracetodo://countdown"))
+    }
+
+    private var lockRectangular: some View {
+        let item = primaryItem
+        return VStack(alignment: .leading, spacing: 2) {
+            Text("\(item.icon) \(item.title)")
+                .font(.caption.bold())
+                .lineLimit(1)
+            Text("\(item.badgeLabel) \(item.displayNumber) \(item.unitLabel)")
+                .font(.system(size: 13, weight: .heavy, design: .rounded))
+                .widgetAccentable()
+            Text("\(item.displaySolarDate) · \(item.lunarLabel)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .widgetURL(URL(string: "tracetodo://countdown"))
+    }
+
+    private var lockInline: some View {
+        let item = primaryItem
+        return Text("\(item.icon) \(item.title) · \(item.badgeLabel)\(item.displayNumber)\(item.unitLabel)")
+            .widgetURL(URL(string: "tracetodo://countdown"))
+    }
+}
+
+struct TraceCountdownWidget: Widget {
+    let kind: String = "TraceCountdownWidget"
+
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(
+            kind: kind,
+            intent: TraceCountdownConfigIntent.self,
+            provider: TraceCountdownTimelineProvider()
+        ) { entry in
+            TraceCountdownWidgetContainer(entry: entry)
+        }
+        .configurationDisplayName("TraceTodo 倒数纪念日")
+        .description("桌面与锁屏大字展示公农历倒数日与正数纪念日（春节、生日、周年纪念）。")
+        .supportedFamilies([
+            .systemSmall,
+            .systemMedium,
+            .accessoryCircular,
+            .accessoryRectangular,
+            .accessoryInline
+        ])
+    }
+}
+
+private struct TraceCountdownWidgetContainer: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: TraceCountdownEntry
+
+    var body: some View {
+        switch family {
+        case .accessoryCircular, .accessoryRectangular, .accessoryInline:
+            TraceCountdownWidgetEntryView(entry: entry)
+                .containerBackground(.clear, for: .widget)
+        default:
+            TraceCountdownWidgetEntryView(entry: entry)
+                .containerBackground(.fill.tertiary, for: .widget)
+        }
+    }
+}
+
 @main
 struct TraceTodoWidgetsBundle: WidgetBundle {
     var body: some Widget {
         TraceTodoWidget()
+        TraceCountdownWidget()
     }
 }

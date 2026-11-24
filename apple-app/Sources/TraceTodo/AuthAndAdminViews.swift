@@ -351,11 +351,11 @@ struct AuthGateSheet: View {
                                 #endif
                         }
 
-                        if store.serverURL != TodoStore.defaultServerURL {
-                            HStack(spacing: 8) {
-                                serverPresetChip("☁️ 恢复默认云服务器", url: TodoStore.defaultServerURL)
-                                Spacer()
-                            }
+                        HStack(spacing: 8) {
+                            serverPresetChip("🧪 云端测试服", url: TodoStore.testCloudServerURL)
+                            serverPresetChip("☁️ 线上正式服", url: TodoStore.prodCloudServerURL)
+                            serverPresetChip("💻 本地环境", url: TodoStore.localServerURL)
+                            Spacer()
                         }
                     }
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -581,7 +581,7 @@ struct AuthGateSheet: View {
     private func serverPresetChip(_ label: String, url: String) -> some View {
         let isCurrent = store.serverURL == url
         return Button {
-            store.serverURL = url
+            store.switchServerURL(url)
             Task { await store.refresh() }
         } label: {
             Text(label)
@@ -704,11 +704,7 @@ struct AdminConsoleView: View {
                 }
             }
 
-            if settingsDraft != nil {
-                let binding = Binding(
-                    get: { settingsDraft! },
-                    set: { settingsDraft = $0 }
-                )
+            if let binding = Binding($settingsDraft) {
                 Section("低成本防线与配额策略") {
                     Toggle("允许公开自助注册", isOn: binding.allowRegistration)
                     Toggle("开启本地水话/乱码规则拦截", isOn: binding.noiseFilterEnabled)
