@@ -353,6 +353,7 @@ CREATE TABLE IF NOT EXISTS ingest_jobs (
     note_id TEXT NOT NULL,
     actor_id TEXT NOT NULL DEFAULT 'user',
     idempotency_key TEXT NOT NULL DEFAULT '',
+    requires_barrier INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'queued',
     attempts INTEGER NOT NULL DEFAULT 0,
     error_message TEXT NOT NULL DEFAULT '',
@@ -502,6 +503,41 @@ class Database:
         for col_name, ddl in migrations:
             if col_name not in existing_cols:
                 conn.execute(ddl)
+        job_cols = {
+            str(r[1]) for r in conn.execute("PRAGMA table_info(ingest_jobs)").fetchall()
+        }
+        if "requires_barrier" not in job_cols:
+            conn.execute(
+                "ALTER TABLE ingest_jobs ADD COLUMN requires_barrier INTEGER NOT NULL DEFAULT 0"
+            )
+        # v2 two-stage ingest pipeline: durable extraction artifacts, retry schedule, skip-ahead audit
+        job_migrations = [
+            ("next_run_ts", "ALTER TABLE ingest_jobs ADD COLUMN next_run_ts REAL NOT NULL DEFAULT 0"),
+            ("extraction_json", "ALTER TABLE ingest_jobs ADD COLUMN extraction_json TEXT NOT NULL DEFAULT ''"),
+            ("extracted_ts", "ALTER TABLE ingest_jobs ADD COLUMN extracted_ts REAL NOT NULL DEFAULT 0"),
+            ("skipped_ahead", "ALTER TABLE ingest_jobs ADD COLUMN skipped_ahead INTEGER NOT NULL DEFAULT 0"),
+            (
+                "context_excludes_json",
+                "ALTER TABLE ingest_jobs ADD COLUMN context_excludes_json TEXT NOT NULL DEFAULT '[]'",
+            ),
+        ]
+        for col_name, ddl in job_migrations:
+            if col_name not in job_cols:
+                conn.execute(ddl)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ingest_jobs_space_status ON ingest_jobs(space_id, status)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ingest_jobs_status_next ON ingest_jobs(status, next_run_ts)"
+        )
+        # Evidence role: 'source' (the note's own words) | 'base' (a later note's write depended on it)
+        ev_cols = {
+            str(r[1]) for r in conn.execute("PRAGMA table_info(memory_evidence_links)").fetchall()
+        }
+        if "role" not in ev_cols:
+            conn.execute(
+                "ALTER TABLE memory_evidence_links ADD COLUMN role TEXT NOT NULL DEFAULT 'source'"
+            )
         conn.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_raw_notes_kind_pin

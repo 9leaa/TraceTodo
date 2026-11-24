@@ -97,10 +97,24 @@ class TraceMemoryConfig:
     trust_proxy_headers: bool = False
 
     # Concurrency & Async Ingest Queue settings
-    ingest_worker_count: int = 8
-    llm_max_concurrency: int = 12
+    ingest_worker_count: int = 96
+    ingest_space_concurrency: int = 8
+    llm_max_concurrency: int = 80
     ingest_max_retries: int = 3
     api_threadpool_tokens: int = 64
+    # "v2" = parallel extraction + ordered per-space commit pump; "v1" = legacy barrier worker pool
+    ingest_pipeline: str = "v2"
+    # Seconds an extracted job waits behind a slow earlier job before an unrelated one may skip ahead (0 = never)
+    commit_deadline_seconds: float = 10.0
+    # Recent raw-note context window passed to extraction (reference / supplement resolution)
+    context_notes: int = 20
+    context_chars: int = 2000
+    context_note_chars: int = 150
+    context_hours: float = 24.0
+    vector_worker_count: int = 8
+    # Extra API keys pooled with `openai_api_key` (429 on one key -> immediate retry on another)
+    openai_api_keys: tuple[str, ...] = ()
+    llm_key_cooldown_seconds: float = 15.0
 
     @property
     def sqlite_path(self) -> Path:
@@ -178,8 +192,21 @@ class TraceMemoryConfig:
             max_media_body_bytes=int(_get("TRACE_MEMORY_MAX_MEDIA_BODY_BYTES", "4194304")),
             space_media_quota_mb=max(5, int(_get("TRACE_MEMORY_SPACE_MEDIA_QUOTA_MB", "50"))),
             trust_proxy_headers=_as_bool(env.get("TRACE_MEMORY_TRUST_PROXY_HEADERS"), False),
-            ingest_worker_count=max(1, int(_get("TRACE_MEMORY_INGEST_WORKERS", "8"))),
-            llm_max_concurrency=max(1, int(_get("TRACE_MEMORY_LLM_MAX_CONCURRENCY", "12"))),
+            ingest_worker_count=max(1, int(_get("TRACE_MEMORY_INGEST_WORKERS", "96"))),
+            ingest_space_concurrency=max(1, int(_get("TRACE_MEMORY_INGEST_SPACE_CONCURRENCY", "8"))),
+            llm_max_concurrency=max(1, int(_get("TRACE_MEMORY_LLM_MAX_CONCURRENCY", "80"))),
             ingest_max_retries=max(1, int(_get("TRACE_MEMORY_INGEST_MAX_RETRIES", "3"))),
             api_threadpool_tokens=max(8, int(_get("TRACE_MEMORY_API_THREADS", "64"))),
+            llm_timeout_seconds=max(3.0, float(_get("TRACE_MEMORY_LLM_TIMEOUT", "15"))),
+            ingest_pipeline=_get("TRACE_MEMORY_INGEST_PIPELINE", "v2").lower(),
+            commit_deadline_seconds=max(0.0, float(_get("TRACE_MEMORY_COMMIT_DEADLINE_S", "10"))),
+            context_notes=max(0, int(_get("TRACE_MEMORY_CONTEXT_NOTES", "20"))),
+            context_chars=max(0, int(_get("TRACE_MEMORY_CONTEXT_CHARS", "2000"))),
+            context_note_chars=max(20, int(_get("TRACE_MEMORY_CONTEXT_NOTE_CHARS", "150"))),
+            context_hours=max(0.0, float(_get("TRACE_MEMORY_CONTEXT_HOURS", "24"))),
+            vector_worker_count=max(1, int(_get("TRACE_MEMORY_VECTOR_WORKERS", "8"))),
+            openai_api_keys=tuple(
+                k.strip() for k in env.get("TRACE_MEMORY_OPENAI_API_KEYS", "").split(",") if k.strip()
+            ),
+            llm_key_cooldown_seconds=max(1.0, float(_get("TRACE_MEMORY_LLM_KEY_COOLDOWN_S", "15"))),
         )

@@ -89,6 +89,8 @@ class ChangeProposal:
     event_time: str = ""
     reason: str = ""
     replace_relations: bool = False
+    # forget only: RawNotes in this set are left untouched by the note cascade (they get re-extracted)
+    keep_note_ids: tuple[str, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         if not self.space_id.strip():

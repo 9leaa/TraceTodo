@@ -24,6 +24,7 @@ from trace_memory.services.guard_service import (
     RateLimitAndQuotaService,
     SystemSettingsStore,
 )
+from trace_memory.services.ingest_pipeline import IngestPipelineV2
 from trace_memory.services.ingest_queue import IngestJobRepository, IngestWorkerPool
 from trace_memory.services.ingest_service import IngestService
 from trace_memory.services.markdown_sync import MarkdownSyncService
@@ -81,7 +82,7 @@ class AppContainer:
     auth_service: AuthService
     admin_service: AdminService
     job_repo: IngestJobRepository
-    ingest_worker: IngestWorkerPool
+    ingest_worker: IngestWorkerPool | IngestPipelineV2
     sync_tracker: SpaceSyncTracker
     daily_scheduler: DailyTaskMaintenanceScheduler
     preferences_service: PreferencesService
@@ -124,12 +125,14 @@ class AppContainer:
 
         if llm_override is not None:
             llm = llm_override
-        elif cfg.llm_provider == "openai" and cfg.openai_api_key:
+        elif cfg.llm_provider == "openai" and (cfg.openai_api_key or cfg.openai_api_keys):
             llm = OpenAICompatLLMProvider(
                 base_url=cfg.openai_base_url,
-                api_key=cfg.openai_api_key,
+                api_key=cfg.openai_api_key or cfg.openai_api_keys[0],
                 model=cfg.llm_model,
                 timeout_seconds=cfg.llm_timeout_seconds,
+                api_keys=cfg.openai_api_keys,
+                key_cooldown_seconds=cfg.llm_key_cooldown_seconds,
             )
         else:
             llm = DeterministicLLMProvider()
@@ -208,14 +211,39 @@ class AppContainer:
             sync_tracker=sync_tracker,
             media_service=media_service,
         )
-        ingest_worker = IngestWorkerPool(
-            job_repo=job_repo,
-            processor=ingest_service.process_persisted_note,
-            worker_count=cfg.ingest_worker_count,
-            llm_max_concurrency=cfg.llm_max_concurrency,
-            max_retries=cfg.ingest_max_retries,
-            on_job_settled=lambda sp, st_name: sync_tracker.bump(sp, reason=f"ingest_{st_name}"),
-        )
+        ingest_service.context_notes = cfg.context_notes
+        ingest_service.context_chars = cfg.context_chars
+        ingest_service.context_note_chars = cfg.context_note_chars
+        ingest_service.context_hours = cfg.context_hours
+
+        def _on_job_settled(sp: str, st_name: str) -> None:
+            sync_tracker.bump(sp, reason=f"ingest_{st_name}")
+
+        ingest_worker: IngestWorkerPool | IngestPipelineV2
+        if cfg.ingest_pipeline == "v1":
+            ingest_worker = IngestWorkerPool(
+                job_repo=job_repo,
+                processor=ingest_service.process_persisted_note,
+                worker_count=cfg.ingest_worker_count,
+                max_parallel_per_space=cfg.ingest_space_concurrency,
+                llm_max_concurrency=cfg.llm_max_concurrency,
+                max_retries=cfg.ingest_max_retries,
+                on_job_settled=_on_job_settled,
+            )
+        else:
+            ingest_worker = IngestPipelineV2(
+                job_repo=job_repo,
+                ingest_service=ingest_service,
+                worker_count=cfg.ingest_worker_count,
+                max_parallel_per_space=cfg.ingest_space_concurrency,
+                llm_max_concurrency=cfg.llm_max_concurrency,
+                max_retries=cfg.ingest_max_retries,
+                commit_deadline_seconds=cfg.commit_deadline_seconds,
+                vector_worker_count=cfg.vector_worker_count,
+                on_job_settled=_on_job_settled,
+            )
+        ingest_service.worker_running = lambda: ingest_worker.is_running
+        ingest_service.worker_notify = ingest_worker.notify
         retrieval_service = RetrievalService(
             note_repo=note_repo,
             memory_repo=memory_repo,

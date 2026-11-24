@@ -45,6 +45,7 @@ def _row_to_memory(row: sqlite3.Row) -> MemoryItem:
             note_id=e["note_id"],
             note_revision=int(e["note_revision"]),
             quote=e.get("quote", ""),
+            role=str(e.get("role", "source") or "source"),
         )
         for e in evidences_raw
     )
@@ -468,10 +469,10 @@ class MemoryRepository:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO memory_evidence_links
-                    (memory_id, space_id, note_id, note_revision, quote)
-                VALUES (?, ?, ?, ?, ?)
+                    (memory_id, space_id, note_id, note_revision, quote, role)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (item.memory_id, item.space_id, ev.note_id, ev.note_revision, ev.quote),
+                (item.memory_id, item.space_id, ev.note_id, ev.note_revision, ev.quote, ev.role),
             )
 
     def _refresh_fts(self, conn: sqlite3.Connection, item: MemoryItem) -> None:
@@ -551,6 +552,28 @@ class MemoryRepository:
             (space_id, canonical_key, *statuses),
         )
         return _row_to_memory(row) if row else None
+
+    def find_memories_by_evidence_note(
+        self, space_id: str, note_id: str, memory_type: str = "", status: str = "active"
+    ) -> list[MemoryItem]:
+        """Memories whose evidence links include `note_id` (used to resolve `refers_to` deterministically)."""
+        type_clause = "AND m.memory_type = ?" if memory_type else ""
+        params: tuple[Any, ...] = (space_id, note_id, status, memory_type) if memory_type else (
+            space_id,
+            note_id,
+            status,
+        )
+        rows = self.db.query_all(
+            f"""
+            SELECT DISTINCT m.*
+            FROM memory_evidence_links l
+            JOIN memories m ON m.memory_id = l.memory_id
+            WHERE l.space_id = ? AND l.note_id = ? AND m.status = ? {type_clause}
+            ORDER BY m.created_at ASC
+            """,
+            params,
+        )
+        return [_row_to_memory(r) for r in rows]
 
     def find_dependent_memories(self, space_id: str, note_id: str) -> list[MemoryItem]:
         rows = self.db.query_all(

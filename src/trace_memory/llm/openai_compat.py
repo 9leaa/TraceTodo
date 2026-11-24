@@ -15,6 +15,7 @@ import re
 import socket
 import ssl
 import threading
+import time
 from typing import Any
 import urllib.error
 from urllib.parse import urlsplit
@@ -162,7 +163,82 @@ class _KeepAliveConnectionPool:
         raise ConnectionResetError("Keep-alive connection reset")
 
 
-_HTTP_POOL = _KeepAliveConnectionPool()
+# Sized for the v2 ingest pipeline (~80 concurrent model calls) so busy bursts reuse warm TLS sockets.
+_HTTP_POOL = _KeepAliveConnectionPool(max_idle_per_origin=128)
+
+
+class _ApiKeyPool:
+    """Round-robin over several API keys; a key that hits HTTP 429 cools down for a while."""
+
+    def __init__(self, keys: tuple[str, ...], cooldown_seconds: float = 15.0) -> None:
+        uniq: list[str] = []
+        for k in keys:
+            k = str(k or "").strip()
+            if k and k not in uniq:
+                uniq.append(k)
+        self.keys = tuple(uniq)
+        self.cooldown_seconds = max(0.0, float(cooldown_seconds))
+        self._lock = threading.Lock()
+        self._next = 0
+        self._cool_until: dict[str, float] = {}
+
+    def __len__(self) -> int:
+        return len(self.keys)
+
+    def candidates(self) -> list[str]:
+        """Keys to try for one request: available ones first (round-robin), cooling ones last."""
+        now = time.monotonic()
+        with self._lock:
+            n = len(self.keys)
+            start = self._next % n if n else 0
+            self._next += 1
+            order = [self.keys[(start + i) % n] for i in range(n)]
+            ready = [k for k in order if self._cool_until.get(k, 0.0) <= now]
+            cooling = sorted(
+                (k for k in order if self._cool_until.get(k, 0.0) > now),
+                key=lambda k: self._cool_until.get(k, 0.0),
+            )
+        return ready + cooling
+
+    def cool(self, key: str) -> None:
+        with self._lock:
+            self._cool_until[key] = time.monotonic() + self.cooldown_seconds
+
+    def is_cooling(self, key: str) -> bool:
+        with self._lock:
+            return self._cool_until.get(key, 0.0) > time.monotonic()
+
+
+def _is_rate_limited(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "http 429" in msg or "rate limit" in msg or "too many requests" in msg
+
+
+_ALLOWED_CHANGED_FIELDS = frozenset(
+    {
+        "title",
+        "summary",
+        "due_at",
+        "start_at",
+        "duration_minutes",
+        "is_all_day",
+        "importance",
+        "urgency",
+        "assignee",
+        "task_status",
+        "location",
+        "details",
+        "value",
+        "target",
+        "polarity",
+        "conditions",
+        "exceptions",
+        "event_summary",
+        "occurred_at",
+        "participants",
+        "tags",
+    }
+)
 
 
 def _post_json_with_retry(
@@ -334,14 +410,35 @@ class OpenAICompatLLMProvider:
         api_key: str,
         model: str,
         timeout_seconds: float = 30.0,
+        api_keys: tuple[str, ...] | list[str] = (),
+        key_cooldown_seconds: float = 15.0,
     ) -> None:
-        if not api_key:
+        if not api_key and not api_keys:
             raise ValueError("TRACE_MEMORY_OPENAI_API_KEY is required when provider='openai'")
         self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
+        self.api_key = api_key or tuple(api_keys)[0]
         self.model = model
         self.timeout_seconds = timeout_seconds
+        self._keys = _ApiKeyPool((self.api_key, *tuple(api_keys)), key_cooldown_seconds)
         self._rule_helper = DeterministicLLMProvider()
+
+    def _post(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """POST with the key pool: a 429 cools that key and immediately retries on the next one."""
+        if len(self._keys) <= 1:
+            return _post_json_with_retry(url, self.api_key, payload, timeout_seconds=self.timeout_seconds)
+        last_exc: Exception | None = None
+        for key in self._keys.candidates():
+            if last_exc is not None and self._keys.is_cooling(key):
+                break  # every remaining key is cooling: surface the 429 so the queue backs off
+            try:
+                return _post_json_with_retry(url, key, payload, timeout_seconds=self.timeout_seconds)
+            except TraceMemoryError as exc:
+                if not _is_rate_limited(exc):
+                    raise
+                self._keys.cool(key)
+                last_exc = exc
+        assert last_exc is not None
+        raise last_exc
 
     def _chat_turn(
         self, messages: list[dict[str, Any]], **options: Any
@@ -357,12 +454,7 @@ class OpenAICompatLLMProvider:
         if "dashscope.aliyuncs.com" in self.base_url:
             req_payload["enable_thinking"] = False
 
-        resp = _post_json_with_retry(
-            f"{self.base_url}/chat/completions",
-            self.api_key,
-            req_payload,
-            timeout_seconds=self.timeout_seconds,
-        )
+        resp = self._post(f"{self.base_url}/chat/completions", req_payload)
         try:
             msg = resp["choices"][0]["message"]
             if not isinstance(msg, dict):
@@ -413,6 +505,7 @@ class OpenAICompatLLMProvider:
         note_text: str,
         default_event_time: str,
         existing_memories: list[MemoryItem] | None = None,
+        recent_notes: list[dict[str, Any]] | None = None,
     ) -> ExtractionBatch:
         raw_relations = tuple(
             RelationSpec(relation_type=r_type, target=target, context=ctx)
@@ -437,9 +530,33 @@ class OpenAICompatLLMProvider:
             if existing_ctx_lines
             else ""
         )
+        window = [w for w in (recent_notes or []) if isinstance(w, dict) and w.get("label")]
+        labels = {str(w["label"]) for w in window}
+        recent_block = ""
+        if window:
+            recent_block = (
+                "\n\n最近原话（仅供理解指代和上下文，按时间从早到晚；严禁从这些原话中抽取新记忆，它们已各自单独处理）：\n"
+                + "\n".join(
+                    f"[{w['label']} · {w.get('status') or '已处理'}] {w.get('content', '')}" for w in window
+                )
+            )
         ref_dt = parse_iso_datetime(default_event_time) or beijing_now()
         ref_iso = to_beijing(ref_dt).replace(microsecond=0).isoformat()
         clock_anchor = format_beijing_prompt_clock(ref_dt)
+        context_rules = (
+            "\n上下文指代规则（仅当提供了「最近原话」时适用）：\n"
+            "- 只从「用户最新原文」抽取候选；最近原话只用来理解“他/她/它/这个/那件事/改到/顺便”等指代与省略。\n"
+            "- 每个候选可额外输出 \"relation\": \"new|update|complete|cancel\"、\"refers_to_note\": \"N编号或空字符串\"、"
+            "\"changed_fields\": [本次真正改动的字段名]。\n"
+            "- 若最新原文是在补充、修改、完成或取消某条最近原话里提到的事项，refers_to_note 填那条原话的编号（如 \"N3\"），"
+            "relation 填 update/complete/cancel；若该原话状态显示已生成卡片，canonical_key 复用其 key。\n"
+            "- relation=update 时 payload 只需包含改动的字段，changed_fields 列出这些字段（如 [\"due_at\"]），"
+            "不要重写用户没提到的标题和其它字段。\n"
+            "- 拿不准是新事项还是对最近事项的补充时，优先判为 update 并给出 refers_to_note。\n"
+            "- 与最近原话无关的全新事项：relation=\"new\"，refers_to_note=\"\"。"
+            if window
+            else ""
+        )
         sys_prompt = (
             "你是可追溯个人记忆抽取与状态对账引擎。请从用户原文中抽取结构化记忆候选，输出严格 JSON 对象：\n"
             '{"candidates": [{"memory_type": "task|preference|semantic|episodic", '
@@ -472,10 +589,12 @@ class OpenAICompatLLMProvider:
             "\"conditions\": [], \"exceptions\": [\"例外情况如晚上不喝\"], \"details\": \"补充说明\"}\n"
             "3. semantic: {\"subject\": \"user或实体名\", \"predicate\": \"属性名如residence/workplace\", \"value\": \"当前值\"}\n"
             "4. episodic: {\"event_summary\": \"事件概述\", \"occurred_at\": \"北京时间ISO8601(+08:00)\"}"
+            + context_rules
         )
         parsed, tokens = self._chat_json(
             sys_prompt,
-            f"当前北京时间锚点: {clock_anchor}\n默认记录时间(北京时间): {ref_iso}{existing_block}\n\n用户最新原文:\n{note_text}",
+            f"当前北京时间锚点: {clock_anchor}\n默认记录时间(北京时间): {ref_iso}{existing_block}{recent_block}"
+            f"\n\n用户最新原文:\n{note_text}",
         )
         type_alias = {"fact": "semantic", "experience": "episodic", "todo": "task", "pref": "preference"}
         items: list[ExtractedCandidate] = []
@@ -529,6 +648,27 @@ class OpenAICompatLLMProvider:
 
             raw_tags = raw.get("tags")
             clean_tags = tuple(str(t) for t in (raw_tags if isinstance(raw_tags, list) else []) if t)
+
+            relation = str(raw.get("relation") or "new").strip().lower()
+            if relation not in ("new", "update", "complete", "cancel"):
+                relation = "new"
+            refers = str(raw.get("refers_to_note") or "").strip().upper()
+            if refers not in labels:
+                refers = ""
+            raw_changed = raw.get("changed_fields")
+            changed = tuple(
+                dict.fromkeys(
+                    str(f).strip()
+                    for f in (raw_changed if isinstance(raw_changed, list) else [])
+                    if str(f).strip() in _ALLOWED_CHANGED_FIELDS
+                )
+            )
+            if relation == "complete" and hint == "upsert":
+                hint = "complete_task"
+            elif relation == "cancel" and hint == "upsert":
+                hint = "cancel_task"
+            if relation == "new" and refers:
+                relation = "update"
             items.append(
                 ExtractedCandidate(
                     memory_type=mtype,
@@ -541,9 +681,46 @@ class OpenAICompatLLMProvider:
                     relations=raw_relations,
                     event_time=_normalize_beijing_iso(str(raw.get("event_time") or ""), fallback=ref_iso),
                     quote=str(raw.get("quote") or note_text[:120]),
+                    relation=relation,
+                    refers_to_label=refers,
+                    changed_fields=changed,
                 )
             )
         return ExtractionBatch(candidates=tuple(items), llm_calls=1, tokens_used=tokens)
+
+    def choose_reference_card(
+        self, note_text: str, candidate_title: str, options: list[dict[str, Any]]
+    ) -> tuple[int, int, int]:
+        """Pick which of several cards the latest note modifies. Returns (index or -1, llm_calls, tokens)."""
+        if not options:
+            return -1, 0, 0
+        lines = []
+        for i, o in enumerate(options[:8], start=1):
+            pl = o.get("payload") or {}
+            extra = ", ".join(
+                f"{k}={pl[k]}" for k in ("due_at", "start_at", "task_status", "assignee", "value") if pl.get(k)
+            )
+            lines.append(f"{i}. {o.get('title', '')}：{o.get('summary', '')}" + (f"（{extra}）" if extra else ""))
+        sys_prompt = (
+            "你是指代消解助手。用户上一条消息生成了多张卡片，现在用户发来一条新消息在修改/完成/取消其中一张。"
+            "请判断新消息指的是哪一张，只输出 JSON：{\"choice\": 编号整数, \"confident\": true|false}。"
+            "如果无法确定，输出 {\"choice\": 0, \"confident\": false}，严禁猜测。"
+        )
+        user_prompt = (
+            "候选卡片：\n" + "\n".join(lines)
+            + f"\n\n用户新消息：{note_text}\n（抽取出的意图标题：{candidate_title}）"
+        )
+        parsed, tokens = self._chat_json(sys_prompt, user_prompt)
+        try:
+            choice = int(parsed.get("choice") or 0)
+        except (TypeError, ValueError):
+            choice = 0
+        confident = parsed.get("confident", True)
+        if isinstance(confident, str):
+            confident = confident.strip().lower() not in ("false", "0", "no", "")
+        if not confident or not (1 <= choice <= min(8, len(options))):
+            return -1, 1, tokens
+        return choice - 1, 1, tokens
 
     def synthesize_dream_cluster(
         self, topic: str, memories: list[MemoryItem]
