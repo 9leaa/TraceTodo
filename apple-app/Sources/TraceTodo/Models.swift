@@ -875,6 +875,7 @@ struct UserAccountModel: Codable, Identifiable {
 struct AuthStatusResponse: Codable {
     let authRequired: Bool
     let allowRegistration: Bool
+    let registerCaptchaRequired: Bool?
     let hasUsers: Bool
     let authenticated: Bool
     let user: UserAccountModel?
@@ -883,10 +884,25 @@ struct AuthStatusResponse: Codable {
     enum CodingKeys: String, CodingKey {
         case authRequired = "auth_required"
         case allowRegistration = "allow_registration"
+        case registerCaptchaRequired = "register_captcha_required"
         case hasUsers = "has_users"
         case authenticated
         case user
         case quota
+    }
+}
+
+struct AuthCaptchaResponse: Codable {
+    let captchaId: String
+    let imageSvg: String?
+    let imagePng: String?
+    let expiresIn: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case captchaId = "captcha_id"
+        case imageSvg = "image_svg"
+        case imagePng = "image_png"
+        case expiresIn = "expires_in"
     }
 }
 

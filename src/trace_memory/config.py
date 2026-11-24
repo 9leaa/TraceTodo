@@ -78,6 +78,7 @@ class TraceMemoryConfig:
     # Multi-user authentication & bootstrap admin settings
     auth_required: bool = False
     allow_registration: bool = True
+    register_captcha_required: bool = False
     admin_username: str = ""
     admin_password: str = ""
     session_ttl_hours: int = 720
@@ -177,6 +178,7 @@ class TraceMemoryConfig:
             web_port=int(_get("TRACE_MEMORY_WEB_PORT", "18090")),
             auth_required=_as_bool(env.get("TRACE_MEMORY_AUTH_REQUIRED"), False),
             allow_registration=_as_bool(env.get("TRACE_MEMORY_ALLOW_REGISTRATION"), True),
+            register_captcha_required=_as_bool(env.get("TRACE_MEMORY_REGISTER_CAPTCHA_REQUIRED"), True),
             admin_username=_get("TRACE_MEMORY_ADMIN_USERNAME", ""),
             admin_password=env.get("TRACE_MEMORY_ADMIN_PASSWORD", ""),
             session_ttl_hours=int(_get("TRACE_MEMORY_SESSION_TTL_HOURS", "720")),

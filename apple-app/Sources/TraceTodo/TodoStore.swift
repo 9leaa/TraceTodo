@@ -437,8 +437,24 @@ final class TodoStore: ObservableObject {
         startSyncStreamIfNeeded()
     }
 
-    func register(username: String, password: String, displayName: String) async throws {
-        let sess = try await client.register(username: username, password: password, displayName: displayName)
+    func fetchAuthCaptcha() async throws -> AuthCaptchaResponse {
+        try await client.fetchAuthCaptcha()
+    }
+
+    func register(
+        username: String,
+        password: String,
+        displayName: String,
+        captchaId: String = "",
+        captchaCode: String = ""
+    ) async throws {
+        let sess = try await client.register(
+            username: username,
+            password: password,
+            displayName: displayName,
+            captchaId: captchaId,
+            captchaCode: captchaCode
+        )
         self.authToken = sess.token
         self.currentUser = sess.user
         self.currentQuota = sess.quota

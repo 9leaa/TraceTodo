@@ -366,7 +366,7 @@ public class MainActivity extends Activity {
         ws.setCacheMode(WebSettings.LOAD_DEFAULT);
         ws.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         String origUa = ws.getUserAgentString();
-        ws.setUserAgentString((origUa != null ? origUa : "") + " TraceTodoAndroid/1.4.4");
+        ws.setUserAgentString((origUa != null ? origUa : "") + " TraceTodoAndroid/1.4.5");
 
         webView.addJavascriptInterface(new NativeBridge(), "TraceTodoNative");
 
