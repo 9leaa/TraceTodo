@@ -17,7 +17,7 @@
         var savedTheme = localStorage.getItem('tm_theme_id');
         if (savedTheme) {
           document.documentElement.setAttribute('data-theme', savedTheme);
-          var darkBgs = { deep_forest: '#0b1512', nebula: '#0d0b1e', cyber: '#061019', polar: '#071318' };
+          var darkBgs = { deep_forest: '#0b1512', nebula: '#0d0b1e', cyber: '#061019', polar: '#071318', velvet_noir: '#120b16', obsidian_gold: '#0c0d12' };
           var metaEl = document.querySelector('meta[name="theme-color"]');
           if (metaEl && darkBgs[savedTheme]) metaEl.setAttribute('content', darkBgs[savedTheme]);
         }
@@ -62,6 +62,8 @@
       --border: #cce5df;
       --primary: #0d9488;
       --primary-hover: #0f766e;
+      --primary-fill: #0f766e;
+      --primary-fill-hover: #115e59;
       --primary-soft: #ccfbf1;
       --header-bg: linear-gradient(90deg, #ffffff 0%, #f0fdfa 60%, #e0f2fe 100%);
       --rail-active-bg: #e6f7f4;
@@ -75,6 +77,8 @@
       --border: #fed7aa;
       --primary: #ea580c;
       --primary-hover: #c2410c;
+      --primary-fill: #c2410c;
+      --primary-fill-hover: #9a3412;
       --primary-soft: #ffedd5;
       --header-bg: linear-gradient(90deg, #ffffff 0%, #fff7ed 60%, #fef3c7 100%);
       --rail-active-bg: #ffedd5;
@@ -139,6 +143,8 @@
       --muted: #9d97c4;
       --primary: #8b5cf6;
       --primary-hover: #7c3aed;
+      --primary-fill: #7c3aed;
+      --primary-fill-hover: #6d28d9;
       --primary-soft: #241d4d;
       --header-bg: linear-gradient(90deg, #12102a 0%, #1a1638 65%, #251440 100%);
       --rail-active-bg: #241d4d;
@@ -205,6 +211,86 @@
       --rail-active-bg: #fce7f3;
       --rail-active-ico: #be185d;
       --tl-header-grad: linear-gradient(135deg, #ec4899 0%, #a855f7 100%);
+    }
+    [data-theme="warm_ivory"] {
+      --bg: #fbf8f1;
+      --surface: #ffffff;
+      --surface-alt: #fdfbf6;
+      --border: #eadfce;
+      --text: #292524;
+      --heading: #1c1917;
+      --muted: #78716c;
+      --primary: #d97706;
+      --primary-hover: #b45309;
+      --primary-fill: #b45309;
+      --primary-fill-hover: #92400e;
+      --primary-soft: #fef3c7;
+      --header-bg: linear-gradient(90deg, #ffffff 0%, #fffbeb 60%, #fef3c7 100%);
+      --rail-active-bg: #fef3c7;
+      --rail-active-ico: #b45309;
+      --tl-header-grad: linear-gradient(135deg, #d97706 0%, #0284c7 100%);
+    }
+    [data-theme="celadon_mist"] {
+      --bg: #f1f6f4;
+      --surface: #ffffff;
+      --surface-alt: #f7faf9;
+      --border: #d1e2dc;
+      --text: #1e293b;
+      --heading: #0f172a;
+      --muted: #64748b;
+      --primary: #0f766e;
+      --primary-hover: #115e59;
+      --primary-fill: #0f766e;
+      --primary-fill-hover: #115e59;
+      --primary-soft: #ccfbf1;
+      --header-bg: linear-gradient(90deg, #ffffff 0%, #f0fdfa 60%, #e2e8f0 100%);
+      --rail-active-bg: #e0f2ee;
+      --rail-active-ico: #0f766e;
+      --tl-header-grad: linear-gradient(135deg, #0f766e 0%, #334155 100%);
+    }
+    [data-theme="velvet_noir"] {
+      --bg: #120b16;
+      --surface: #1d1224;
+      --surface-alt: #261830;
+      --border: #3d264c;
+      --text: #f3e8ff;
+      --heading: #fdf4ff;
+      --muted: #b69cc8;
+      --primary: #f472b6;
+      --primary-hover: #ec4899;
+      --primary-fill: #be185d;
+      --primary-fill-hover: #9d174d;
+      --primary-soft: #361731;
+      --header-bg: linear-gradient(90deg, #170e1d 0%, #24142d 65%, #2d1436 100%);
+      --rail-active-bg: #361731;
+      --rail-active-ico: #f472b6;
+      --tl-header-grad: linear-gradient(135deg, #db2777 0%, #9333ea 100%);
+      --q1-bg: #2e1222; --q1-border: #9d174d; --q1-badge: #f472b6;
+      --q2-bg: #211638; --q2-border: #6b21a8; --q2-badge: #c084fc;
+      --q3-bg: #2b1f14; --q3-border: #92400e; --q3-badge: #fbbf24;
+      --q4-bg: #1f1526; --q4-border: #4a3159; --q4-badge: #cbd5e1;
+    }
+    [data-theme="obsidian_gold"] {
+      --bg: #0c0d12;
+      --surface: #151720;
+      --surface-alt: #1c1f2b;
+      --border: #2c3142;
+      --text: #e5e7eb;
+      --heading: #f8fafc;
+      --muted: #9ca3af;
+      --primary: #fbbf24;
+      --primary-hover: #f59e0b;
+      --primary-fill: #b45309;
+      --primary-fill-hover: #92400e;
+      --primary-soft: #2e2412;
+      --header-bg: linear-gradient(90deg, #10121a 0%, #171a24 65%, #221c14 100%);
+      --rail-active-bg: #2e2412;
+      --rail-active-ico: #fbbf24;
+      --tl-header-grad: linear-gradient(135deg, #b45309 0%, #0369a1 100%);
+      --q1-bg: #2a1418; --q1-border: #7f1d1d; --q1-badge: #f87171;
+      --q2-bg: #142234; --q2-border: #1e3a8a; --q2-badge: #60a5fa;
+      --q3-bg: #2b2212; --q3-border: #92400e; --q3-badge: #fbbf24;
+      --q4-bg: #181b24; --q4-border: #33394d; --q4-badge: #94a3b8;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -712,7 +798,8 @@
       gap: 10px;
     }
     .btn-group { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-    .btn-group button.active { background: var(--primary-fill, var(--primary)); color: #fff; border-color: var(--primary-fill, var(--primary)); }
+    .btn-group button.active { background: var(--primary-fill, var(--primary)); color: #fff; border-color: var(--primary-fill, var(--primary)); font-weight: 700; }
+    .btn-group button.active:hover { background: var(--primary-fill-hover, var(--primary-hover)); color: #fff; border-color: var(--primary-fill-hover, var(--primary-hover)); }
 
     /* 2x2 Eisenhower Matrix */
     .matrix-grid {
@@ -2116,30 +2203,12 @@
     .cal-macaron-butter   { background: #fef9c3; border-left-color: #ca8a04; color: #422006; }
     .cal-macaron-mint     { background: #dcfce7; border-left-color: #059669; color: #052e16; }
     .cal-macaron-peach    { background: #ffedd5; border-left-color: #ea580c; color: #431407; }
-    [data-theme="deep_forest"] .cal-macaron-lavender,
-    [data-theme="nebula"] .cal-macaron-lavender,
-    [data-theme="cyber"] .cal-macaron-lavender,
-    [data-theme="polar"] .cal-macaron-lavender { background: rgba(139, 92, 246, 0.26); color: #ede9fe; }
-    [data-theme="deep_forest"] .cal-macaron-pink,
-    [data-theme="nebula"] .cal-macaron-pink,
-    [data-theme="cyber"] .cal-macaron-pink,
-    [data-theme="polar"] .cal-macaron-pink     { background: rgba(236, 72, 153, 0.26); color: #fce7f3; }
-    [data-theme="deep_forest"] .cal-macaron-sky,
-    [data-theme="nebula"] .cal-macaron-sky,
-    [data-theme="cyber"] .cal-macaron-sky,
-    [data-theme="polar"] .cal-macaron-sky      { background: rgba(14, 165, 233, 0.26); color: #e0f2fe; }
-    [data-theme="deep_forest"] .cal-macaron-butter,
-    [data-theme="nebula"] .cal-macaron-butter,
-    [data-theme="cyber"] .cal-macaron-butter,
-    [data-theme="polar"] .cal-macaron-butter   { background: rgba(234, 179, 8, 0.25); color: #fef9c3; }
-    [data-theme="deep_forest"] .cal-macaron-mint,
-    [data-theme="nebula"] .cal-macaron-mint,
-    [data-theme="cyber"] .cal-macaron-mint,
-    [data-theme="polar"] .cal-macaron-mint     { background: rgba(16, 185, 129, 0.26); color: #dcfce7; }
-    [data-theme="deep_forest"] .cal-macaron-peach,
-    [data-theme="nebula"] .cal-macaron-peach,
-    [data-theme="cyber"] .cal-macaron-peach,
-    [data-theme="polar"] .cal-macaron-peach    { background: rgba(249, 115, 22, 0.26); color: #ffedd5; }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .cal-macaron-lavender { background: rgba(139, 92, 246, 0.26); color: #ede9fe; }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .cal-macaron-pink     { background: rgba(236, 72, 153, 0.26); color: #fce7f3; }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .cal-macaron-sky      { background: rgba(14, 165, 233, 0.26); color: #e0f2fe; }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .cal-macaron-butter   { background: rgba(234, 179, 8, 0.25); color: #fef9c3; }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .cal-macaron-mint     { background: rgba(16, 185, 129, 0.26); color: #dcfce7; }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .cal-macaron-peach    { background: rgba(249, 115, 22, 0.26); color: #ffedd5; }
 
     .cal-focus-track {
       position: absolute;
@@ -2158,10 +2227,7 @@
       text-overflow: ellipsis;
       pointer-events: none;
     }
-    [data-theme="deep_forest"] .cal-focus-track,
-    [data-theme="nebula"] .cal-focus-track,
-    [data-theme="cyber"] .cal-focus-track,
-    [data-theme="polar"] .cal-focus-track {
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .cal-focus-track {
       color: var(--primary);
       background: color-mix(in srgb, var(--primary) 22%, transparent);
     }
@@ -2503,62 +2569,13 @@
     .md-rendered h3, .md-rendered h4 { margin: 6px 0 4px; font-size: 14px; color: var(--heading); }
     .md-rendered code { background: var(--surface-alt); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
 
-    [data-theme="deep_forest"] .analytic-card,
-    [data-theme="nebula"] .analytic-card,
-    [data-theme="cyber"] .analytic-card,
-    [data-theme="polar"] .analytic-card,
-    [data-theme="deep_forest"] .tl-card,
-    [data-theme="nebula"] .tl-card,
-    [data-theme="cyber"] .tl-card,
-    [data-theme="polar"] .tl-card,
-    [data-theme="deep_forest"] .card-box,
-    [data-theme="nebula"] .card-box,
-    [data-theme="cyber"] .card-box,
-    [data-theme="polar"] .card-box,
-    [data-theme="deep_forest"] .modal,
-    [data-theme="nebula"] .modal,
-    [data-theme="cyber"] .modal,
-    [data-theme="polar"] .modal,
-    [data-theme="deep_forest"] .duodo-sheet,
-    [data-theme="nebula"] .duodo-sheet,
-    [data-theme="cyber"] .duodo-sheet,
-    [data-theme="polar"] .duodo-sheet,
-    [data-theme="deep_forest"] .duodo-card,
-    [data-theme="nebula"] .duodo-card,
-    [data-theme="cyber"] .duodo-card,
-    [data-theme="polar"] .duodo-card,
-    [data-theme="deep_forest"] .auth-sheet,
-    [data-theme="nebula"] .auth-sheet,
-    [data-theme="cyber"] .auth-sheet,
-    [data-theme="polar"] .auth-sheet,
-    [data-theme="deep_forest"] .graph-toolbar-card,
-    [data-theme="nebula"] .graph-toolbar-card,
-    [data-theme="cyber"] .graph-toolbar-card,
-    [data-theme="polar"] .graph-toolbar-card,
-    [data-theme="deep_forest"] .graph-relation-options,
-    [data-theme="nebula"] .graph-relation-options,
-    [data-theme="cyber"] .graph-relation-options,
-    [data-theme="polar"] .graph-relation-options {
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) :is(.analytic-card, .tl-card, .card-box, .modal, .duodo-sheet, .duodo-card, .auth-sheet, .graph-toolbar-card, .graph-relation-options) {
       background: var(--surface);
       color: var(--text);
       border-color: var(--border);
     }
-    [data-theme="deep_forest"] .graph-relations > summary,
-    [data-theme="nebula"] .graph-relations > summary,
-    [data-theme="cyber"] .graph-relations > summary,
-    [data-theme="polar"] .graph-relations > summary { color: var(--text); }
-    [data-theme="deep_forest"] .graph-chip:not(.active),
-    [data-theme="nebula"] .graph-chip:not(.active),
-    [data-theme="cyber"] .graph-chip:not(.active),
-    [data-theme="polar"] .graph-chip:not(.active),
-    [data-theme="deep_forest"] .graph-layer-toggle,
-    [data-theme="nebula"] .graph-layer-toggle,
-    [data-theme="cyber"] .graph-layer-toggle,
-    [data-theme="polar"] .graph-layer-toggle,
-    [data-theme="deep_forest"] input.main-input,
-    [data-theme="nebula"] input.main-input,
-    [data-theme="cyber"] input.main-input,
-    [data-theme="polar"] input.main-input {
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .graph-relations > summary { color: var(--text); }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) :is(.graph-chip:not(.active), .graph-layer-toggle, input.main-input) {
       background: var(--surface-alt);
       color: var(--text);
       border-color: var(--border);
@@ -2568,35 +2585,16 @@
       border-color: #254b3e;
     }
     [data-theme="deep_forest"] .diag-box h3 { color: #6ee7b7; }
-    [data-theme="nebula"] .diag-box,
-    [data-theme="cyber"] .diag-box,
-    [data-theme="polar"] .diag-box {
+    :is([data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .diag-box {
       background: linear-gradient(135deg, var(--surface-alt) 0%, var(--surface) 100%);
       border-color: var(--border);
     }
-    [data-theme="nebula"] .diag-box h3,
-    [data-theme="cyber"] .diag-box h3,
-    [data-theme="polar"] .diag-box h3 { color: var(--primary); }
-    [data-theme="deep_forest"] .diag-list,
-    [data-theme="nebula"] .diag-list,
-    [data-theme="cyber"] .diag-list,
-    [data-theme="polar"] .diag-list { color: var(--text); }
-    [data-theme="deep_forest"] .task-card,
-    [data-theme="nebula"] .task-card,
-    [data-theme="cyber"] .task-card,
-    [data-theme="polar"] .task-card { background: var(--surface); }
-    [data-theme="deep_forest"] .card-checklist,
-    [data-theme="nebula"] .card-checklist,
-    [data-theme="cyber"] .card-checklist,
-    [data-theme="polar"] .card-checklist { background: var(--surface-alt); border-color: var(--border); }
-    [data-theme="deep_forest"] .tag,
-    [data-theme="nebula"] .tag,
-    [data-theme="cyber"] .tag,
-    [data-theme="polar"] .tag { background: var(--surface-alt); color: var(--text); }
-    [data-theme="deep_forest"] .focus-row,
-    [data-theme="nebula"] .focus-row,
-    [data-theme="cyber"] .focus-row,
-    [data-theme="polar"] .focus-row { border-bottom-color: var(--border); }
+    :is([data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .diag-box h3 { color: var(--primary); }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .diag-list { color: var(--text); }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .task-card { background: var(--surface); }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .card-checklist { background: var(--surface-alt); border-color: var(--border); }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .tag { background: var(--surface-alt); color: var(--text); }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .focus-row { border-bottom-color: var(--border); }
 
     /* Pomodoro & Stopwatch Focus Center */
     .focus-center-grid {
@@ -2782,6 +2780,7 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
+      object-position: 60% 26%;
       opacity: 0;
       transition: opacity 0.7s ease;
       transform: scale(1.04);
@@ -2826,7 +2825,15 @@
       --theme-light: #f7a5d5; --theme-radius: 25px;
       --theme-shape: radial-gradient(ellipse at 10% 0%, var(--theme-wash), transparent 68%);
     }
-    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"]) {
+    [data-theme="warm_ivory"] {
+      --theme-light: #fcd34d; --theme-radius: 18px;
+      --theme-shape: radial-gradient(ellipse at 92% 0%, var(--theme-wash), transparent 70%);
+    }
+    [data-theme="celadon_mist"] {
+      --theme-light: #5eead4; --theme-radius: 20px 12px 20px 12px;
+      --theme-shape: linear-gradient(140deg, var(--theme-wash), transparent 66%);
+    }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) {
       --theme-tint: 9%;
       --theme-shadow: 0 12px 36px;
     }
@@ -2842,8 +2849,20 @@
         linear-gradient(135deg, var(--theme-wash), transparent 62%);
     }
     [data-theme="polar"] { --theme-light: #7fead6; --theme-radius: 12px 25px 12px 25px; }
+    [data-theme="velvet_noir"] {
+      --theme-light: #f472b6; --theme-radius: 22px;
+      --theme-shape: radial-gradient(ellipse at 88% 0%, var(--theme-wash), transparent 66%),
+        radial-gradient(ellipse at 10% 100%, #a855f71a, transparent 58%);
+    }
+    [data-theme="obsidian_gold"] {
+      --theme-light: #fbbf24; --theme-radius: 14px;
+      --theme-shape: linear-gradient(135deg, var(--theme-wash), transparent 64%);
+    }
     body.has-scene { --theme-surface: color-mix(in srgb, var(--surface) 89%, transparent); }
     body.has-scene .workspace-shell { background: transparent; }
+    body.has-scene .summary-header {
+      text-shadow: 0 1px 10px color-mix(in srgb, var(--bg) 94%, transparent), 0 0 3px var(--bg);
+    }
     [data-theme] body :is(.left-rail, .quad-box, .card-box, .task-card, .memo-card, .mem-card, .tl-card, .analytic-card, .kpi-card, .cd-big-card, .focus-stat-box, .duodo-card:not([class*="cal-macaron-"])) {
       background: radial-gradient(ellipse at 85% 0%, color-mix(in srgb, var(--site-scene-light, transparent) 14%, transparent), transparent 74%),
         var(--theme-shape), var(--card-base, var(--theme-surface, var(--surface)));
@@ -3467,7 +3486,7 @@
 
             <div class="btn-group" id="fcDurationPills" style="justify-content:center;">
               <button type="button" class="chip-btn" data-pmin="15" onclick="selectPomodoroDuration(15)">15 分钟</button>
-              <button type="button" class="chip-btn active" data-pmin="25" onclick="selectPomodoroDuration(25)" style="border-color:var(--primary);color:var(--primary);font-weight:700;">25 分钟</button>
+              <button type="button" class="chip-btn active" data-pmin="25" onclick="selectPomodoroDuration(25)">25 分钟</button>
               <button type="button" class="chip-btn" data-pmin="45" onclick="selectPomodoroDuration(45)">45 分钟</button>
               <button type="button" class="chip-btn" data-pmin="60" onclick="selectPomodoroDuration(60)">60 分钟</button>
             </div>
@@ -4272,10 +4291,16 @@
       </div>
 
       <div class="duodo-card" style="display:grid;gap:10px;">
-        <div>
-          <div style="font-weight:700;font-size:14px;">🌌 环境场景画廊（AI 实景美图）</div>
-          <div style="font-size:11.5px;color:var(--muted);">星空 / 科幻 / 炫酷 / 自然 / 极光 / 深海 / 人像实景背景：全站氛围光 + 番茄沉浸锁屏共用，跨端同步</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+          <div>
+            <div style="font-weight:700;font-size:14px;">✨ 人物写真与环境场景主题（帅哥 · 美女 · 自然科幻）</div>
+            <div style="font-size:11.5px;color:var(--muted);">精选多风格帅哥美女与自然奇观实景壁纸：全站氛围光 + 番茄沉浸锁屏共用，跨端同步</div>
+          </div>
+          <label style="font-size:12px;display:inline-flex;gap:5px;align-items:center;cursor:pointer;padding:4px 9px;border-radius:999px;background:var(--surface-alt);border:1px solid var(--border);">
+            <input type="checkbox" id="sceneSyncThemeCheck" onchange="setSceneSyncTheme(this.checked)" /> 🎨 联动契合配色
+          </label>
         </div>
+        <div class="seg-pill-bar" id="sceneCategoryBar" style="justify-self:start;"></div>
         <div class="scene-gallery-grid" id="sceneGalleryGrid"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           <span style="font-size:12px;font-weight:700;">💡 全站氛围光强度</span>
@@ -5851,9 +5876,6 @@
       document.querySelectorAll('#fcDurationPills button').forEach(b => {
         const active = Number(b.getAttribute('data-pmin')) === fcPlannedMinutes;
         b.classList.toggle('active', active);
-        b.style.borderColor = active ? 'var(--primary)' : '';
-        b.style.color = active ? 'var(--primary)' : '';
-        b.style.fontWeight = active ? '700' : '';
       });
     }
 
@@ -8967,6 +8989,10 @@
       cyber: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><path d="M150 56 L150 24 L166 24 L166 56 M176 56 L176 12 L196 12 L196 56 M206 56 L206 30 L222 30 L222 56 M232 56 L232 18 L252 18 L252 56 M262 56 L262 34 L280 34 L280 56" stroke="#06b6d4" stroke-width="1.8" stroke-opacity="0.45" fill="none"/><path d="M140 46 Q210 38 292 44" stroke="#d946ef" stroke-width="1.6" stroke-opacity="0.5" fill="none"/><circle cx="186" cy="9" r="1.6" fill="#e879f9"/></svg>`,
       polar: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><path d="M140 40 Q180 6 220 26 T296 12" stroke="#2dd4bf" stroke-width="2.6" stroke-opacity="0.42" fill="none"/><path d="M150 48 Q190 16 230 34 T298 22" stroke="#818cf8" stroke-width="1.8" stroke-opacity="0.38" fill="none"/><polygon points="160,56 176,40 192,56" fill="#e0f2fe" fill-opacity="0.35"/><polygon points="210,56 228,36 246,56" fill="#bae6fd" fill-opacity="0.3"/></svg>`,
       sakura: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><circle cx="216" cy="16" r="5" fill="#f9a8d4" fill-opacity="0.55"/><circle cx="244" cy="30" r="4" fill="#fbcfe8" fill-opacity="0.6"/><circle cx="268" cy="12" r="3.4" fill="#e9d5ff" fill-opacity="0.6"/><circle cx="192" cy="34" r="3" fill="#f9a8d4" fill-opacity="0.45"/><path d="M150 52 Q210 40 292 46" stroke="#db2777" stroke-width="1.8" stroke-opacity="0.35" fill="none"/></svg>`,
+      warm_ivory: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><circle cx="244" cy="18" r="18" fill="#f59e0b" fill-opacity="0.24"/><circle cx="206" cy="34" r="12" fill="#38bdf8" fill-opacity="0.16"/><path d="M128 52 Q204 26 296 36" stroke="#d97706" stroke-width="2" stroke-opacity="0.36" fill="none"/></svg>`,
+      celadon_mist: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><path d="M188 56 L192 8 M222 56 L225 14 M254 56 L252 10" stroke="#0f766e" stroke-width="1.8" stroke-opacity="0.36"/><path d="M192 22 Q204 16 212 20 M224 28 Q236 22 244 26 M252 18 Q264 12 272 16" stroke="#0d9488" stroke-width="2" stroke-opacity="0.42" fill="none"/><path d="M80 56 Q165 30 300 42 L300 56 Z" fill="#0f766e" fill-opacity="0.14"/></svg>`,
+      velvet_noir: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><circle cx="222" cy="18" r="14" fill="#f472b6" fill-opacity="0.22"/><circle cx="258" cy="28" r="10" fill="#a855f7" fill-opacity="0.26"/><path d="M138 48 Q206 16 294 34" stroke="#f472b6" stroke-width="1.8" stroke-opacity="0.45" fill="none"/></svg>`,
+      obsidian_gold: `<svg width="300" height="56" viewBox="0 0 300 56" fill="none"><circle cx="236" cy="20" r="13" fill="#fbbf24" fill-opacity="0.24"/><circle cx="268" cy="14" r="6" fill="#38bdf8" fill-opacity="0.22"/><path d="M142 50 L204 22 L248 38 L294 14" stroke="#fbbf24" stroke-width="1.8" stroke-opacity="0.44" fill="none"/></svg>`,
     };
 
     const DEFAULT_THEMES_CATALOG = [
@@ -8975,11 +9001,15 @@
       { id: 'autumn', name: '秋林枫叶橙', subtitle: '暖阳银杏琥珀 · 层林尽染微插画', primary: '#ea580c', accent: '#d97706', bg: '#fdf6f0', is_dark: false },
       { id: 'golden_gate', name: '金门落日红', subtitle: '朱砂海湾霞光 · 长桥剪影微插画', primary: '#dc2626', accent: '#e11d48', bg: '#fef4f4', is_dark: false },
       { id: 'snow_peak', name: '雪山冰川蓝', subtitle: '凛冽日照雪峰 · 冰川折线微插画', primary: '#0284c7', accent: '#4f46e5', bg: '#eff6ff', is_dark: false },
+      { id: 'sakura', name: '樱语粉霞', subtitle: '暮樱粉紫霞光 · 落瓣微插画', primary: '#db2777', accent: '#a855f7', bg: '#fdf2f6', is_dark: false },
+      { id: 'warm_ivory', name: '暖阳白衫', subtitle: '温润米白琥珀金 · 阳光书院气息', primary: '#d97706', accent: '#0284c7', bg: '#fbf8f1', is_dark: false },
+      { id: 'celadon_mist', name: '青竹烟雨', subtitle: '清透天青水墨竹韵 · 古风雅致', primary: '#0f766e', accent: '#334155', bg: '#f1f6f4', is_dark: false },
       { id: 'deep_forest', name: '深林暗夜', subtitle: '沉浸护眼松石暗色 · 星夜松影微插画', primary: '#10b981', accent: '#38bdf8', bg: '#0b1512', is_dark: true },
       { id: 'nebula', name: '星穹紫夜', subtitle: '银河星云暗色 · 紫罗兰霓虹微光', primary: '#8b5cf6', accent: '#ec4899', bg: '#0d0b1e', is_dark: true },
       { id: 'cyber', name: '赛博霓虹', subtitle: '夜城雨雾青品红 · 全息光轨微插画', primary: '#06b6d4', accent: '#d946ef', bg: '#061019', is_dark: true },
       { id: 'polar', name: '极光夜航', subtitle: '冰原极光松石暗色 · 雪夜流萤微插画', primary: '#2dd4bf', accent: '#818cf8', bg: '#071318', is_dark: true },
-      { id: 'sakura', name: '樱语粉霞', subtitle: '暮樱粉紫霞光 · 落瓣微插画', primary: '#db2777', accent: '#a855f7', bg: '#fdf2f6', is_dark: false },
+      { id: 'velvet_noir', name: '丝绒夜宴', subtitle: '微醺暮玫暗紫丝绒 · 都市高智晚风', primary: '#f472b6', accent: '#a855f7', bg: '#120b16', is_dark: true },
+      { id: 'obsidian_gold', name: '黑曜流金', subtitle: '冷峻黑曜琥珀流金 · 暗夜电影质感', primary: '#fbbf24', accent: '#38bdf8', bg: '#0c0d12', is_dark: true },
     ];
 
     const MODULE_TOGGLE_DEFS = [
@@ -9009,15 +9039,27 @@
 
     // ---------------- AI Ambient Scenes & Immersive Focus Scene Engine ----------------
     const SCENE_CATALOG = [
-      { id: 'none', name: '无场景', icon: '🪽', fx: null, acc: '#a855f7', acc2: '#ec4899', audio: null },
-      { id: 'starfield', name: '银河星空', icon: '🌌', fx: 'stars', acc: '#a78bfa', acc2: '#f472b6', audio: 'space' },
-      { id: 'scifi', name: '科幻夜城', icon: '🏙️', fx: 'streaks', acc: '#22d3ee', acc2: '#e879f9', audio: 'hum' },
-      { id: 'neon', name: '霓虹光轨', icon: '⚡', fx: 'neon', acc: '#38bdf8', acc2: '#f0abfc', audio: 'hum' },
-      { id: 'nature', name: '森林秘境', icon: '🌲', fx: 'fireflies', acc: '#34d399', acc2: '#fbbf24', audio: 'wind' },
-      { id: 'aurora', name: '极地极光', icon: '🌠', fx: 'snow', acc: '#5eead4', acc2: '#a5b4fc', audio: 'wind' },
-      { id: 'ocean', name: '深海之梦', icon: '🌊', fx: 'bubbles', acc: '#22d3ee', acc2: '#818cf8', audio: 'waves' },
-      { id: 'portrait_m', name: '霓虹绅士', icon: '🕴️', fx: 'bokeh', acc: '#fbbf24', acc2: '#2dd4bf', audio: 'vinyl' },
-      { id: 'portrait_f', name: '樱花佳人', icon: '🌸', fx: 'petals', acc: '#f9a8d4', acc2: '#c4b5fd', audio: 'vinyl' },
+      { id: 'none', name: '无场景', subtitle: '纯净无壁纸背景', cat: 'all', icon: '🪽', fx: null, acc: '#a855f7', acc2: '#ec4899', audio: null, pairedTheme: null },
+      { id: 'portrait_m_sunny', name: '阳光少年', subtitle: '暖阳白衫 · 清爽书院学长', cat: 'male', icon: '☀️', fx: 'bokeh', acc: '#f59e0b', acc2: '#38bdf8', audio: 'wind', pairedTheme: 'warm_ivory' },
+      { id: 'portrait_m_ancient', name: '竹影公子', subtitle: '青竹烟雨 · 温润古风雅士', cat: 'male', icon: '🎋', fx: 'fireflies', acc: '#34d399', acc2: '#67e8f9', audio: 'wind', pairedTheme: 'celadon_mist' },
+      { id: 'portrait_m_sport', name: '海风型男', subtitle: '晴海落日 · 清爽运动少年', cat: 'male', icon: '🌊', fx: 'bubbles', acc: '#38bdf8', acc2: '#fb923c', audio: 'waves', pairedTheme: 'snow_peak' },
+      { id: 'portrait_m', name: '禁欲绅士', subtitle: '高定西装 · 都市暗夜电影', cat: 'male', icon: '🕴️', fx: 'bokeh', acc: '#fbbf24', acc2: '#2dd4bf', audio: 'vinyl', pairedTheme: 'obsidian_gold' },
+      { id: 'portrait_f_cool', name: '清冷御姐', subtitle: '暮色天际 · 都市高智晚风', cat: 'female', icon: '💎', fx: 'bokeh', acc: '#f472b6', acc2: '#c084fc', audio: 'vinyl', pairedTheme: 'velvet_noir' },
+      { id: 'portrait_f_hanfu', name: '江南仕女', subtitle: '烟雨水榭 · 宋韵汉服清雅', cat: 'female', icon: '🏮', fx: 'petals', acc: '#2dd4bf', acc2: '#fda4af', audio: 'waves', pairedTheme: 'celadon_mist' },
+      { id: 'portrait_f_vitality', name: '元气甜妹', subtitle: '晴空海湾 · 明媚治愈少女', cat: 'female', icon: '🌻', fx: 'stars', acc: '#38bdf8', acc2: '#facc15', audio: 'waves', pairedTheme: 'warm_ivory' },
+      { id: 'portrait_f', name: '樱花佳人', subtitle: '暮樱漫舞 · 温柔浪漫写真', cat: 'female', icon: '🌸', fx: 'petals', acc: '#f9a8d4', acc2: '#c4b5fd', audio: 'vinyl', pairedTheme: 'sakura' },
+      { id: 'starfield', name: '银河星空', subtitle: '璀璨星云 · 深空静谧冥想', cat: 'nature', icon: '🌌', fx: 'stars', acc: '#a78bfa', acc2: '#f472b6', audio: 'space', pairedTheme: 'nebula' },
+      { id: 'scifi', name: '科幻夜城', subtitle: '未来天际 · 全息流光夜雨', cat: 'nature', icon: '🏙️', fx: 'streaks', acc: '#22d3ee', acc2: '#e879f9', audio: 'hum', pairedTheme: 'cyber' },
+      { id: 'neon', name: '霓虹光轨', subtitle: '赛博街景 · 炫彩电音律动', cat: 'nature', icon: '⚡', fx: 'neon', acc: '#38bdf8', acc2: '#f0abfc', audio: 'hum', pairedTheme: 'cyber' },
+      { id: 'nature', name: '森林秘境', subtitle: '晨雾松林 · 萤火虫呼吸感', cat: 'nature', icon: '🌲', fx: 'fireflies', acc: '#34d399', acc2: '#fbbf24', audio: 'wind', pairedTheme: 'deep_forest' },
+      { id: 'aurora', name: '极地极光', subtitle: '冰原雪峰 · 绿紫极光漫舞', cat: 'nature', icon: '🌠', fx: 'snow', acc: '#5eead4', acc2: '#a5b4fc', audio: 'wind', pairedTheme: 'polar' },
+      { id: 'ocean', name: '深海之梦', subtitle: '蔚蓝光束 · 静谧深潜气泡', cat: 'nature', icon: '🌊', fx: 'bubbles', acc: '#22d3ee', acc2: '#818cf8', audio: 'waves', pairedTheme: 'snow_peak' },
+    ];
+    const SCENE_CATEGORY_TABS = [
+      { id: 'all', label: '全部' },
+      { id: 'male', label: '✨ 帅哥系列' },
+      { id: 'female', label: '🌸 美女系列' },
+      { id: 'nature', label: '🌌 自然科幻' },
     ];
     const SCENE_INTENSITY_LABELS = ['关闭', '微光', '标准', '沉浸'];
     const SCENE_INTENSITY_OPACITY = [0, 0.26, 0.48, 0.74];
@@ -9025,6 +9067,8 @@
       site: localStorage.getItem('tm_scene_id') || 'none',
       intensity: Math.max(0, Math.min(3, Number(localStorage.getItem('tm_scene_intensity') ?? 2) || 0)),
       motion: localStorage.getItem('tm_scene_motion') !== '0',
+      syncTheme: localStorage.getItem('tm_scene_sync_theme') !== '0',
+      category: 'all',
       focus: localStorage.getItem('tm_focus_scene') || 'auto',
       dim: Number(localStorage.getItem('tm_focus_dim') ?? 45),
       blur: Number(localStorage.getItem('tm_focus_blur') ?? 0),
@@ -9085,14 +9129,48 @@
       }).catch(() => {});
     }
 
+    function setSceneCategory(cat) {
+      sceneState.category = SCENE_CATEGORY_TABS.some(c => c.id === cat) ? cat : 'all';
+      renderSceneGallery();
+    }
+
+    function setSceneSyncTheme(on) {
+      sceneState.syncTheme = Boolean(on);
+      localStorage.setItem('tm_scene_sync_theme', sceneState.syncTheme ? '1' : '0');
+      renderSceneGallery();
+    }
+
     function setSiteScene(id) {
-      sceneState.site = sceneById(id).id;
+      const sc = sceneById(id);
+      sceneState.site = sc.id;
       localStorage.setItem('tm_scene_id', sceneState.site);
+      if (sc.id !== 'none' && sceneState.intensity === 0) {
+        sceneState.intensity = 2;
+        localStorage.setItem('tm_scene_intensity', '2');
+      }
+      if (sc.id !== 'none' && sceneState.syncTheme && sc.pairedTheme && THEME_VECTOR_SVGS[sc.pairedTheme]) {
+        applyThemeDOM(sc.pairedTheme);
+        if (document.getElementById('prefsModal')?.classList.contains('open')) {
+          renderPrefsModalContent();
+        } else {
+          renderSceneGallery();
+        }
+        apiPost('/api/preferences', {
+          theme_id: sc.pairedTheme,
+          extra: {
+            scene_id: sceneState.site,
+            scene_intensity: sceneState.intensity,
+            scene_motion: sceneState.motion ? 1 : 0,
+          },
+        }).catch(() => {});
+        const meta = (appPreferences.themes_catalog || DEFAULT_THEMES_CATALOG).find(x => x.id === sc.pairedTheme);
+        showToast(`${sc.icon} 主题场景：${sc.name}（已联动「${meta ? meta.name : sc.pairedTheme}」配色）`);
+        return;
+      }
       applySceneDOM();
       renderSceneGallery();
       syncScenePrefsToServer();
-      const sc = sceneById(sceneState.site);
-      showToast(sc.id === 'none' ? '🪽 已关闭环境场景，回归纯净界面' : `🌌 环境场景：${sc.name}（全站氛围光已同步）`);
+      showToast(sc.id === 'none' ? '🪽 已关闭环境场景，回归纯净界面' : `${sc.icon} 环境场景：${sc.name}（全站氛围光已同步）`);
     }
 
     function setSceneIntensity(level) {
@@ -9111,16 +9189,33 @@
     }
 
     function renderSceneGallery() {
+      const catBar = document.getElementById('sceneCategoryBar');
+      if (catBar) {
+        catBar.innerHTML = SCENE_CATEGORY_TABS.map(c => {
+          const count = c.id === 'all'
+            ? SCENE_CATALOG.length
+            : SCENE_CATALOG.filter(s => s.cat === c.id).length;
+          return `<button type="button" class="seg-pill-btn ${sceneState.category === c.id ? 'active' : ''}" onclick="setSceneCategory('${esc(c.id)}')">${esc(c.label)} <span style="opacity:0.65;font-size:11px;">${count}</span></button>`;
+        }).join('');
+      }
+      const syncCheck = document.getElementById('sceneSyncThemeCheck');
+      if (syncCheck) syncCheck.checked = sceneState.syncTheme;
       const grid = document.getElementById('sceneGalleryGrid');
       if (grid) {
-        grid.innerHTML = SCENE_CATALOG.map(s => {
+        const list = sceneState.category === 'all'
+          ? SCENE_CATALOG
+          : SCENE_CATALOG.filter(s => s.cat === sceneState.category);
+        grid.innerHTML = list.map(s => {
           const sel = s.id === sceneState.site;
+          const isPortrait = s.cat === 'male' || s.cat === 'female';
+          const bgPos = isPortrait ? 'background-position:62% 24%;' : '';
           return `
-            <button type="button" class="scene-card-item ${sel ? 'selected' : ''}" onclick="setSiteScene('${esc(s.id)}')">
+            <button type="button" class="scene-card-item ${sel ? 'selected' : ''}" data-scene-id="${esc(s.id)}" onclick="setSiteScene('${esc(s.id)}')">
               ${s.id === 'none'
                 ? `<div class="scene-card-none">🪽</div>`
-                : `<div class="scene-card-thumb" style="background-image:url('${sceneImgUrl(s.id)}');">${sel ? '<span class="scene-check">✓</span>' : ''}</div>`}
+                : `<div class="scene-card-thumb" style="background-image:url('${sceneImgUrl(s.id)}');${bgPos}">${sel ? '<span class="scene-check">✓</span>' : ''}</div>`}
               <div style="font-weight:700;font-size:12.5px;color:var(--heading);">${s.icon} ${esc(s.name)}</div>
+              ${s.subtitle ? `<div style="font-size:10.5px;color:var(--muted);line-height:1.3;">${esc(s.subtitle)}</div>` : ''}
             </button>
           `;
         }).join('');
@@ -9587,7 +9682,7 @@
       if (artEl) artEl.innerHTML = THEME_VECTOR_SVGS[validId] || '';
       const metaTheme = document.querySelector('meta[name="theme-color"]');
       if (metaTheme) {
-        const darkBgs = { deep_forest: '#0b1512', nebula: '#0d0b1e', cyber: '#061019', polar: '#071318' };
+        const darkBgs = { deep_forest: '#0b1512', nebula: '#0d0b1e', cyber: '#061019', polar: '#071318', velvet_noir: '#120b16', obsidian_gold: '#0c0d12' };
         metaTheme.setAttribute('content', darkBgs[validId] || '#0f172a');
       }
       applySceneDOM();

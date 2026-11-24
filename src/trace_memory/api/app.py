@@ -109,7 +109,22 @@ DASHBOARD_HTML_PATH = Path(__file__).with_name("dashboard.html")
 APP_ICON_PNG_PATH = Path(__file__).with_name("app_icon.png")
 SCENES_DIR = Path(__file__).with_name("scenes")
 SCENE_IDS = frozenset(
-    {"starfield", "scifi", "neon", "nature", "aurora", "ocean", "portrait_m", "portrait_f"}
+    {
+        "starfield",
+        "scifi",
+        "neon",
+        "nature",
+        "aurora",
+        "ocean",
+        "portrait_m",
+        "portrait_m_sunny",
+        "portrait_m_ancient",
+        "portrait_m_sport",
+        "portrait_f",
+        "portrait_f_cool",
+        "portrait_f_hanfu",
+        "portrait_f_vitality",
+    }
 )
 
 _DASHBOARD_CACHE: dict[str, Any] = {
