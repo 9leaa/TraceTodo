@@ -3,7 +3,8 @@ import Foundation
 /// Shared configuration and offline snapshot bridge between the main TraceTodo app
 /// and the iOS Widget Extension via App Groups (with graceful fallback when unsigned/sideloaded).
 enum SharedWidgetBridge {
-    static let prodCloudServerURL = "http://43.228.79.133:18090"
+    static let prodCloudServerURL = "https://todo.531party.cn"
+    static let prodCloudDirectIPURL = "http://43.228.79.133:18090"
     static let testCloudServerURL = "http://43.228.79.133:18091"
 
     #if TRACETODO_TEST_BUILD
