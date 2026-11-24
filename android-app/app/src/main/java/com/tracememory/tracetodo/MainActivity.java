@@ -5,6 +5,7 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ClipData;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -23,7 +24,6 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
-import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
@@ -41,11 +41,14 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import org.json.JSONObject;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -69,7 +72,7 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> fileUploadCallback;
     private PermissionRequest pendingWebPermissionRequest;
 
-    private String currentBaseUrl;
+    private String currentBaseUrl = "https://todo.531party.cn";
     private boolean triedFallbackOnColdLoad = false;
     private boolean pageLoadedOnce = false;
     private String pendingDeepAction = null;
@@ -80,26 +83,109 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        SharedPreferences sp = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        int initialBg = sp.getInt(KEY_LAST_THEME_BG, Color.parseColor("#F4F6FB"));
-        applySystemBarColorsInt(initialBg);
+        try {
+            int initialBg = Color.parseColor("#F4F6FB");
+            SharedPreferences sp = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+            try {
+                initialBg = sp.getInt(KEY_LAST_THEME_BG, initialBg);
+            } catch (Throwable ignored) {
+            }
 
-        String defaultUrl = getString(R.string.default_server_url);
-        boolean customized = sp.getBoolean(KEY_USER_CUSTOMIZED, false);
-        String savedUrl = sp.getString(KEY_SERVER_URL, "");
-        if (!customized || savedUrl == null || savedUrl.trim().isEmpty()) {
-            currentBaseUrl = defaultUrl;
-            sp.edit().putString(KEY_SERVER_URL, defaultUrl).apply();
-        } else {
-            currentBaseUrl = cleanServerUrl(savedUrl);
+            String defaultUrl = getString(R.string.default_server_url);
+            boolean customized = false;
+            String savedUrl = "";
+            try {
+                customized = sp.getBoolean(KEY_USER_CUSTOMIZED, false);
+                savedUrl = sp.getString(KEY_SERVER_URL, "");
+            } catch (Throwable ignored) {
+            }
+
+            if (!customized || savedUrl == null || savedUrl.trim().isEmpty()) {
+                currentBaseUrl = defaultUrl;
+                sp.edit().putString(KEY_SERVER_URL, defaultUrl).apply();
+            } else {
+                currentBaseUrl = cleanServerUrl(savedUrl);
+            }
+
+            captureIncomingIntent(getIntent());
+            buildRootLayout(initialBg);
+            applySystemBarColorsInt(initialBg);
+            configureWebView();
+            requestNotificationPermissionIfNeeded();
+            loadServerHome(false);
+        } catch (Throwable t) {
+            showFatalFallbackView(t);
         }
+    }
 
-        captureIncomingIntent(getIntent());
-        buildRootLayout(initialBg);
-        configureWebView();
-        requestNotificationPermissionIfNeeded();
+    private void showFatalFallbackView(Throwable t) {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(Color.parseColor("#F4F6FB"));
 
-        loadServerHome(false);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setGravity(Gravity.CENTER_HORIZONTAL);
+        box.setPadding(dp(24), dp(48), dp(24), dp(32));
+
+        TextView title = new TextView(this);
+        title.setText("TraceTodo 启动兼容提示");
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(Color.parseColor("#0F172A"));
+        box.addView(title);
+
+        TextView sub = new TextView(this);
+        sub.setText("当前设备系统 WebView 组件受限或正在升级，可直接使用系统浏览器打开工作台：");
+        sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
+        sub.setTextColor(Color.parseColor("#475569"));
+        LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        subLp.topMargin = dp(12);
+        box.addView(sub, subLp);
+
+        Button openBrowserBtn = new Button(this);
+        openBrowserBtn.setText("🌐 使用系统浏览器打开 TraceTodo");
+        openBrowserBtn.setAllCaps(false);
+        openBrowserBtn.setTextColor(Color.WHITE);
+        GradientDrawable btnBg = new GradientDrawable();
+        btnBg.setColor(Color.parseColor("#2563EB"));
+        btnBg.setCornerRadius(dp(999));
+        openBrowserBtn.setBackground(btnBg);
+        openBrowserBtn.setPadding(dp(24), dp(12), dp(24), dp(12));
+        openBrowserBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                try {
+                    Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(currentBaseUrl + "/console"));
+                    startActivity(i);
+                } catch (Throwable ignored) {
+                }
+            }
+        });
+        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        btnLp.topMargin = dp(20);
+        box.addView(openBrowserBtn, btnLp);
+
+        StringWriter sw = new StringWriter();
+        t.printStackTrace(new PrintWriter(sw));
+        TextView trace = new TextView(this);
+        trace.setText(sw.toString());
+        trace.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        trace.setTextColor(Color.parseColor("#64748B"));
+        LinearLayout.LayoutParams trLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        trLp.topMargin = dp(20);
+        box.addView(trace, trLp);
+
+        scroll.addView(box);
+        setContentView(scroll);
     }
 
     @Override
@@ -107,24 +193,27 @@ public class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         captureIncomingIntent(intent);
-        if (pageLoadedOnce) {
+        if (pageLoadedOnce && webView != null) {
             dispatchPendingIntentActions();
         }
     }
 
     private void captureIncomingIntent(Intent intent) {
         if (intent == null) return;
-        String action = intent.getAction();
-        if (Intent.ACTION_SEND.equals(action) && "text/plain".equals(intent.getType())) {
-            String shared = intent.getStringExtra(Intent.EXTRA_TEXT);
-            if (shared != null && !shared.trim().isEmpty()) {
-                pendingSharedText = shared.trim();
+        try {
+            String action = intent.getAction();
+            if (Intent.ACTION_SEND.equals(action) && "text/plain".equals(intent.getType())) {
+                String shared = intent.getStringExtra(Intent.EXTRA_TEXT);
+                if (shared != null && !shared.trim().isEmpty()) {
+                    pendingSharedText = shared.trim();
+                }
+            } else if (Intent.ACTION_VIEW.equals(action) && intent.getData() != null) {
+                Uri data = intent.getData();
+                if ("tracetodo".equalsIgnoreCase(data.getScheme())) {
+                    pendingDeepAction = data.getHost() != null ? data.getHost().toLowerCase() : "";
+                }
             }
-        } else if (Intent.ACTION_VIEW.equals(action) && intent.getData() != null) {
-            Uri data = intent.getData();
-            if ("tracetodo".equalsIgnoreCase(data.getScheme())) {
-                pendingDeepAction = data.getHost() != null ? data.getHost().toLowerCase() : "";
-            }
+        } catch (Throwable ignored) {
         }
     }
 
@@ -206,9 +295,12 @@ public class MainActivity extends Activity {
         primaryBg.setCornerRadius(dp(999));
         retryBtn.setBackground(primaryBg);
         retryBtn.setPadding(dp(26), dp(10), dp(26), dp(10));
-        retryBtn.setOnClickListener(v -> {
-            offlineOverlay.setVisibility(View.GONE);
-            loadServerHome(true);
+        retryBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                offlineOverlay.setVisibility(View.GONE);
+                loadServerHome(true);
+            }
         });
         LinearLayout.LayoutParams retryLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -227,7 +319,12 @@ public class MainActivity extends Activity {
         secBg.setCornerRadius(dp(999));
         switchBtn.setBackground(secBg);
         switchBtn.setPadding(dp(22), dp(8), dp(22), dp(8));
-        switchBtn.setOnClickListener(v -> showServerSwitchDialog());
+        switchBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showServerSwitchDialog();
+            }
+        });
         LinearLayout.LayoutParams swLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -240,9 +337,12 @@ public class MainActivity extends Activity {
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     private void configureWebView() {
-        CookieManager cm = CookieManager.getInstance();
-        cm.setAcceptCookie(true);
-        cm.setAcceptThirdPartyCookies(webView, true);
+        try {
+            CookieManager cm = CookieManager.getInstance();
+            cm.setAcceptCookie(true);
+            cm.setAcceptThirdPartyCookies(webView, true);
+        } catch (Throwable ignored) {
+        }
 
         WebSettings ws = webView.getSettings();
         ws.setJavaScriptEnabled(true);
@@ -258,7 +358,8 @@ public class MainActivity extends Activity {
         ws.setTextZoom(100);
         ws.setCacheMode(WebSettings.LOAD_DEFAULT);
         ws.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
-        ws.setUserAgentString(ws.getUserAgentString() + " TraceTodoAndroid/1.4.0");
+        String origUa = ws.getUserAgentString();
+        ws.setUserAgentString((origUa != null ? origUa : "") + " TraceTodoAndroid/1.4.2");
 
         webView.addJavascriptInterface(new NativeBridge(), "TraceTodoNative");
 
@@ -270,7 +371,7 @@ public class MainActivity extends Activity {
                         Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
                         startActivity(i);
                     }
-                } catch (Exception ignored) {
+                } catch (Throwable ignored) {
                 }
             }
         });
@@ -278,6 +379,7 @@ public class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                if (request == null) return false;
                 Uri uri = request.getUrl();
                 if (uri == null) return false;
                 String scheme = uri.getScheme() != null ? uri.getScheme().toLowerCase() : "";
@@ -290,7 +392,7 @@ public class MainActivity extends Activity {
                     }
                     try {
                         startActivity(new Intent(Intent.ACTION_VIEW, uri));
-                    } catch (Exception ignored) {
+                    } catch (Throwable ignored) {
                     }
                     return true;
                 }
@@ -300,7 +402,9 @@ public class MainActivity extends Activity {
             @Override
             public void onPageStarted(WebView view, String url, Bitmap favicon) {
                 super.onPageStarted(view, url, favicon);
-                offlineOverlay.setVisibility(View.GONE);
+                if (offlineOverlay != null) {
+                    offlineOverlay.setVisibility(View.GONE);
+                }
             }
 
             @Override
@@ -324,9 +428,10 @@ public class MainActivity extends Activity {
                         view.loadUrl(currentBaseUrl + "/console");
                         return;
                     }
-                    String desc = (error != null && error.getDescription() != null)
-                            ? error.getDescription().toString()
-                            : "网络连接不可用";
+                    String desc = "网络连接不可用";
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && error != null && error.getDescription() != null) {
+                        desc = error.getDescription().toString();
+                    }
                     offlineDetailText.setText("当前地址：" + currentBaseUrl + "\n原因：" + desc);
                     offlineOverlay.setVisibility(View.VISIBLE);
                 }
@@ -336,6 +441,7 @@ public class MainActivity extends Activity {
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onProgressChanged(WebView view, int newProgress) {
+                if (progressBar == null) return;
                 if (newProgress >= 100) {
                     progressBar.setVisibility(View.GONE);
                 } else {
@@ -363,7 +469,7 @@ public class MainActivity extends Activity {
                 try {
                     startActivityForResult(chooser, REQ_FILE_CHOOSER);
                     return true;
-                } catch (Exception e) {
+                } catch (Throwable e) {
                     fileUploadCallback = null;
                     return false;
                 }
@@ -371,25 +477,32 @@ public class MainActivity extends Activity {
 
             @Override
             public void onPermissionRequest(final PermissionRequest request) {
-                runOnUiThread(() -> {
-                    String[] resources = request.getResources();
-                    List<String> osPermsNeeded = new ArrayList<>();
-                    for (String r : resources) {
-                        if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(r)) {
-                            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                                osPermsNeeded.add(Manifest.permission.RECORD_AUDIO);
-                            }
-                        } else if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(r)) {
-                            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                                osPermsNeeded.add(Manifest.permission.CAMERA);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (request == null) return;
+                        String[] resources = request.getResources();
+                        List<String> osPermsNeeded = new ArrayList<String>();
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && resources != null) {
+                            for (int i = 0; i < resources.length; i++) {
+                                String r = resources[i];
+                                if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(r)) {
+                                    if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                                        osPermsNeeded.add(Manifest.permission.RECORD_AUDIO);
+                                    }
+                                } else if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(r)) {
+                                    if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                                        osPermsNeeded.add(Manifest.permission.CAMERA);
+                                    }
+                                }
                             }
                         }
-                    }
-                    if (osPermsNeeded.isEmpty()) {
-                        request.grant(resources);
-                    } else {
-                        pendingWebPermissionRequest = request;
-                        requestPermissions(osPermsNeeded.toArray(new String[0]), REQ_WEB_PERMISSIONS);
+                        if (osPermsNeeded.isEmpty() || Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                            request.grant(resources);
+                        } else {
+                            pendingWebPermissionRequest = request;
+                            requestPermissions(osPermsNeeded.toArray(new String[0]), REQ_WEB_PERMISSIONS);
+                        }
                     }
                 });
             }
@@ -397,6 +510,7 @@ public class MainActivity extends Activity {
     }
 
     private void injectNativeEnhancementBridge() {
+        if (webView == null) return;
         String js = "(function(){"
                 + "if(window.__ttAndroidBridgeInstalled)return;"
                 + "window.__ttAndroidBridgeInstalled=true;"
@@ -439,22 +553,28 @@ public class MainActivity extends Activity {
     }
 
     private void dispatchPendingIntentActions() {
+        if (webView == null) return;
         if (pendingSharedText != null && !pendingSharedText.isEmpty()) {
             final String textToInject = pendingSharedText;
             pendingSharedText = null;
             String quoted = JSONObject.quote(textToInject);
-            String js = "(function(){"
+            final String js = "(function(){"
                     + "if(typeof switchTab==='function')switchTab('tasks');"
                     + "var inp=document.getElementById('quickInput')||document.querySelector('input.main-input');"
                     + "if(inp){inp.value=" + quoted + ";inp.dispatchEvent(new Event('input',{bubbles:true}));inp.focus();}"
                     + "if(typeof showToast==='function')showToast('✨ 已带入分享文本，点击「AI 录入」即可归档');"
                     + "})();";
-            webView.postDelayed(() -> webView.evaluateJavascript(js, null), 280);
+            webView.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    if (webView != null) webView.evaluateJavascript(js, null);
+                }
+            }, 280);
         }
         if (pendingDeepAction != null && !pendingDeepAction.isEmpty()) {
             final String act = pendingDeepAction;
             pendingDeepAction = null;
-            String js;
+            final String js;
             if ("focus".equals(act)) {
                 js = "if(typeof switchTab==='function')switchTab('focus');";
             } else if ("calendar".equals(act)) {
@@ -466,67 +586,95 @@ public class MainActivity extends Activity {
             } else {
                 js = "if(typeof switchTab==='function')switchTab('tasks');var q=document.getElementById('quickInput')||document.querySelector('input.main-input');if(q)q.focus();";
             }
-            webView.postDelayed(() -> webView.evaluateJavascript(js, null), 260);
+            webView.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    if (webView != null) webView.evaluateJavascript(js, null);
+                }
+            }, 260);
         }
     }
 
-    private final class NativeBridge {
+    public final class NativeBridge {
         @JavascriptInterface
         public void onThemeBgChanged(final String cssColor) {
-            runOnUiThread(() -> {
-                Integer parsed = parseCssColor(cssColor);
-                if (parsed != null) {
-                    applySystemBarColorsInt(parsed);
-                    rootLayout.setBackgroundColor(parsed);
-                    webView.setBackgroundColor(parsed);
-                    getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                            .edit()
-                            .putInt(KEY_LAST_THEME_BG, parsed)
-                            .apply();
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    Integer parsed = parseCssColor(cssColor);
+                    if (parsed != null) {
+                        applySystemBarColorsInt(parsed.intValue());
+                        if (rootLayout != null) rootLayout.setBackgroundColor(parsed.intValue());
+                        if (webView != null) webView.setBackgroundColor(parsed.intValue());
+                        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                                .edit()
+                                .putInt(KEY_LAST_THEME_BG, parsed.intValue())
+                                .apply();
+                    }
                 }
             });
         }
 
         @JavascriptInterface
         public void setKeepScreenOn(final boolean keepOn) {
-            runOnUiThread(() -> {
-                Window w = getWindow();
-                if (w == null) return;
-                if (keepOn) {
-                    w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                } else {
-                    w.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        Window w = getWindow();
+                        if (w == null) return;
+                        if (keepOn) {
+                            w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                        } else {
+                            w.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                        }
+                    } catch (Throwable ignored) {
+                    }
                 }
             });
         }
 
         @JavascriptInterface
         public void lightTap() {
-            runOnUiThread(() -> {
-                if (webView != null) {
-                    webView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        if (webView != null) {
+                            webView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+                        }
+                    } catch (Throwable ignored) {
+                    }
                 }
             });
         }
 
         @JavascriptInterface
         public void shareExportedText(final String filename, final String content) {
-            runOnUiThread(() -> {
-                if (content == null || content.isEmpty()) return;
-                Intent send = new Intent(Intent.ACTION_SEND);
-                send.setType("text/markdown");
-                send.putExtra(Intent.EXTRA_SUBJECT, filename != null ? filename : "TraceTodo-Export.md");
-                send.putExtra(Intent.EXTRA_TEXT, content);
-                try {
-                    startActivity(Intent.createChooser(send, "导出 / 分享知识库 Markdown"));
-                } catch (Exception ignored) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (content == null || content.isEmpty()) return;
+                    Intent send = new Intent(Intent.ACTION_SEND);
+                    send.setType("text/plain");
+                    send.putExtra(Intent.EXTRA_SUBJECT, filename != null ? filename : "TraceTodo-Export.md");
+                    send.putExtra(Intent.EXTRA_TEXT, content);
+                    try {
+                        startActivity(Intent.createChooser(send, "导出 / 分享知识库 Markdown"));
+                    } catch (Throwable ignored) {
+                    }
                 }
             });
         }
 
         @JavascriptInterface
         public void openServerSwitcher() {
-            runOnUiThread(MainActivity.this::showServerSwitchDialog);
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    showServerSwitchDialog();
+                }
+            });
         }
     }
 
@@ -535,7 +683,7 @@ public class MainActivity extends Activity {
         String s = raw.trim();
         try {
             if (s.startsWith("#")) {
-                return Color.parseColor(s);
+                return Integer.valueOf(Color.parseColor(s));
             }
             if (s.startsWith("rgb")) {
                 int l = s.indexOf('(');
@@ -546,46 +694,49 @@ public class MainActivity extends Activity {
                         int red = Integer.parseInt(parts[0].trim());
                         int green = Integer.parseInt(parts[1].trim());
                         int blue = Integer.parseInt(parts[2].trim());
-                        return Color.rgb(red, green, blue);
+                        return Integer.valueOf(Color.rgb(red, green, blue));
                     }
                 }
             }
-        } catch (Exception ignored) {
+        } catch (Throwable ignored) {
         }
         return null;
     }
 
+    @SuppressWarnings("deprecation")
     private void applySystemBarColorsInt(int color) {
-        Window window = getWindow();
-        if (window == null) return;
-        window.setStatusBarColor(color);
-        window.setNavigationBarColor(color);
+        try {
+            Window window = getWindow();
+            if (window == null) return;
+            window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+            window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
+            window.setStatusBarColor(color);
+            window.setNavigationBarColor(color);
 
-        double lum = (0.299 * Color.red(color) + 0.587 * Color.green(color) + 0.114 * Color.blue(color)) / 255.0;
-        boolean isLightBg = lum > 0.55;
+            double lum = (0.299 * Color.red(color) + 0.587 * Color.green(color) + 0.114 * Color.blue(color)) / 255.0;
+            boolean isLightBg = lum > 0.55;
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            WindowInsetsController ctrl = window.getInsetsController();
-            if (ctrl != null) {
-                int mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-                        | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
-                ctrl.setSystemBarsAppearance(isLightBg ? mask : 0, mask);
-            }
-        } else {
             View decor = window.getDecorView();
-            int flags = decor.getSystemUiVisibility();
-            if (isLightBg) {
-                flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            if (decor != null) {
+                int flags = decor.getSystemUiVisibility();
+                if (isLightBg) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+                    }
+                } else {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        flags &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+                    }
                 }
-            } else {
-                flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    flags &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
-                }
+                decor.setSystemUiVisibility(flags);
             }
-            decor.setSystemUiVisibility(flags);
+        } catch (Throwable ignored) {
         }
     }
 
@@ -612,16 +763,22 @@ public class MainActivity extends Activity {
 
         new AlertDialog.Builder(this)
                 .setTitle("切换 TraceTodo 服务端环境")
-                .setItems(presets, (dialog, which) -> {
-                    if (which == 0) applyNewServerUrl(prodHttps, false);
-                    else if (which == 1) applyNewServerUrl(prodIp, true);
-                    else if (which == 2) applyNewServerUrl(testIp, true);
+                .setItems(presets, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        if (which == 0) applyNewServerUrl(prodHttps, false);
+                        else if (which == 1) applyNewServerUrl(prodIp, true);
+                        else if (which == 2) applyNewServerUrl(testIp, true);
+                    }
                 })
                 .setView(container)
-                .setPositiveButton("保存输入的地址", (dialog, which) -> {
-                    String entered = input.getText() != null ? input.getText().toString() : "";
-                    if (!entered.trim().isEmpty()) {
-                        applyNewServerUrl(entered, true);
+                .setPositiveButton("保存输入的地址", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        String entered = input.getText() != null ? input.getText().toString() : "";
+                        if (!entered.trim().isEmpty()) {
+                            applyNewServerUrl(entered, true);
+                        }
                     }
                 })
                 .setNegativeButton("取消", null)
@@ -636,7 +793,9 @@ public class MainActivity extends Activity {
                 .putString(KEY_SERVER_URL, cleaned)
                 .putBoolean(KEY_USER_CUSTOMIZED, userCustomized)
                 .apply();
-        offlineOverlay.setVisibility(View.GONE);
+        if (offlineOverlay != null) {
+            offlineOverlay.setVisibility(View.GONE);
+        }
         loadServerHome(true);
     }
 
@@ -655,14 +814,19 @@ public class MainActivity extends Activity {
         if (!isRetry) {
             triedFallbackOnColdLoad = false;
         }
-        webView.loadUrl(currentBaseUrl + "/console");
+        if (webView != null) {
+            webView.loadUrl(currentBaseUrl + "/console");
+        }
     }
 
     private void requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT >= 33) {
-            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_POST_NOTIF);
+        try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_POST_NOTIF);
+                }
             }
+        } catch (Throwable ignored) {
         }
     }
 
@@ -692,11 +856,13 @@ public class MainActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQ_WEB_PERMISSIONS && pendingWebPermissionRequest != null) {
-            boolean allGranted = grantResults.length > 0;
-            for (int r : grantResults) {
-                if (r != PackageManager.PERMISSION_GRANTED) {
-                    allGranted = false;
-                    break;
+            boolean allGranted = grantResults != null && grantResults.length > 0;
+            if (grantResults != null) {
+                for (int i = 0; i < grantResults.length; i++) {
+                    if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
+                        allGranted = false;
+                        break;
+                    }
                 }
             }
             if (allGranted) {
@@ -719,7 +885,7 @@ public class MainActivity extends Activity {
     }
 
     private void handleSmartBack() {
-        if (offlineOverlay.getVisibility() == View.VISIBLE) {
+        if (webView == null || (offlineOverlay != null && offlineOverlay.getVisibility() == View.VISIBLE)) {
             finish();
             return;
         }
@@ -733,20 +899,23 @@ public class MainActivity extends Activity {
                 + "}"
                 + "return 'none';"
                 + "})();";
-        webView.evaluateJavascript(closeModalJs, value -> {
-            if (value != null && value.contains("closed")) {
-                return;
-            }
-            if (webView.canGoBack()) {
-                webView.goBack();
-                return;
-            }
-            long now = System.currentTimeMillis();
-            if (now - lastBackPressMs < 2000L) {
-                finish();
-            } else {
-                lastBackPressMs = now;
-                Toast.makeText(MainActivity.this, "再按一次返回退出 TraceTodo", Toast.LENGTH_SHORT).show();
+        webView.evaluateJavascript(closeModalJs, new ValueCallback<String>() {
+            @Override
+            public void onReceiveValue(String value) {
+                if (value != null && value.contains("closed")) {
+                    return;
+                }
+                if (webView != null && webView.canGoBack()) {
+                    webView.goBack();
+                    return;
+                }
+                long now = System.currentTimeMillis();
+                if (now - lastBackPressMs < 2000L) {
+                    finish();
+                } else {
+                    lastBackPressMs = now;
+                    Toast.makeText(MainActivity.this, "再按一次返回退出 TraceTodo", Toast.LENGTH_SHORT).show();
+                }
             }
         });
     }
@@ -770,7 +939,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (webView != null) {
-            webView.destroy();
+            try {
+                webView.destroy();
+            } catch (Throwable ignored) {
+            }
         }
         super.onDestroy();
     }

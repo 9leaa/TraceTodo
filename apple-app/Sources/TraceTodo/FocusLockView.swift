@@ -138,7 +138,7 @@ struct FocusLockView: View {
     @State private var abortReason: String = ""
     @State private var isFinishing: Bool = false
     @State private var lockSceneOverrideId: String = ""
-    @State private var dimOpacity: Double = 0.46
+    @State private var dimOpacity: Double = 0.28
 
     private var effectiveLockScene: AmbientSceneItem {
         if !lockSceneOverrideId.isEmpty {
@@ -188,52 +188,97 @@ struct FocusLockView: View {
             Color(red: 0.04, green: 0.05, blue: 0.10)
                 .ignoresSafeArea()
 
-            RemoteSceneWallpaperImage(sceneId: sc.id, serverURL: store.serverURL)
+            RemoteSceneWallpaperImage(sceneId: sc.id, serverURL: store.serverURL, verticalTargetRatio: 0.26)
                 .ignoresSafeArea()
 
-            Color.black.opacity(dimOpacity)
-                .ignoresSafeArea()
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(max(0.08, dimOpacity * 0.45)),
+                    Color.black.opacity(dimOpacity),
+                    Color.black.opacity(min(0.75, dimOpacity + 0.24)),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
 
             if store.sceneMotion {
                 AmbientParticleCanvasView(accent: sc.accentColor, primary: store.activeTheme.primaryColor)
                     .ignoresSafeArea()
             }
 
-            VStack(spacing: 20) {
-                Text(mode == .stopwatch ? "🔒 沉浸正计时专注 · DEEP WORK" : "🔒 沉浸番茄锁屏专注 · DEEP WORK")
-                    .font(.caption.bold())
-                    .tracking(1.3)
-                    .foregroundStyle(Color.white.opacity(0.88))
+            VStack(spacing: 14) {
+                HStack {
+                    Text(mode == .stopwatch ? "🔒 正计时专注" : "🔒 番茄专注")
+                        .font(.caption.bold())
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.black.opacity(0.38))
+                        .foregroundStyle(Color.white.opacity(0.92))
+                        .clipShape(Capsule())
+
+                    Spacer()
+
+                    Button {
+                        if dimOpacity < 0.20 {
+                            dimOpacity = 0.30
+                        } else if dimOpacity < 0.40 {
+                            dimOpacity = 0.52
+                        } else {
+                            dimOpacity = 0.14
+                        }
+                    } label: {
+                        Text(dimOpacity < 0.20 ? "☀️ 高清壁纸" : (dimOpacity < 0.40 ? "🌤️ 标准暗度" : "🌙 深邃暗场"))
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.black.opacity(0.42))
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 8)
+
+                Spacer(minLength: 24)
 
                 Text(task?.title ?? customTitle)
-                    .font(.title2.bold())
+                    .font(.title3.bold())
                     .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.55), radius: 6, x: 0, y: 2)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
 
                 ZStack {
                     Circle()
-                        .stroke(Color.white.opacity(0.16), lineWidth: 12)
+                        .fill(Color.black.opacity(0.24))
+                    Circle()
+                        .stroke(Color.white.opacity(0.20), lineWidth: 10)
                     Circle()
                         .trim(from: 0, to: progress)
                         .stroke(
                             LinearGradient(colors: [sc.accentColor, store.activeTheme.primaryColor], startPoint: .topLeading, endPoint: .bottomTrailing),
-                            style: StrokeStyle(lineWidth: 12, lineCap: .round)
+                            style: StrokeStyle(lineWidth: 10, lineCap: .round)
                         )
                         .rotationEffect(.degrees(-90))
                         .animation(.linear(duration: 0.4), value: progress)
 
                     VStack(spacing: 4) {
                         Text(formattedTimer)
-                            .font(.system(size: 50, weight: .heavy, design: .rounded))
+                            .font(.system(size: 44, weight: .heavy, design: .rounded))
                             .monospacedDigit()
                             .foregroundStyle(.white)
-                        Text(task != nil ? "已专注 \(task?.payload.focusSessionsCompleted ?? 0) 轮" : "🌱 自由专注 · \(sc.name)")
+                        Text(task != nil ? "已专注 \(task?.payload.focusSessionsCompleted ?? 0) 轮" : "🌱 \(sc.name)")
                             .font(.caption)
-                            .foregroundStyle(Color.white.opacity(0.75))
+                            .foregroundStyle(Color.white.opacity(0.82))
                     }
                 }
-                .frame(width: 210, height: 210)
+                #if os(iOS)
+                .frame(width: 178, height: 178)
+                #else
+                .frame(width: 206, height: 206)
+                #endif
 
                 // Quick Scene Switcher Strip matching Web `#focusSceneStrip`
                 ScrollView(.horizontal, showsIndicators: false) {

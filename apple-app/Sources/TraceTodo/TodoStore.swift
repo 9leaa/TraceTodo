@@ -208,7 +208,7 @@ final class TodoStore: ObservableObject {
     }
 
     var cardSurfaceBackground: Color {
-        activeTheme.surfaceBackground.opacity(hasActiveScene ? 0.88 : 1.0)
+        activeTheme.surfaceBackground.opacity(hasActiveScene ? 0.80 : (activeTheme == .classic ? 0.98 : 0.92))
     }
 
     private var todayYMDString: String {

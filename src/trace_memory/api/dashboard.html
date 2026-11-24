@@ -3080,7 +3080,13 @@
       object-fit: cover;
       transition: opacity 0.6s ease, filter 0.3s ease;
     }
-    .focus-scene-dim { position: absolute; inset: 0; background: #04060f; opacity: 0.45; transition: opacity 0.25s ease; }
+    .focus-scene-dim {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(4, 6, 15, 0.35) 0%, rgba(4, 6, 15, 0.72) 55%, rgba(4, 6, 15, 0.94) 100%);
+      opacity: 0.32;
+      transition: opacity 0.25s ease;
+    }
     .focus-scene-layer canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
     .focus-stage,
     .focus-overlay > .focus-topbar,
@@ -3326,9 +3332,27 @@
       cursor: pointer;
     }
     .fs-action-btn:hover { background: rgba(255, 255, 255, 0.2); }
+    @media (max-width: 850px) {
+      [data-theme]:not([data-theme="classic"]) {
+        --theme-tint: 28%;
+      }
+      [data-theme]:not([data-theme="classic"]) body:not(.has-scene) {
+        background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--primary) 22%, var(--bg)), var(--bg) 68%) fixed;
+      }
+      [data-theme]:not([data-theme="classic"]) header {
+        border-bottom-color: color-mix(in srgb, var(--primary) 34%, var(--border));
+      }
+      .header-theme-art {
+        width: 240px;
+        opacity: 0.56;
+      }
+    }
     @media (max-width: 640px) {
       .fs-ctrl-grid { grid-template-columns: repeat(2, 1fr); }
-      .header-theme-art.has-scene { width: 200px; opacity: 0.35; }
+      .header-theme-art.has-scene { width: 220px; opacity: 0.46; }
+      .focus-stage { align-items: flex-end; padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+      .focus-card { margin: auto auto 0; gap: 10px; }
+      .focus-dial { width: min(100%, clamp(148px, min(48vw, 32dvh), 210px)); }
     }
     @media (prefers-reduced-motion: reduce) {
       .ambient-scene-layer img, .focus-overlay.glow-on .focus-dial { animation: none; }
@@ -9193,25 +9217,25 @@
 
     // ---------------- AI Ambient Scenes & Immersive Focus Scene Engine ----------------
     const SCENE_CATALOG = [
-      { id: 'none', name: '无场景', subtitle: '纯净无壁纸背景', cat: 'all', icon: '🪽', fx: null, acc: '#a855f7', acc2: '#ec4899', audio: null, pairedTheme: null },
-      { id: 'portrait_m_sunny', name: '阳光少年', subtitle: '暖阳白衫 · 清爽书院学长', cat: 'male', icon: '☀️', fx: 'bokeh', acc: '#f59e0b', acc2: '#38bdf8', audio: 'wind', pairedTheme: 'warm_ivory' },
-      { id: 'portrait_m_ancient', name: '竹影公子', subtitle: '青竹烟雨 · 温润古风雅士', cat: 'male', icon: '🎋', fx: 'fireflies', acc: '#34d399', acc2: '#67e8f9', audio: 'wind', pairedTheme: 'celadon_mist' },
-      { id: 'portrait_m_sport', name: '海风型男', subtitle: '晴海落日 · 清爽运动少年', cat: 'male', icon: '🌊', fx: 'bubbles', acc: '#38bdf8', acc2: '#fb923c', audio: 'waves', pairedTheme: 'tide_blue' },
-      { id: 'portrait_m', name: '禁欲绅士', subtitle: '高定西装 · 都市暗夜电影', cat: 'male', icon: '🕴️', fx: 'bokeh', acc: '#fbbf24', acc2: '#2dd4bf', audio: 'vinyl', pairedTheme: 'obsidian_gold' },
-      { id: 'portrait_f_cool', name: '清冷御姐', subtitle: '暮色天际 · 都市高智晚风', cat: 'female', icon: '💎', fx: 'bokeh', acc: '#f472b6', acc2: '#c084fc', audio: 'vinyl', pairedTheme: 'velvet_noir' },
-      { id: 'portrait_f_hanfu', name: '江南仕女', subtitle: '烟雨水榭 · 宋韵汉服清雅', cat: 'female', icon: '🏮', fx: 'petals', acc: '#2dd4bf', acc2: '#fda4af', audio: 'waves', pairedTheme: 'celadon_mist' },
-      { id: 'portrait_f_vitality', name: '元气甜妹', subtitle: '晴空海湾 · 明媚治愈少女', cat: 'female', icon: '🌻', fx: 'stars', acc: '#38bdf8', acc2: '#facc15', audio: 'waves', pairedTheme: 'warm_ivory' },
-      { id: 'portrait_f', name: '樱花佳人', subtitle: '暮樱漫舞 · 温柔浪漫写真', cat: 'female', icon: '🌸', fx: 'petals', acc: '#f9a8d4', acc2: '#c4b5fd', audio: 'vinyl', pairedTheme: 'sakura' },
-      { id: 'portrait_f_campus', name: '奶糖学妹', subtitle: '双马尾学院制服 · 银杏暖阳奶糖甜笑', cat: 'female', icon: '🎀', fx: 'stars', acc: '#f9a8d4', acc2: '#facc15', audio: 'waves', pairedTheme: 'warm_ivory' },
-      { id: 'portrait_f_snow', name: '雪域红梅', subtitle: '红氅白雪落梅 · 清冽冬日写真', cat: 'female', icon: '❄️', fx: 'snow', acc: '#e11d48', acc2: '#0284c7', audio: 'wind', pairedTheme: 'snow_peak' },
-      { id: 'portrait_f_lolita', name: '洋装甜心', subtitle: '洛丽塔蕾丝茶会 · 粉霞玫瑰娃娃感', cat: 'female', icon: '🍰', fx: 'petals', acc: '#f472b6', acc2: '#c4b5fd', audio: 'vinyl', pairedTheme: 'sakura' },
-      { id: 'portrait_f_cyber', name: '赛博歌姬', subtitle: '全息霓虹舞台 · 电音偶像光轨', cat: 'female', icon: '🎤', fx: 'neon', acc: '#e879f9', acc2: '#22d3ee', audio: 'hum', pairedTheme: 'cyber' },
-      { id: 'starfield', name: '银河星空', subtitle: '璀璨星云 · 深空静谧冥想', cat: 'nature', icon: '🌌', fx: 'stars', acc: '#a78bfa', acc2: '#f472b6', audio: 'space', pairedTheme: 'nebula' },
-      { id: 'scifi', name: '科幻夜城', subtitle: '未来天际 · 全息流光夜雨', cat: 'nature', icon: '🏙️', fx: 'streaks', acc: '#22d3ee', acc2: '#e879f9', audio: 'hum', pairedTheme: 'cyber' },
-      { id: 'neon', name: '霓虹光轨', subtitle: '赛博街景 · 炫彩电音律动', cat: 'nature', icon: '⚡', fx: 'neon', acc: '#38bdf8', acc2: '#f0abfc', audio: 'hum', pairedTheme: 'cyber' },
-      { id: 'nature', name: '森林秘境', subtitle: '晨雾松林 · 萤火虫呼吸感', cat: 'nature', icon: '🌲', fx: 'fireflies', acc: '#34d399', acc2: '#fbbf24', audio: 'wind', pairedTheme: 'deep_forest' },
-      { id: 'aurora', name: '极地极光', subtitle: '冰原雪峰 · 绿紫极光漫舞', cat: 'nature', icon: '🌠', fx: 'snow', acc: '#5eead4', acc2: '#a5b4fc', audio: 'wind', pairedTheme: 'polar' },
-      { id: 'ocean', name: '深海之梦', subtitle: '蔚蓝光束 · 静谧深潜气泡', cat: 'nature', icon: '🌊', fx: 'bubbles', acc: '#22d3ee', acc2: '#818cf8', audio: 'waves', pairedTheme: 'snow_peak' },
+      { id: 'none', name: '无场景', subtitle: '纯净无壁纸背景', cat: 'all', icon: '🪽', fx: null, acc: '#a855f7', acc2: '#ec4899', audio: null, pairedTheme: null, pos: '50% 35%' },
+      { id: 'portrait_m_sunny', name: '阳光少年', subtitle: '暖阳白衫 · 清爽书院学长', cat: 'male', icon: '☀️', fx: 'bokeh', acc: '#f59e0b', acc2: '#38bdf8', audio: 'wind', pairedTheme: 'warm_ivory', pos: '54% 24%' },
+      { id: 'portrait_m_ancient', name: '竹影公子', subtitle: '青竹烟雨 · 温润古风雅士', cat: 'male', icon: '🎋', fx: 'fireflies', acc: '#34d399', acc2: '#67e8f9', audio: 'wind', pairedTheme: 'celadon_mist', pos: '50% 22%' },
+      { id: 'portrait_m_sport', name: '海风型男', subtitle: '晴海落日 · 清爽运动少年', cat: 'male', icon: '🌊', fx: 'bubbles', acc: '#38bdf8', acc2: '#fb923c', audio: 'waves', pairedTheme: 'tide_blue', pos: '61% 22%' },
+      { id: 'portrait_m', name: '禁欲绅士', subtitle: '高定西装 · 都市暗夜电影', cat: 'male', icon: '🕴️', fx: 'bokeh', acc: '#fbbf24', acc2: '#2dd4bf', audio: 'vinyl', pairedTheme: 'obsidian_gold', pos: '50% 22%' },
+      { id: 'portrait_f_cool', name: '清冷御姐', subtitle: '暮色天际 · 都市高智晚风', cat: 'female', icon: '💎', fx: 'bokeh', acc: '#f472b6', acc2: '#c084fc', audio: 'vinyl', pairedTheme: 'velvet_noir', pos: '48% 24%' },
+      { id: 'portrait_f_hanfu', name: '江南仕女', subtitle: '烟雨水榭 · 宋韵汉服清雅', cat: 'female', icon: '🏮', fx: 'petals', acc: '#2dd4bf', acc2: '#fda4af', audio: 'waves', pairedTheme: 'celadon_mist', pos: '57% 24%' },
+      { id: 'portrait_f_vitality', name: '元气甜妹', subtitle: '晴空海湾 · 明媚治愈少女', cat: 'female', icon: '🌻', fx: 'stars', acc: '#38bdf8', acc2: '#facc15', audio: 'waves', pairedTheme: 'warm_ivory', pos: '62% 27%' },
+      { id: 'portrait_f', name: '樱花佳人', subtitle: '暮樱漫舞 · 温柔浪漫写真', cat: 'female', icon: '🌸', fx: 'petals', acc: '#f9a8d4', acc2: '#c4b5fd', audio: 'vinyl', pairedTheme: 'sakura', pos: '55% 25%' },
+      { id: 'portrait_f_campus', name: '奶糖学妹', subtitle: '双马尾学院制服 · 银杏暖阳奶糖甜笑', cat: 'female', icon: '🎀', fx: 'stars', acc: '#f9a8d4', acc2: '#facc15', audio: 'waves', pairedTheme: 'warm_ivory', pos: '50% 27%' },
+      { id: 'portrait_f_snow', name: '雪域红梅', subtitle: '红氅白雪落梅 · 清冽冬日写真', cat: 'female', icon: '❄️', fx: 'snow', acc: '#e11d48', acc2: '#0284c7', audio: 'wind', pairedTheme: 'snow_peak', pos: '49% 24%' },
+      { id: 'portrait_f_lolita', name: '洋装甜心', subtitle: '洛丽塔蕾丝茶会 · 粉霞玫瑰娃娃感', cat: 'female', icon: '🍰', fx: 'petals', acc: '#f472b6', acc2: '#c4b5fd', audio: 'vinyl', pairedTheme: 'sakura', pos: '47% 26%' },
+      { id: 'portrait_f_cyber', name: '赛博歌姬', subtitle: '全息霓虹舞台 · 电音偶像光轨', cat: 'female', icon: '🎤', fx: 'neon', acc: '#e879f9', acc2: '#22d3ee', audio: 'hum', pairedTheme: 'cyber', pos: '52% 28%' },
+      { id: 'starfield', name: '银河星空', subtitle: '璀璨星云 · 深空静谧冥想', cat: 'nature', icon: '🌌', fx: 'stars', acc: '#a78bfa', acc2: '#f472b6', audio: 'space', pairedTheme: 'nebula', pos: '50% 40%' },
+      { id: 'scifi', name: '科幻夜城', subtitle: '未来天际 · 全息流光夜雨', cat: 'nature', icon: '🏙️', fx: 'streaks', acc: '#22d3ee', acc2: '#e879f9', audio: 'hum', pairedTheme: 'cyber', pos: '50% 42%' },
+      { id: 'neon', name: '霓虹光轨', subtitle: '赛博街景 · 炫彩电音律动', cat: 'nature', icon: '⚡', fx: 'neon', acc: '#38bdf8', acc2: '#f0abfc', audio: 'hum', pairedTheme: 'cyber', pos: '50% 45%' },
+      { id: 'nature', name: '森林秘境', subtitle: '晨雾松林 · 萤火虫呼吸感', cat: 'nature', icon: '🌲', fx: 'fireflies', acc: '#34d399', acc2: '#fbbf24', audio: 'wind', pairedTheme: 'deep_forest', pos: '50% 42%' },
+      { id: 'aurora', name: '极地极光', subtitle: '冰原雪峰 · 绿紫极光漫舞', cat: 'nature', icon: '🌠', fx: 'snow', acc: '#5eead4', acc2: '#a5b4fc', audio: 'wind', pairedTheme: 'polar', pos: '50% 38%' },
+      { id: 'ocean', name: '深海之梦', subtitle: '蔚蓝光束 · 静谧深潜气泡', cat: 'nature', icon: '🌊', fx: 'bubbles', acc: '#22d3ee', acc2: '#818cf8', audio: 'waves', pairedTheme: 'snow_peak', pos: '50% 42%' },
     ];
     const SCENE_CATEGORY_TABS = [
       { id: 'all', label: '全部' },
@@ -9228,7 +9252,7 @@
       syncTheme: localStorage.getItem('tm_scene_sync_theme') !== '0',
       category: 'all',
       focus: localStorage.getItem('tm_focus_scene') || 'auto',
-      dim: Number(localStorage.getItem('tm_focus_dim') ?? 45),
+      dim: Number(localStorage.getItem('tm_focus_dim') ?? 32),
       blur: Number(localStorage.getItem('tm_focus_blur') ?? 0),
       density: Number(localStorage.getItem('tm_focus_density') ?? 70),
       speed: Number(localStorage.getItem('tm_focus_speed') ?? 100),
@@ -9260,6 +9284,7 @@
       if (img) {
         const url = layerOn ? sceneImgUrl(sc.id) : '';
         if (url && img.getAttribute('src') !== url) img.src = url;
+        img.style.objectPosition = sc.pos || '50% 35%';
         img.style.opacity = layerOn ? String(SCENE_INTENSITY_OPACITY[sceneState.intensity]) : '0';
       }
       const art = document.getElementById('headerThemeArt');
@@ -9422,6 +9447,7 @@
       const url = sceneImgUrl(sc.id);
       if (img) {
         if (url && img.getAttribute('src') !== url) img.src = url;
+        img.style.objectPosition = sc.pos || '50% 35%';
         img.style.opacity = url ? '1' : '0';
         img.style.filter = sceneState.blur > 0 ? `blur(${sceneState.blur}px)` : 'none';
       }

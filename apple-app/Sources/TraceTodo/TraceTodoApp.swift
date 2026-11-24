@@ -52,7 +52,7 @@ struct MainContentView: View {
             #if os(iOS)
             TabView(selection: $selectedSection) {
                 NavigationStack {
-                    UnifiedTodoHostView()
+                    iosThemedContainer { UnifiedTodoHostView() }
                         .navigationTitle("待办")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar { iosTopToolbar }
@@ -63,7 +63,7 @@ struct MainContentView: View {
 
                 if store.isModuleEnabled(.calendar) {
                     NavigationStack {
-                        CalendarPreviewHostView()
+                        iosThemedContainer { CalendarPreviewHostView() }
                             .navigationTitle("日历")
                             .navigationBarTitleDisplayMode(.inline)
                             .toolbar { iosTopToolbar }
@@ -75,7 +75,7 @@ struct MainContentView: View {
 
                 if store.isModuleEnabled(.focus) {
                     NavigationStack {
-                        FocusCenterView()
+                        iosThemedContainer { FocusCenterView() }
                             .navigationTitle("番茄专注")
                             .navigationBarTitleDisplayMode(.inline)
                             .toolbar { iosTopToolbar }
@@ -87,7 +87,7 @@ struct MainContentView: View {
 
                 if store.isModuleEnabled(.notes) {
                     NavigationStack {
-                        QuickNotesStreamView()
+                        iosThemedContainer { QuickNotesStreamView() }
                             .navigationTitle("随记")
                             .navigationBarTitleDisplayMode(.inline)
                             .toolbar { iosTopToolbar }
@@ -98,7 +98,7 @@ struct MainContentView: View {
                 }
 
                 NavigationStack {
-                    MemoriesAndAskHostView()
+                    iosThemedContainer { MemoriesAndAskHostView() }
                         .navigationTitle("记忆与问答")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar { iosTopToolbar }
@@ -614,6 +614,29 @@ struct MainContentView: View {
         let txt = topCaptureText
         topCaptureText = ""
         Task { await store.submitQuickNote(txt) }
+    }
+    #endif
+
+    #if os(iOS)
+    @ViewBuilder
+    private func iosThemedContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ZStack(alignment: .topTrailing) {
+            AmbientSceneBackgroundView()
+
+            if !store.hasActiveScene {
+                ThemeHeaderArtworkView(theme: store.activeTheme)
+                    .opacity(0.85)
+                    .ignoresSafeArea(edges: .top)
+            }
+
+            content()
+                .scrollContentBackground(.hidden)
+        }
+        .toolbarBackground(
+            store.activeTheme.surfaceBackground.opacity(store.hasActiveScene ? 0.78 : 0.90),
+            for: .navigationBar
+        )
+        .toolbarBackground(.visible, for: .navigationBar)
     }
     #endif
 
