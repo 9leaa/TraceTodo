@@ -79,8 +79,35 @@ final class TodoStore: ObservableObject {
     @Published var taskQuickScope: TaskQuickScope = .all
     private var autoIncludeDoneForScope: Bool = false
     @Published var editingTaskTarget: TaskItemModel?
-    @Published var activeFocusTask: TaskItemModel?
-    @Published var activeFocusLaunch: ActiveFocusLaunchConfig?
+    @Published var activeFocusSession: ActiveFocusSessionState?
+    @Published var isFocusLockPresented: Bool = false
+    private var focusTickerTask: Task<Void, Never>?
+    @Published var activeFocusTask: TaskItemModel? {
+        didSet {
+            if let t = activeFocusTask {
+                startUnifiedFocus(
+                    mode: .pomodoro,
+                    task: t,
+                    customTitle: t.title,
+                    plannedMinutes: max(1, t.payload.focusMinutes ?? defaultPomodoroMinutes),
+                    openLock: true
+                )
+            }
+        }
+    }
+    @Published var activeFocusLaunch: ActiveFocusLaunchConfig? {
+        didSet {
+            if let cfg = activeFocusLaunch {
+                startUnifiedFocus(
+                    mode: cfg.mode,
+                    task: cfg.task,
+                    customTitle: cfg.customTitle,
+                    plannedMinutes: max(1, cfg.plannedMinutes),
+                    openLock: true
+                )
+            }
+        }
+    }
     @Published private(set) var focusOverview: FocusOverviewResponse?
     @Published private(set) var countdownList: CountdownListResponse?
 
@@ -389,9 +416,11 @@ final class TodoStore: ObservableObject {
             async let matrixTask = client.fetchMatrix(sortBy: sortBy, includeDone: includeDone)
             async let focusTask: FocusOverviewResponse? = try? client.fetchFocusOverview(limit: 60)
             async let countdownTask: CountdownListResponse? = try? client.fetchCountdowns()
+            async let memosSnapTask: MemoListResponse? = try? client.fetchMemos(limit: 8)
+            async let calSnapTask: CalendarOverviewResponse? = try? client.fetchCalendarOverview(view: "week", includeDone: true)
 
             let fresh = try await matrixTask
-            let (foc, cd) = await (focusTask, countdownTask)
+            let (foc, cd, memosSnap, calSnap) = await (focusTask, countdownTask, memosSnapTask, calSnapTask)
 
             self.matrix = fresh
             if let foc { self.focusOverview = foc }
@@ -400,6 +429,12 @@ final class TodoStore: ObservableObject {
                 if let encoded = try? JSONEncoder().encode(cd) {
                     SharedWidgetBridge.saveCountdownsSnapshotData(encoded)
                 }
+            }
+            if let memosSnap, let encodedMemos = try? JSONEncoder().encode(memosSnap) {
+                SharedWidgetBridge.saveMemosSnapshotData(encodedMemos)
+            }
+            if let calSnap, let encodedCal = try? JSONEncoder().encode(calSnap) {
+                SharedWidgetBridge.saveCalendarSnapshotData(encodedCal)
             }
             self.isOnline = true
             self.lastConnectionError = nil
@@ -933,10 +968,83 @@ final class TodoStore: ObservableObject {
         } catch {
             showBanner("记录专注失败：\(error.localizedDescription)")
         }
+        activeFocusSession = nil
+        isFocusLockPresented = false
+        focusTickerTask?.cancel()
+        focusTickerTask = nil
         activeFocusTask = nil
         activeFocusLaunch = nil
         await refresh()
         await refreshFocusOverview()
+    }
+
+    func startUnifiedFocus(
+        mode: FocusTimerMode,
+        task: TaskItemModel?,
+        customTitle: String,
+        plannedMinutes: Int,
+        openLock: Bool
+    ) {
+        if activeFocusSession == nil {
+            activeFocusSession = ActiveFocusSessionState(
+                mode: mode,
+                task: task,
+                customTitle: customTitle,
+                plannedMinutes: max(1, plannedMinutes),
+                elapsedSeconds: 0,
+                isPaused: false,
+                startedAtIso: ISO8601DateFormatter().string(from: Date())
+            )
+            startFocusTickerLoop()
+        }
+        if openLock {
+            isFocusLockPresented = true
+        }
+    }
+
+    func toggleFocusPause() {
+        guard var sess = activeFocusSession else { return }
+        sess.isPaused.toggle()
+        activeFocusSession = sess
+    }
+
+    func enterFocusLockScreen() {
+        guard activeFocusSession != nil else { return }
+        isFocusLockPresented = true
+    }
+
+    func minimizeFocusLockScreen() {
+        isFocusLockPresented = false
+    }
+
+    private func startFocusTickerLoop() {
+        focusTickerTask?.cancel()
+        focusTickerTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard let self, !Task.isCancelled else { break }
+                guard var sess = self.activeFocusSession else { break }
+                if sess.isPaused { continue }
+                sess.elapsedSeconds += 1
+                self.activeFocusSession = sess
+                if sess.mode == .pomodoro && sess.elapsedSeconds >= sess.totalSeconds {
+                    let finalSess = sess
+                    self.focusTickerTask?.cancel()
+                    self.focusTickerTask = nil
+                    await self.recordUnifiedFocusSession(
+                        mode: .pomodoro,
+                        status: "completed",
+                        plannedMinutes: finalSess.plannedMinutes,
+                        durationSeconds: finalSess.totalSeconds,
+                        task: finalSess.task,
+                        customTitle: finalSess.customTitle,
+                        completeTask: false,
+                        startedAtIso: finalSess.startedAtIso
+                    )
+                    break
+                }
+            }
+        }
     }
 
     func removeFocusSession(_ sessionId: String) async {

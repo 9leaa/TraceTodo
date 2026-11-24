@@ -69,6 +69,32 @@
                 android:resource="@xml/todo_widget_info" />
         </receiver>
 
+        <receiver
+            android:name=".MemoWidgetProvider"
+            android:exported="true"
+            android:label="@string/memo_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.tracememory.tracetodo.ACTION_MEMO_WIDGET_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/memo_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".CalendarWidgetProvider"
+            android:exported="true"
+            android:label="@string/calendar_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.tracememory.tracetodo.ACTION_CAL_WIDGET_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/calendar_widget_info" />
+        </receiver>
+
         <provider
             android:name=".CameraFileProvider"
             android:authorities="com.tracememory.tracetodo.fileprovider"

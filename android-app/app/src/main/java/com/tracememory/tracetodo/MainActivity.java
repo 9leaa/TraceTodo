@@ -366,7 +366,7 @@ public class MainActivity extends Activity {
         ws.setCacheMode(WebSettings.LOAD_DEFAULT);
         ws.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         String origUa = ws.getUserAgentString();
-        ws.setUserAgentString((origUa != null ? origUa : "") + " TraceTodoAndroid/1.4.6");
+        ws.setUserAgentString((origUa != null ? origUa : "") + " TraceTodoAndroid/1.4.7");
 
         webView.addJavascriptInterface(new NativeBridge(), "TraceTodoNative");
 
@@ -605,8 +605,10 @@ public class MainActivity extends Activity {
             final String js;
             if ("focus".equals(act)) {
                 js = "if(typeof switchTab==='function')switchTab('focus');";
-            } else if ("calendar".equals(act)) {
+            } else if ("calendar".equals(act) || "countdown".equals(act)) {
                 js = "if(typeof switchTab==='function')switchTab('calendar');";
+            } else if ("notes".equals(act) || "memo".equals(act) || "journal".equals(act)) {
+                js = "if(typeof switchTab==='function')switchTab('notes');";
             } else if ("login".equals(act) || "auth".equals(act) || "account".equals(act)) {
                 js = "if(typeof openAuthModal==='function')openAuthModal();";
             } else if ("ask".equals(act)) {
@@ -706,6 +708,8 @@ public class MainActivity extends Activity {
                     if (!clean.equals(prev)) {
                         sp.edit().putString(KEY_AUTH_TOKEN, clean).apply();
                         TodoWidgetProvider.requestImmediateRefresh(MainActivity.this);
+                        MemoWidgetProvider.requestImmediateRefresh(MainActivity.this);
+                        CalendarWidgetProvider.requestImmediateRefresh(MainActivity.this);
                     }
                 }
             });
@@ -1032,6 +1036,8 @@ public class MainActivity extends Activity {
     protected void onPause() {
         if (webView != null) webView.onPause();
         TodoWidgetProvider.requestImmediateRefresh(this);
+        MemoWidgetProvider.requestImmediateRefresh(this);
+        CalendarWidgetProvider.requestImmediateRefresh(this);
         super.onPause();
     }
 

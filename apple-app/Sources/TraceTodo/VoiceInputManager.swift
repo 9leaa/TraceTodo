@@ -11,6 +11,8 @@ final class SpeechDictationController: ObservableObject {
     private var audioEngine: AVAudioEngine?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
+    private var activeSessionId = UUID()
+    private var lastNonEmptySpoken: String = ""
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
 
     func toggleDictation(
@@ -98,16 +100,26 @@ final class SpeechDictationController: ObservableObject {
             return
         }
 
+        let currentSession = UUID()
+        self.activeSessionId = currentSession
+        self.lastNonEmptySpoken = ""
         self.audioEngine = engine
         self.recognitionRequest = req
         self.isRecording = true
 
         self.recognitionTask = recognizer.recognitionTask(with: req) { [weak self] result, error in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.activeSessionId == currentSession else { return }
                 if let result {
                     let spoken = result.bestTranscription.formattedString
-                    onTranscriptUpdate(prefix + spoken)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !spoken.isEmpty {
+                        self.lastNonEmptySpoken = spoken
+                        onTranscriptUpdate(prefix + spoken)
+                    } else if !self.lastNonEmptySpoken.isEmpty {
+                        // Guard against SFSpeechRecognizer emitting an empty transcription upon stop/cancel
+                        onTranscriptUpdate(prefix + self.lastNonEmptySpoken)
+                    }
                 }
                 if error != nil || (result?.isFinal == true) {
                     let wasRec = self.isRecording
@@ -121,6 +133,9 @@ final class SpeechDictationController: ObservableObject {
     }
 
     func stopDictation() {
+        // Invalidate session ID first so trailing cancel/endAudio callbacks never overwrite dictated text
+        activeSessionId = UUID()
+        isRecording = false
         if let engine = audioEngine {
             if engine.isRunning {
                 engine.stop()
@@ -132,7 +147,6 @@ final class SpeechDictationController: ObservableObject {
         audioEngine = nil
         recognitionRequest = nil
         recognitionTask = nil
-        isRecording = false
         #if os(iOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         #endif

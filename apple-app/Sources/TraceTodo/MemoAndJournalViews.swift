@@ -1,4 +1,548 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
+
+// MARK: - Live Markdown Editor (Real-Time Styled Typography + IME-Safe + Quick Format Toolbar)
+
+private enum MarkdownLiveStyler {
+    private static let headingRegex = try? NSRegularExpression(pattern: #"^(#{1,3})\s+(.*)$"#, options: [.anchorsMatchLines])
+    private static let quoteRegex = try? NSRegularExpression(pattern: #"^(>\s+)(.*)$"#, options: [.anchorsMatchLines])
+    private static let bulletRegex = try? NSRegularExpression(pattern: #"^([-*•]\s+|\d+[\.\、]\s+)(.*)$"#, options: [.anchorsMatchLines])
+    private static let taskUncheckedRegex = try? NSRegularExpression(pattern: #"^([-*•]\s+\[\s\]\s*)(.*)$"#, options: [.anchorsMatchLines])
+    private static let taskCheckedRegex = try? NSRegularExpression(pattern: #"^([-*•]\s+\[[xX]\]\s*)(.*)$"#, options: [.anchorsMatchLines])
+    private static let boldRegex = try? NSRegularExpression(pattern: #"(\*\*)([^*\n]+)(\*\*)"#, options: [])
+    private static let italicRegex = try? NSRegularExpression(pattern: #"(?<!\*)(\*)([^*\n]+)(\*)(?!\*)"#, options: [])
+    private static let codeRegex = try? NSRegularExpression(pattern: #"(`)([^`\n]+)(`)"#, options: [])
+    private static let tagRegex = try? NSRegularExpression(pattern: #"(?:^|\s)(#[\p{L}\p{N}_-]{1,24})"#, options: [.anchorsMatchLines])
+
+    #if os(iOS)
+    static func defaultTypingAttributes() -> [NSAttributedString.Key: Any] {
+        let para = NSMutableParagraphStyle()
+        para.lineSpacing = 4.5
+        return [
+            .font: UIFont.systemFont(ofSize: 15, weight: .regular),
+            .foregroundColor: UIColor.label,
+            .paragraphStyle: para
+        ]
+    }
+
+    static func apply(to storage: NSTextStorage, accent: UIColor) {
+        let fullText = storage.string as NSString
+        let fullRange = NSRange(location: 0, length: fullText.length)
+        guard fullRange.length > 0 else { return }
+
+        let baseFont = UIFont.systemFont(ofSize: 15, weight: .regular)
+        let boldFont = UIFont.systemFont(ofSize: 15, weight: .bold)
+        let italicFont = UIFont.italicSystemFont(ofSize: 15)
+        let codeFont = UIFont.monospacedSystemFont(ofSize: 13.5, weight: .medium)
+        let markerFont = UIFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
+        let markerColor = UIColor.tertiaryLabel.withAlphaComponent(0.55)
+
+        storage.beginEditing()
+        storage.setAttributes(defaultTypingAttributes(), range: fullRange)
+
+        // Blockquotes (> ...)
+        quoteRegex?.enumerateMatches(in: storage.string, options: [], range: fullRange) { m, _, _ in
+            guard let m else { return }
+            storage.addAttributes([.foregroundColor: accent, .font: UIFont.systemFont(ofSize: 15, weight: .bold)], range: m.range(at: 1))
+            storage.addAttributes([.foregroundColor: UIColor.secondaryLabel, .font: italicFont], range: m.range(at: 2))
+        }
+
+        // Bullet / numbered lists
+        bulletRegex?.enumerateMatches(in: storage.string, options: [], range: fullRange) { m, _, _ in
+            guard let m else { return }
+            storage.addAttributes([.foregroundColor: accent, .font: boldFont], range: m.range(at: 1))
+        }
+
+        // Unchecked / Checked tasks (- [ ] / - [x])
+        taskUncheckedRegex?.enumerateMatches(in: storage.string, options: [], range: fullRange) { m, _, _ in
+            guard let m else { return }
+            storage.addAttributes([.foregroundColor: accent, .font: codeFont], range: m.range(at: 1))
+        }
+        taskCheckedRegex?.enumerateMatches(in: storage.string, options: [], range: fullRange) { m, _, _ in
+            guard let m else { return }
+            storage.addAttributes([.foregroundColor: accent, .font: codeFont], range: m.range(at: 1))
+            storage.addAttributes([
+                .foregroundColor: UIColor.secondaryLabel,
+                .strikethroughStyle: NSUnderlineStyle.single.rawValue,
+                .strikethroughColor: UIColor.secondaryLabel
+            ], range: m.range(at: 2))
+        }
+
+        // Headings (# / ## / ###)
+        headingRegex?.enumerateMatches(in: storage.string, options: [], range: fullRange) { m, _, _ in
+            guard let m else { return }
+            let hashes = fullText.substring(with: m.range(at: 1))
+            let sz: CGFloat = hashes.count == 1 ? 19.0 : (hashes.count == 2 ? 17.0 : 15.6)
+            storage.addAttributes([.font: markerFont, .foregroundColor: accent.withAlphaComponent(0.45)], range: m.range(at: 1))
+            storage.addAttributes([.font: UIFont.systemFont(ofSize: sz, weight: .bold), .foregroundColor: UIColor.label], range: m.range(at: 2))
+        }
+
+        // Inline **bold**
+        boldRegex?.enumerateMatches(in: storage.string, options: [], range: fullRange) { m, _, _ in
+            guard let m else { return }
+            storage.addAttributes([.font: markerFont, .foregroundColor: markerColor], range: m.range(at: 1))
+            storage.addAttributes([.font: boldFont], range: m.range(at: 2))
+            storage.addAttributes([.font: markerFont, .foregroundColor: markerColor], range: m.range(at: 3))
+        }
+
+        // Inline *italic*
+        italicRegex?.enumerateMatches(in: storage.string, options: [], range: fullRange) { m, _, _ in
+            guard let m else { return }
+            storage.addAttributes([.font: markerFont, .foregroundColor: markerColor], range: m.range(at: 1))
+            storage.addAttributes([.font: italicFont], range: m.range(at: 2))
+            storage.addAttributes([.font: markerFont, .foregroundColor: markerColor], range: m.range(at: 3))
+        }
+
+        // Inline `code`
+        codeRegex?.enumerateMatches(in: storage.string, options: [], range: fullRange) { m, _, _ in
+            guard let m else { return }
+            storage.addAttributes([.font: markerFont, .foregroundColor: markerColor], range: m.range(at: 1))
+            storage.addAttributes([
+                .font: codeFont,
+                .foregroundColor: accent,
+                .backgroundColor: accent.withAlphaComponent(0.10)
+            ], range: m.range(at: 2))
+            storage.addAttributes([.font: markerFont, .foregroundColor: markerColor], range: m.range(at: 3))
+        }
+
+        // #Hashtags
+        tagRegex?.enumerateMatches(in: storage.string, options: [], range: fullRange) { m, _, _ in
+            guard let m else { return }
+            storage.addAttributes([
+                .foregroundColor: accent,
+                .font: UIFont.systemFont(ofSize: 13.5, weight: .semibold),
+                .backgroundColor: accent.withAlphaComponent(0.09)
+            ], range: m.range(at: 1))
+        }
+
+        _ = baseFont
+        storage.endEditing()
+    }
+    #elseif os(macOS)
+    static func defaultTypingAttributes() -> [NSAttributedString.Key: Any] {
+        let para = NSMutableParagraphStyle()
+        para.lineSpacing = 4.0
+        return [
+            .font: NSFont.systemFont(ofSize: 14.5, weight: .regular),
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: para
+        ]
+    }
+
+    static func apply(to storage: NSTextStorage, accent: NSColor) {
+        let fullText = storage.string as NSString
+        let fullRange = NSRange(location: 0, length: fullText.length)
+        guard fullRange.length > 0 else { return }
+
+        let baseFont = NSFont.systemFont(ofSize: 14.5, weight: .regular)
+        let boldFont = NSFont.systemFont(ofSize: 14.5, weight: .bold)
+        let italicFont = NSFontManager.shared.convert(baseFont, toHaveTrait: .italicFontMask)
+        let codeFont = NSFont.monospacedSystemFont(ofSize: 13.0, weight: .medium)
+        let markerFont = NSFont.monospacedSystemFont(ofSize: 11.0, weight: .regular)
+        let markerColor = NSColor.tertiaryLabelColor.withAlphaComponent(0.6)
+
+        storage.beginEditing()
+        storage.setAttributes(defaultTypingAttributes(), range: fullRange)
+
+        quoteRegex?.enumerateMatches(in: storage.string, options: [], range: fullRange) { m, _, _ in
+            guard let m else { return }
+            storage.addAttributes([.foregroundColor: accent, .font: boldFont], range: m.range(at: 1))
+            storage.addAttributes([.foregroundColor: NSColor.secondaryLabelColor, .font: italicFont], range: m.range(at: 2))
+        }
+
+        bulletRegex?.enumerateMatches(in: storage.string, options: [], range: fullRange) { m, _, _ in
+            guard let m else { return }
+            storage.addAttributes([.foregroundColor: accent, .font: boldFont], range: m.range(at: 1))
+        }
+
+        taskUncheckedRegex?.enumerateMatches(in: storage.string, options: [], range: fullRange) { m, _, _ in
+            guard let m else { return }
+            storage.addAttributes([.foregroundColor: accent, .font: codeFont], range: m.range(at: 1))
+        }
+        taskCheckedRegex?.enumerateMatches(in: storage.string, options: [], range: fullRange) { m, _, _ in
+            guard let m else { return }
+            storage.addAttributes([.foregroundColor: accent, .font: codeFont], range: m.range(at: 1))
+            storage.addAttributes([
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .strikethroughStyle: NSUnderlineStyle.single.rawValue,
+                .strikethroughColor: NSColor.secondaryLabelColor
+            ], range: m.range(at: 2))
+        }
+
+        headingRegex?.enumerateMatches(in: storage.string, options: [], range: fullRange) { m, _, _ in
+            guard let m else { return }
+            let hashes = fullText.substring(with: m.range(at: 1))
+            let sz: CGFloat = hashes.count == 1 ? 18.5 : (hashes.count == 2 ? 16.5 : 15.2)
+            storage.addAttributes([.font: markerFont, .foregroundColor: accent.withAlphaComponent(0.45)], range: m.range(at: 1))
+            storage.addAttributes([.font: NSFont.systemFont(ofSize: sz, weight: .bold), .foregroundColor: NSColor.labelColor], range: m.range(at: 2))
+        }
+
+        boldRegex?.enumerateMatches(in: storage.string, options: [], range: fullRange) { m, _, _ in
+            guard let m else { return }
+            storage.addAttributes([.font: markerFont, .foregroundColor: markerColor], range: m.range(at: 1))
+            storage.addAttributes([.font: boldFont], range: m.range(at: 2))
+            storage.addAttributes([.font: markerFont, .foregroundColor: markerColor], range: m.range(at: 3))
+        }
+
+        italicRegex?.enumerateMatches(in: storage.string, options: [], range: fullRange) { m, _, _ in
+            guard let m else { return }
+            storage.addAttributes([.font: markerFont, .foregroundColor: markerColor], range: m.range(at: 1))
+            storage.addAttributes([.font: italicFont], range: m.range(at: 2))
+            storage.addAttributes([.font: markerFont, .foregroundColor: markerColor], range: m.range(at: 3))
+        }
+
+        codeRegex?.enumerateMatches(in: storage.string, options: [], range: fullRange) { m, _, _ in
+            guard let m else { return }
+            storage.addAttributes([.font: markerFont, .foregroundColor: markerColor], range: m.range(at: 1))
+            storage.addAttributes([
+                .font: codeFont,
+                .foregroundColor: accent,
+                .backgroundColor: accent.withAlphaComponent(0.11)
+            ], range: m.range(at: 2))
+            storage.addAttributes([.font: markerFont, .foregroundColor: markerColor], range: m.range(at: 3))
+        }
+
+        tagRegex?.enumerateMatches(in: storage.string, options: [], range: fullRange) { m, _, _ in
+            guard let m else { return }
+            storage.addAttributes([
+                .foregroundColor: accent,
+                .font: NSFont.systemFont(ofSize: 13.0, weight: .semibold),
+                .backgroundColor: accent.withAlphaComponent(0.10)
+            ], range: m.range(at: 1))
+        }
+
+        storage.endEditing()
+    }
+    #endif
+}
+
+#if os(iOS)
+private struct PlatformLiveMarkdownTextView: UIViewRepresentable {
+    @Binding var text: String
+    @Binding var selectedRange: NSRange
+    let accentColor: Color
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> UITextView {
+        let tv = UITextView()
+        tv.delegate = context.coordinator
+        tv.backgroundColor = .clear
+        tv.isScrollEnabled = true
+        tv.alwaysBounceVertical = false
+        tv.textContainerInset = UIEdgeInsets(top: 10, left: 8, bottom: 10, right: 8)
+        tv.typingAttributes = MarkdownLiveStyler.defaultTypingAttributes()
+        tv.text = text
+        MarkdownLiveStyler.apply(to: tv.textStorage, accent: UIColor(accentColor))
+        return tv
+    }
+
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        context.coordinator.parent = self
+        // Never overwrite text or attributes while Chinese Pinyin IME is composing
+        if uiView.markedTextRange != nil { return }
+        if uiView.text != text {
+            context.coordinator.isProgrammaticUpdate = true
+            uiView.text = text
+            MarkdownLiveStyler.apply(to: uiView.textStorage, accent: UIColor(accentColor))
+            let safeLoc = min(selectedRange.location, (text as NSString).length)
+            let safeLen = min(selectedRange.length, max(0, (text as NSString).length - safeLoc))
+            uiView.selectedRange = NSRange(location: safeLoc, length: safeLen)
+            uiView.typingAttributes = MarkdownLiveStyler.defaultTypingAttributes()
+            context.coordinator.isProgrammaticUpdate = false
+        }
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var parent: PlatformLiveMarkdownTextView
+        var isProgrammaticUpdate = false
+
+        init(_ parent: PlatformLiveMarkdownTextView) { self.parent = parent }
+
+        func textViewDidChange(_ textView: UITextView) {
+            guard !isProgrammaticUpdate else { return }
+            let newText = textView.text ?? ""
+            if parent.text != newText {
+                parent.text = newText
+            }
+            // Wait until IME composition commits before styling
+            guard textView.markedTextRange == nil else { return }
+            isProgrammaticUpdate = true
+            let savedSel = textView.selectedRange
+            MarkdownLiveStyler.apply(to: textView.textStorage, accent: UIColor(parent.accentColor))
+            if savedSel.location + savedSel.length <= (textView.text as NSString).length {
+                textView.selectedRange = savedSel
+            }
+            textView.typingAttributes = MarkdownLiveStyler.defaultTypingAttributes()
+            parent.selectedRange = textView.selectedRange
+            isProgrammaticUpdate = false
+        }
+
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            guard !isProgrammaticUpdate, textView.markedTextRange == nil else { return }
+            if parent.selectedRange != textView.selectedRange {
+                DispatchQueue.main.async {
+                    self.parent.selectedRange = textView.selectedRange
+                }
+            }
+        }
+    }
+}
+#elseif os(macOS)
+private struct PlatformLiveMarkdownTextView: NSViewRepresentable {
+    @Binding var text: String
+    @Binding var selectedRange: NSRange
+    let accentColor: Color
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSTextView.scrollableTextView()
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+
+        if let tv = scrollView.documentView as? NSTextView {
+            tv.delegate = context.coordinator
+            tv.drawsBackground = false
+            tv.isRichText = true
+            tv.importsGraphics = false
+            tv.allowsUndo = true
+            tv.isAutomaticQuoteSubstitutionEnabled = false
+            tv.isAutomaticDashSubstitutionEnabled = false
+            tv.textContainerInset = NSSize(width: 6, height: 8)
+            tv.typingAttributes = MarkdownLiveStyler.defaultTypingAttributes()
+            tv.string = text
+            if let storage = tv.textStorage {
+                MarkdownLiveStyler.apply(to: storage, accent: NSColor(accentColor))
+            }
+        }
+        return scrollView
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        context.coordinator.parent = self
+        guard let tv = nsView.documentView as? NSTextView else { return }
+        if tv.hasMarkedText() { return }
+        if tv.string != text {
+            context.coordinator.isProgrammaticUpdate = true
+            tv.string = text
+            if let storage = tv.textStorage {
+                MarkdownLiveStyler.apply(to: storage, accent: NSColor(accentColor))
+            }
+            let maxLen = (text as NSString).length
+            let safeLoc = min(selectedRange.location, maxLen)
+            let safeLen = min(selectedRange.length, max(0, maxLen - safeLoc))
+            tv.setSelectedRange(NSRange(location: safeLoc, length: safeLen))
+            tv.typingAttributes = MarkdownLiveStyler.defaultTypingAttributes()
+            context.coordinator.isProgrammaticUpdate = false
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: PlatformLiveMarkdownTextView
+        var isProgrammaticUpdate = false
+
+        init(_ parent: PlatformLiveMarkdownTextView) { self.parent = parent }
+
+        func textDidChange(_ notification: Notification) {
+            guard !isProgrammaticUpdate, let tv = notification.object as? NSTextView else { return }
+            let newText = tv.string
+            if parent.text != newText {
+                parent.text = newText
+            }
+            guard !tv.hasMarkedText(), let storage = tv.textStorage else { return }
+            isProgrammaticUpdate = true
+            let savedSel = tv.selectedRange()
+            MarkdownLiveStyler.apply(to: storage, accent: NSColor(parent.accentColor))
+            let maxLen = (tv.string as NSString).length
+            if savedSel.location + savedSel.length <= maxLen {
+                tv.setSelectedRange(savedSel)
+            }
+            tv.typingAttributes = MarkdownLiveStyler.defaultTypingAttributes()
+            parent.selectedRange = tv.selectedRange()
+            isProgrammaticUpdate = false
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard !isProgrammaticUpdate, let tv = notification.object as? NSTextView, !tv.hasMarkedText() else { return }
+            let sel = tv.selectedRange()
+            if parent.selectedRange != sel {
+                DispatchQueue.main.async {
+                    self.parent.selectedRange = sel
+                }
+            }
+        }
+    }
+}
+#endif
+
+struct LiveMarkdownEditor: View {
+    @EnvironmentObject var store: TodoStore
+    @Binding var text: String
+    let placeholder: String
+    var minHeight: CGFloat = 108
+    var maxHeight: CGFloat = 240
+
+    @State private var selectedRange: NSRange = NSRange(location: 0, length: 0)
+    @State private var showPurePreview: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Formatting & Live Render Mode Bar
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 5) {
+                    formatBtn("H1") { applyLinePrefix("# ") }
+                    formatBtn("H2") { applyLinePrefix("## ") }
+                    formatBtn("B", bold: true) { wrapSelection(prefix: "**", suffix: "**", fallback: "加粗") }
+                    formatBtn("I", italic: true) { wrapSelection(prefix: "*", suffix: "*", fallback: "斜体") }
+                    formatBtn("• 列表") { applyLinePrefix("- ") }
+                    formatBtn("☑ 清单") { toggleOrInsertChecklist() }
+                    formatBtn("❝ 引用") { applyLinePrefix("> ") }
+                    formatBtn("</> 代码") { wrapSelection(prefix: "`", suffix: "`", fallback: "code") }
+
+                    Divider().frame(height: 14).padding(.horizontal, 2)
+
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            showPurePreview.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: showPurePreview ? "pencil.and.outline" : "eye")
+                                .font(.system(size: 10, weight: .bold))
+                            Text(showPurePreview ? "返回编辑" : "纯净预览")
+                                .font(.caption2.bold())
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3.5)
+                        .background(showPurePreview ? store.activeTheme.primaryColor : store.activeTheme.primaryColor.opacity(0.12))
+                        .foregroundStyle(showPurePreview ? Color.white : store.activeTheme.primaryColor)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+            }
+            .background(Color.primary.opacity(0.035))
+
+            Divider().opacity(0.5)
+
+            if showPurePreview {
+                ScrollView {
+                    if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text("（暂无内容，点击右上角「返回编辑」开始书写）")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                    } else {
+                        MarkdownAnswerView(text: text)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                    }
+                }
+                .frame(minHeight: minHeight, maxHeight: maxHeight)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) {
+                    showPurePreview = false
+                }
+            } else {
+                ZStack(alignment: .topLeading) {
+                    if text.isEmpty {
+                        Text(placeholder)
+                            .font(.system(size: 14))
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 11)
+                            .allowsHitTesting(false)
+                    }
+                    PlatformLiveMarkdownTextView(
+                        text: $text,
+                        selectedRange: $selectedRange,
+                        accentColor: store.activeTheme.primaryColor
+                    )
+                    .frame(minHeight: minHeight, maxHeight: maxHeight)
+                }
+            }
+        }
+        .background(Color.primary.opacity(0.015))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    private func formatBtn(_ title: String, bold: Bool = false, italic: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: {
+            if showPurePreview { showPurePreview = false }
+            action()
+        }) {
+            Text(title)
+                .font(.system(size: 11.5, weight: bold ? .heavy : .semibold))
+                .italic(italic)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3.5)
+                .background(Color.primary.opacity(0.05))
+                .foregroundStyle(.primary)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func wrapSelection(prefix: String, suffix: String, fallback: String) {
+        let ns = text as NSString
+        let loc = min(max(0, selectedRange.location), ns.length)
+        let len = min(max(0, selectedRange.length), ns.length - loc)
+        let selected = len > 0 ? ns.substring(with: NSRange(location: loc, length: len)) : fallback
+        let inserted = "\(prefix)\(selected)\(suffix)"
+        text = ns.replacingCharacters(in: NSRange(location: loc, length: len), with: inserted)
+        let pLen = (prefix as NSString).length
+        let sLen = (selected as NSString).length
+        selectedRange = len > 0
+            ? NSRange(location: loc + (inserted as NSString).length, length: 0)
+            : NSRange(location: loc + pLen, length: sLen)
+    }
+
+    private func applyLinePrefix(_ prefix: String) {
+        let ns = text as NSString
+        let loc = min(max(0, selectedRange.location), ns.length)
+        let lineRange = ns.lineRange(for: NSRange(location: loc, length: 0))
+        let lineStr = ns.substring(with: lineRange)
+        if lineStr.hasPrefix(prefix) {
+            let stripped = String(lineStr.dropFirst(prefix.count))
+            text = ns.replacingCharacters(in: lineRange, with: stripped)
+            selectedRange = NSRange(location: max(lineRange.location, loc - (prefix as NSString).length), length: 0)
+        } else {
+            let replaced = prefix + lineStr
+            text = ns.replacingCharacters(in: lineRange, with: replaced)
+            selectedRange = NSRange(location: loc + (prefix as NSString).length, length: 0)
+        }
+    }
+
+    private func toggleOrInsertChecklist() {
+        let ns = text as NSString
+        let loc = min(max(0, selectedRange.location), ns.length)
+        let lineRange = ns.lineRange(for: NSRange(location: loc, length: 0))
+        let lineStr = ns.substring(with: lineRange)
+        if lineStr.hasPrefix("- [ ] ") {
+            let next = "- [x] " + String(lineStr.dropFirst(6))
+            text = ns.replacingCharacters(in: lineRange, with: next)
+        } else if lineStr.hasPrefix("- [x] ") || lineStr.hasPrefix("- [X] ") {
+            let next = "- [ ] " + String(lineStr.dropFirst(6))
+            text = ns.replacingCharacters(in: lineRange, with: next)
+        } else {
+            applyLinePrefix("- [ ] ")
+        }
+    }
+}
 
 // MARK: - Memo & Journal Models
 
@@ -443,9 +987,12 @@ struct NoteAndJournalDetailSheet: View {
                 }
             }
 
-            TextField("输入 Markdown 正文...", text: $draftContent, axis: .vertical)
-                .lineLimit(6...16)
-                .textFieldStyle(.roundedBorder)
+            LiveMarkdownEditor(
+                text: $draftContent,
+                placeholder: "输入 Markdown 正文（输入 # 标题、**加粗**、- 列表、- [ ] 清单实时渲染排版）...",
+                minHeight: 150,
+                maxHeight: 320
+            )
 
             let combinedMedia = existingMedia + newMedia
             if !combinedMedia.isEmpty {
@@ -628,9 +1175,12 @@ struct MemosGalleryView: View {
                     .frame(maxWidth: 165)
             }
 
-            TextField("支持 Markdown（**加粗**、- 列表、#标签）与拍照/附图 OCR...", text: $content, axis: .vertical)
-                .lineLimit(3...7)
-                .textFieldStyle(.roundedBorder)
+            LiveMarkdownEditor(
+                text: $content,
+                placeholder: "支持实时 Markdown 渲染（# 标题、**加粗**、- 列表、- [ ] 清单）与拍照附图 OCR...",
+                minHeight: 92,
+                maxHeight: 200
+            )
 
             if !pendingMedia.isEmpty {
                 MediaThumbnailGridView(media: pendingMedia) { item in
@@ -792,9 +1342,12 @@ struct MemosGalleryView: View {
                     .frame(maxWidth: 130)
             }
 
-            TextField("直接在此修改备忘正文...", text: $inlineContent, axis: .vertical)
-                .lineLimit(4...10)
-                .textFieldStyle(.roundedBorder)
+            LiveMarkdownEditor(
+                text: $inlineContent,
+                placeholder: "直接在此修改备忘正文（实时渲染 Markdown 排版）...",
+                minHeight: 108,
+                maxHeight: 230
+            )
 
             let combined = inlineExistingMedia + inlineNewMedia
             if !combined.isEmpty {
@@ -1146,9 +1699,12 @@ struct JournalDailyStudioView: View {
                 }
             }
 
-            TextField("写下今天的经历、感悟或点击右上角「✨ AI 今日小结」自动汇总...", text: $draftContent, axis: .vertical)
-                .lineLimit(6...14)
-                .textFieldStyle(.roundedBorder)
+            LiveMarkdownEditor(
+                text: $draftContent,
+                placeholder: "写下今天的经历、感悟（实时渲染 Markdown）或点击右上角「✨ AI 今日小结」自动汇总...",
+                minHeight: 145,
+                maxHeight: 300
+            )
 
             if let curMedia = overview?.currentEntry?.media, !curMedia.isEmpty {
                 MediaThumbnailGridView(media: curMedia) { removed in
@@ -1264,9 +1820,12 @@ struct JournalDailyStudioView: View {
                 }
             }
 
-            TextField("直接修改当日日记正文...", text: $inlineJournalContent, axis: .vertical)
-                .lineLimit(4...12)
-                .textFieldStyle(.roundedBorder)
+            LiveMarkdownEditor(
+                text: $inlineJournalContent,
+                placeholder: "直接修改当日日记正文（实时渲染 Markdown 排版）...",
+                minHeight: 118,
+                maxHeight: 250
+            )
 
             let combined = inlineExistingMedia + inlineNewMedia
             if !combined.isEmpty {

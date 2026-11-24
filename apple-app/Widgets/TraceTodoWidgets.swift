@@ -458,14 +458,24 @@ struct TraceTodoWidgetEntryView: View {
                 .font(.system(size: 10.5, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.92))
 
-                Link(destination: URL(string: "tracetodo://new")!) {
-                    Label("新建", systemImage: "plus")
-                        .font(.system(size: 10.5, weight: .bold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Color.white.opacity(0.22))
-                        .foregroundStyle(.white)
-                        .clipShape(Capsule())
+                HStack(spacing: 5) {
+                    Link(destination: URL(string: "tracetodo://new")!) {
+                        Label("新建", systemImage: "plus")
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.white.opacity(0.22))
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                    }
+                    Link(destination: URL(string: "tracetodo://focus")!) {
+                        Image(systemName: "timer")
+                            .font(.system(size: 10.5, weight: .bold))
+                            .padding(4)
+                            .background(Color.white.opacity(0.22))
+                            .foregroundStyle(.white)
+                            .clipShape(Circle())
+                    }
                 }
             }
             .padding(12)
@@ -520,6 +530,12 @@ struct TraceTodoWidgetEntryView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                Link(destination: URL(string: "tracetodo://focus")!) {
+                    Image(systemName: "timer.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(Color(red: 0.92, green: 0.44, blue: 0.14))
+                }
+
                 Link(destination: URL(string: "tracetodo://refresh")!) {
                     Image(systemName: "arrow.clockwise.circle.fill")
                         .font(.title3)
@@ -1169,10 +1185,1176 @@ private struct TraceCountdownWidgetContainer: View {
     }
 }
 
+// MARK: - Memo Notes Widget (StaticConfiguration)
+
+struct WidgetMemoRow: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let excerpt: String
+    let pinned: Bool
+    let tags: [String]
+    let updatedLabel: String
+}
+
+private struct RawWidgetMemoListDTO: Decodable {
+    let total: Int?
+    let pinnedCount: Int?
+    let memos: [RawWidgetMemoItemDTO]
+
+    enum CodingKeys: String, CodingKey {
+        case total
+        case pinnedCount = "pinned_count"
+        case memos
+    }
+}
+
+private struct RawWidgetMemoItemDTO: Decodable {
+    let noteId: String
+    let title: String?
+    let content: String
+    let pinned: Bool?
+    let tags: [String]?
+    let updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case noteId = "note_id"
+        case title, content, pinned, tags
+        case updatedAt = "updated_at"
+    }
+}
+
+struct TraceMemoEntry: TimelineEntry {
+    let date: Date
+    let totalCount: Int
+    let pinnedCount: Int
+    let memos: [WidgetMemoRow]
+    let needsLogin: Bool
+
+    static func stripMarkdown(_ raw: String) -> String {
+        raw
+            .replacingOccurrences(of: #"(?m)^#{1,6}\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"(?m)^[-*•]\s*(\[[ xX]\]\s*)?"#, with: "• ", options: .regularExpression)
+            .replacingOccurrences(of: #"(?m)^>\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "`", with: "")
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    static func placeholder(needsLogin: Bool = false) -> TraceMemoEntry {
+        if needsLogin {
+            return TraceMemoEntry(date: Date(), totalCount: 0, pinnedCount: 0, memos: [], needsLogin: true)
+        }
+        return TraceMemoEntry(
+            date: Date(),
+            totalCount: 4,
+            pinnedCount: 2,
+            memos: [
+                WidgetMemoRow(id: "m1", title: "阅读与灵感清单", excerpt: "深度工作、双链记忆检索设计要点与下阶段实验想法", pinned: true, tags: ["灵感", "读书"], updatedLabel: "今日"),
+                WidgetMemoRow(id: "m2", title: "出差报销凭证备忘", excerpt: "高铁票、住宿水单已拍照识别 OCR，周五统一提交财务", pinned: true, tags: ["财务"], updatedLabel: "昨日"),
+                WidgetMemoRow(id: "m3", title: "周会核心纪要", excerpt: "确认客户端 v1.4.7 桌面组件矩阵升级与实时 Markdown 渲染", pinned: false, tags: ["会议"], updatedLabel: "本周")
+            ],
+            needsLogin: false
+        )
+    }
+}
+
+struct TraceMemoStaticProvider: TimelineProvider {
+    func placeholder(in context: Context) -> TraceMemoEntry {
+        .placeholder()
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (TraceMemoEntry) -> Void) {
+        if context.isPreview {
+            if let cached = SharedWidgetBridge.loadMemosSnapshotData(),
+               let parsed = try? Self.decodeMemoData(cached) {
+                completion(parsed)
+                return
+            }
+            completion(.placeholder())
+            return
+        }
+        Task {
+            completion(await Self.fetchMemoEntry())
+        }
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<TraceMemoEntry>) -> Void) {
+        Task {
+            let entry = await Self.fetchMemoEntry()
+            let mins = entry.needsLogin ? 5 : 20
+            let nextRefresh = Calendar.current.date(byAdding: .minute, value: mins, to: Date()) ?? Date().addingTimeInterval(Double(mins * 60))
+            completion(Timeline(entries: [entry], policy: .after(nextRefresh)))
+        }
+    }
+
+    static func decodeMemoData(_ data: Data) throws -> TraceMemoEntry {
+        let dto = try JSONDecoder().decode(RawWidgetMemoListDTO.self, from: data)
+        let rows = dto.memos.map { m -> WidgetMemoRow in
+            let cleanBody = TraceMemoEntry.stripMarkdown(m.content)
+            let rawTitle = (m.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let displayTitle: String
+            let displayExcerpt: String
+            if !rawTitle.isEmpty {
+                displayTitle = rawTitle
+                displayExcerpt = cleanBody
+            } else {
+                let firstLine = m.content.components(separatedBy: .newlines).first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? "随记便签"
+                displayTitle = String(TraceMemoEntry.stripMarkdown(firstLine).prefix(22))
+                displayExcerpt = cleanBody
+            }
+            let upd = m.updatedAt.map { String($0.prefix(10)) } ?? ""
+            return WidgetMemoRow(
+                id: m.noteId,
+                title: displayTitle.isEmpty ? "随记便签" : displayTitle,
+                excerpt: displayExcerpt,
+                pinned: m.pinned ?? false,
+                tags: m.tags ?? [],
+                updatedLabel: upd
+            )
+        }
+        let pinCnt = dto.pinnedCount ?? rows.filter(\.pinned).count
+        return TraceMemoEntry(
+            date: Date(),
+            totalCount: dto.total ?? rows.count,
+            pinnedCount: pinCnt,
+            memos: rows,
+            needsLogin: false
+        )
+    }
+
+    static func fetchMemoEntry() async -> TraceMemoEntry {
+        let resolved = WidgetAPI.resolveSharedConfig()
+        let base = resolved.base
+        let space = resolved.space
+        let token = resolved.token
+
+        if var comps = URLComponents(string: "\(base)/api/memos/list") {
+            var qItems = [URLQueryItem(name: "limit", value: "6")]
+            if token.isEmpty || (!space.isEmpty && space != "default") {
+                qItems.append(URLQueryItem(name: "space_id", value: space.isEmpty ? "default" : space))
+            }
+            comps.queryItems = qItems
+            if let url = comps.url {
+                var req = URLRequest(url: url)
+                req.timeoutInterval = 8
+                if !token.isEmpty {
+                    req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                }
+                if let (data, resp) = try? await URLSession.shared.data(for: req),
+                   let http = resp as? HTTPURLResponse {
+                    if (200...299).contains(http.statusCode),
+                       let parsed = try? decodeMemoData(data) {
+                        SharedWidgetBridge.saveMemosSnapshotData(data)
+                        return parsed
+                    }
+                    if http.statusCode == 401 || http.statusCode == 403 {
+                        if let cached = SharedWidgetBridge.loadMemosSnapshotData(),
+                           let parsed = try? decodeMemoData(cached) {
+                            return parsed
+                        }
+                        return .placeholder(needsLogin: true)
+                    }
+                }
+            }
+        }
+
+        if let cached = SharedWidgetBridge.loadMemosSnapshotData(),
+           let parsed = try? decodeMemoData(cached) {
+            return parsed
+        }
+        return .placeholder(needsLogin: token.isEmpty)
+    }
+}
+
+struct TraceMemoWidgetEntryView: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: TraceMemoEntry
+
+    private let warmGradient = LinearGradient(
+        colors: [Color(red: 0.93, green: 0.44, blue: 0.14), Color(red: 0.85, green: 0.25, blue: 0.52)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
+    var body: some View {
+        switch family {
+        case .systemSmall:
+            smallMemoView
+        case .systemMedium:
+            mediumMemoView
+        case .systemLarge:
+            largeMemoView
+        #if os(iOS)
+        case .accessoryRectangular:
+            lockMemoView
+        #endif
+        default:
+            mediumMemoView
+        }
+    }
+
+    private var smallMemoView: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                HStack(spacing: 3) {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 9.5, weight: .bold))
+                    Text("备忘 \(entry.totalCount)")
+                        .font(.system(size: 10.5, weight: .bold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(warmGradient)
+                .clipShape(Capsule())
+
+                Spacer()
+
+                Link(destination: URL(string: "tracetodo://notes")!) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color(red: 0.88, green: 0.36, blue: 0.28))
+                }
+            }
+
+            if entry.needsLogin {
+                Spacer(minLength: 2)
+                Text("🔐 打开 TraceTodo 登录同步随记与置顶灵感")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 2)
+            } else if let top = entry.memos.first {
+                Text(top.title)
+                    .font(.system(size: 12.5, weight: .bold))
+                    .lineLimit(1)
+                Text(top.excerpt.isEmpty ? "轻点查看完整 Markdown 随记" : top.excerpt)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                Spacer(minLength: 0)
+                if let firstTag = top.tags.first {
+                    Text("#\(firstTag)")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.88, green: 0.36, blue: 0.28))
+                }
+            } else {
+                Spacer(minLength: 2)
+                Text("暂无随记备忘，轻点随时记录灵感与照片 OCR")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 2)
+            }
+        }
+        .widgetURL(URL(string: entry.needsLogin ? "tracetodo://login" : "tracetodo://notes"))
+    }
+
+    private var mediumMemoView: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text("MEMOS")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .tracking(0.8)
+                        .foregroundStyle(.white.opacity(0.88))
+                    Spacer()
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+
+                Text("\(entry.totalCount)")
+                    .font(.system(size: 28, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.white)
+
+                Spacer(minLength: 2)
+
+                Text("📌 置顶 \(entry.pinnedCount) 条")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.92))
+
+                Link(destination: URL(string: "tracetodo://notes")!) {
+                    Label("记随记", systemImage: "square.and.pencil")
+                        .font(.system(size: 10, weight: .bold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3.5)
+                        .background(Color.white.opacity(0.22))
+                        .foregroundStyle(.white)
+                        .clipShape(Capsule())
+                }
+            }
+            .padding(11)
+            .frame(width: 110)
+            .frame(maxHeight: .infinity, alignment: .leading)
+            .background(warmGradient)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("置顶与最新备忘")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Link(destination: URL(string: "tracetodo://refresh")!) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if entry.needsLogin {
+                    Spacer()
+                    Text("🔐 轻点打开应用登录同步随记备忘")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                } else if entry.memos.isEmpty {
+                    Spacer()
+                    Text("✨ 还没有备忘录，点击左侧「记随记」写下第一篇")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                } else {
+                    ForEach(entry.memos.prefix(3)) { memo in
+                        VStack(alignment: .leading, spacing: 1.5) {
+                            HStack(spacing: 4) {
+                                if memo.pinned {
+                                    Image(systemName: "pin.fill")
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(Color(red: 0.90, green: 0.38, blue: 0.20))
+                                }
+                                Text(memo.title)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .lineLimit(1)
+                                Spacer(minLength: 2)
+                                if let tag = memo.tags.first {
+                                    Text("#\(tag)")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundStyle(Color(red: 0.88, green: 0.36, blue: 0.28))
+                                }
+                            }
+                            if !memo.excerpt.isEmpty && memo.excerpt != memo.title {
+                                Text(memo.excerpt)
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .padding(.vertical, 1.5)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .widgetURL(URL(string: entry.needsLogin ? "tracetodo://login" : "tracetodo://notes"))
+    }
+
+    private var largeMemoView: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("📌 TraceTodo · 随记备忘录")
+                        .font(.system(size: 14, weight: .bold))
+                    Text("共 \(entry.totalCount) 条备忘 · 已置顶 \(entry.pinnedCount) 条")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Link(destination: URL(string: "tracetodo://refresh")!) {
+                    Image(systemName: "arrow.clockwise.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                Link(destination: URL(string: "tracetodo://notes")!) {
+                    Image(systemName: "square.and.pencil.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(Color(red: 0.90, green: 0.38, blue: 0.22))
+                }
+            }
+
+            Divider()
+
+            if entry.memos.isEmpty {
+                Spacer()
+                Text(entry.needsLogin ? "🔐 打开 TraceTodo 登录后即可在桌面浏览置顶备忘" : "✨ 暂无备忘录，轻点右上角随时记录 Markdown 灵感或票据照片")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(entry.memos.prefix(5)) { memo in
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 5) {
+                                if memo.pinned {
+                                    Text("置顶")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 1.5)
+                                        .background(Color(red: 0.92, green: 0.40, blue: 0.20).opacity(0.16))
+                                        .foregroundStyle(Color(red: 0.90, green: 0.36, blue: 0.18))
+                                        .clipShape(Capsule())
+                                }
+                                Text(memo.title)
+                                    .font(.system(size: 12.5, weight: .bold))
+                                    .lineLimit(1)
+                                Spacer(minLength: 4)
+                                ForEach(memo.tags.prefix(2), id: \.self) { t in
+                                    Text("#\(t)")
+                                        .font(.system(size: 9.5, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            if !memo.excerpt.isEmpty {
+                                Text(memo.excerpt)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.primary.opacity(0.04))
+                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .widgetURL(URL(string: entry.needsLogin ? "tracetodo://login" : "tracetodo://notes"))
+    }
+
+    #if os(iOS)
+    private var lockMemoView: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Label("随记备忘", systemImage: "pin.fill")
+                    .font(.caption2.bold())
+                Spacer()
+                Text("\(entry.totalCount)条")
+                    .font(.caption2)
+            }
+            if let top = entry.memos.first {
+                Text(top.title)
+                    .font(.caption.bold())
+                    .lineLimit(1)
+                Text(top.excerpt)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            } else {
+                Text("轻点记录灵感备忘")
+                    .font(.caption)
+            }
+        }
+        .widgetURL(URL(string: "tracetodo://notes"))
+    }
+    #endif
+}
+
+struct TraceMemoWidget: Widget {
+    let kind: String = "TraceMemoWidget"
+
+    #if os(iOS)
+    private let families: [WidgetFamily] = [
+        .systemSmall,
+        .systemMedium,
+        .systemLarge,
+        .accessoryRectangular
+    ]
+    #else
+    private let families: [WidgetFamily] = [
+        .systemSmall,
+        .systemMedium,
+        .systemLarge
+    ]
+    #endif
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(
+            kind: kind,
+            provider: TraceMemoStaticProvider()
+        ) { entry in
+            #if os(iOS)
+            TraceMemoWidgetContainer(entry: entry)
+            #else
+            TraceMemoWidgetEntryView(entry: entry)
+                .containerBackground(.fill.tertiary, for: .widget)
+            #endif
+        }
+        .configurationDisplayName("TraceTodo 随记备忘录")
+        .description("在桌面随时查看置顶灵感、读书清单与最新随记便签，一键打开速记。")
+        .supportedFamilies(families)
+    }
+}
+
+#if os(iOS)
+private struct TraceMemoWidgetContainer: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: TraceMemoEntry
+
+    var body: some View {
+        switch family {
+        case .accessoryRectangular:
+            TraceMemoWidgetEntryView(entry: entry)
+                .containerBackground(.clear, for: .widget)
+        default:
+            TraceMemoWidgetEntryView(entry: entry)
+                .containerBackground(.fill.tertiary, for: .widget)
+        }
+    }
+}
+#endif
+
+// MARK: - Today Calendar & Schedule Timeline Widget (StaticConfiguration)
+
+struct WidgetCalendarDayDot: Identifiable, Hashable {
+    let id: String
+    let dayNumber: Int
+    let shortWeekday: String
+    let isToday: Bool
+    let hasEvents: Bool
+}
+
+struct WidgetScheduleRow: Identifiable, Hashable {
+    let id: String
+    let timeBadge: String
+    let title: String
+    let isDone: Bool
+    let isAllDay: Bool
+    let colorTheme: String
+
+    var accentColor: Color {
+        switch colorTheme {
+        case "crimson", "peach": return Color(red: 0.91, green: 0.30, blue: 0.28)
+        case "mint": return Color(red: 0.06, green: 0.67, blue: 0.50)
+        case "lavender", "pink": return Color(red: 0.55, green: 0.34, blue: 0.95)
+        default: return Color(red: 0.14, green: 0.54, blue: 0.95)
+        }
+    }
+}
+
+private struct RawWidgetCalOverviewDTO: Decodable {
+    let todayDate: String?
+    let periodLabel: String?
+    let days: [RawWidgetCalDayDTO]
+    let unscheduledTasks: [RawWidgetCalUnscheduledDTO]?
+
+    enum CodingKeys: String, CodingKey {
+        case todayDate = "today_date"
+        case periodLabel = "period_label"
+        case days
+        case unscheduledTasks = "unscheduled_tasks"
+    }
+}
+
+private struct RawWidgetCalDayDTO: Decodable {
+    let date: String
+    let month: Int
+    let day: Int
+    let weekdayLabel: String?
+    let isToday: Bool?
+    let focusMinutes: Int?
+    let allDayTasks: [RawWidgetCalAllDayDTO]?
+    let timedBlocks: [RawWidgetCalTimedDTO]?
+
+    enum CodingKeys: String, CodingKey {
+        case date, month, day
+        case weekdayLabel = "weekday_label"
+        case isToday = "is_today"
+        case focusMinutes = "focus_minutes"
+        case allDayTasks = "all_day_tasks"
+        case timedBlocks = "timed_blocks"
+    }
+}
+
+private struct RawWidgetCalAllDayDTO: Decodable {
+    let memoryId: String
+    let title: String
+    let isDone: Bool?
+    let colorTheme: String?
+
+    enum CodingKeys: String, CodingKey {
+        case memoryId = "memory_id"
+        case title
+        case isDone = "is_done"
+        case colorTheme = "color_theme"
+    }
+}
+
+private struct RawWidgetCalTimedDTO: Decodable {
+    let memoryId: String
+    let title: String
+    let isDone: Bool?
+    let colorTheme: String?
+    let timeRangeLabel: String?
+    let startMinute: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case memoryId = "memory_id"
+        case title
+        case isDone = "is_done"
+        case colorTheme = "color_theme"
+        case timeRangeLabel = "time_range_label"
+        case startMinute = "start_minute"
+    }
+}
+
+private struct RawWidgetCalUnscheduledDTO: Decodable {
+    let memoryId: String
+    enum CodingKeys: String, CodingKey { case memoryId = "memory_id" }
+}
+
+struct TraceCalendarEntry: TimelineEntry {
+    let date: Date
+    let monthNumber: Int
+    let dayNumber: Int
+    let weekdayLabel: String
+    let focusMinutes: Int
+    let unscheduledCount: Int
+    let weekDays: [WidgetCalendarDayDot]
+    let todaySchedules: [WidgetScheduleRow]
+    let needsLogin: Bool
+
+    static func placeholder(needsLogin: Bool = false) -> TraceCalendarEntry {
+        let cal = Calendar.current
+        let now = Date()
+        let m = cal.component(.month, from: now)
+        let d = cal.component(.day, from: now)
+        let wdNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
+        let wdIdx = max(0, min(6, cal.component(.weekday, from: now) - 1))
+        if needsLogin {
+            return TraceCalendarEntry(
+                date: now,
+                monthNumber: m,
+                dayNumber: d,
+                weekdayLabel: wdNames[wdIdx],
+                focusMinutes: 0,
+                unscheduledCount: 0,
+                weekDays: [],
+                todaySchedules: [],
+                needsLogin: true
+            )
+        }
+        return TraceCalendarEntry(
+            date: now,
+            monthNumber: m,
+            dayNumber: d,
+            weekdayLabel: wdNames[wdIdx],
+            focusMinutes: 50,
+            unscheduledCount: 2,
+            weekDays: [
+                WidgetCalendarDayDot(id: "w1", dayNumber: max(1, d - 1), shortWeekday: "一", isToday: false, hasEvents: true),
+                WidgetCalendarDayDot(id: "w2", dayNumber: d, shortWeekday: "二", isToday: true, hasEvents: true),
+                WidgetCalendarDayDot(id: "w3", dayNumber: d + 1, shortWeekday: "三", isToday: false, hasEvents: true),
+                WidgetCalendarDayDot(id: "w4", dayNumber: d + 2, shortWeekday: "四", isToday: false, hasEvents: false),
+                WidgetCalendarDayDot(id: "w5", dayNumber: d + 3, shortWeekday: "五", isToday: false, hasEvents: true),
+                WidgetCalendarDayDot(id: "w6", dayNumber: d + 4, shortWeekday: "六", isToday: false, hasEvents: false),
+                WidgetCalendarDayDot(id: "w7", dayNumber: d + 5, shortWeekday: "日", isToday: false, hasEvents: false)
+            ],
+            todaySchedules: [
+                WidgetScheduleRow(id: "s1", timeBadge: "09:30–11:00", title: "核心课题方案评审", isDone: false, isAllDay: false, colorTheme: "sky"),
+                WidgetScheduleRow(id: "s2", timeBadge: "14:00–15:30", title: "深度代码重构与联调", isDone: false, isAllDay: false, colorTheme: "lavender"),
+                WidgetScheduleRow(id: "s3", timeBadge: "全天", title: "提交周度进度汇总", isDone: false, isAllDay: true, colorTheme: "mint")
+            ],
+            needsLogin: false
+        )
+    }
+}
+
+struct TraceCalendarStaticProvider: TimelineProvider {
+    func placeholder(in context: Context) -> TraceCalendarEntry {
+        .placeholder()
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (TraceCalendarEntry) -> Void) {
+        if context.isPreview {
+            if let cached = SharedWidgetBridge.loadCalendarSnapshotData(),
+               let parsed = try? Self.decodeCalendarData(cached) {
+                completion(parsed)
+                return
+            }
+            completion(.placeholder())
+            return
+        }
+        Task {
+            completion(await Self.fetchCalendarEntry())
+        }
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<TraceCalendarEntry>) -> Void) {
+        Task {
+            let entry = await Self.fetchCalendarEntry()
+            let mins = entry.needsLogin ? 5 : 15
+            let nextRefresh = Calendar.current.date(byAdding: .minute, value: mins, to: Date()) ?? Date().addingTimeInterval(Double(mins * 60))
+            completion(Timeline(entries: [entry], policy: .after(nextRefresh)))
+        }
+    }
+
+    static func decodeCalendarData(_ data: Data) throws -> TraceCalendarEntry {
+        let dto = try JSONDecoder().decode(RawWidgetCalOverviewDTO.self, from: data)
+        let weekDots: [WidgetCalendarDayDot] = dto.days.prefix(7).map { d in
+            let wdRaw = d.weekdayLabel ?? ""
+            let shortWd = String(wdRaw.suffix(1))
+            let cnt = (d.timedBlocks?.count ?? 0) + (d.allDayTasks?.count ?? 0)
+            return WidgetCalendarDayDot(
+                id: d.date,
+                dayNumber: d.day,
+                shortWeekday: shortWd.isEmpty ? "\(d.day)" : shortWd,
+                isToday: d.isToday ?? false,
+                hasEvents: cnt > 0
+            )
+        }
+
+        let todayBucket = dto.days.first(where: { $0.isToday == true }) ?? dto.days.first
+        let cal = Calendar.current
+        let now = Date()
+        let monthNum = todayBucket?.month ?? cal.component(.month, from: now)
+        let dayNum = todayBucket?.day ?? cal.component(.day, from: now)
+        let wdLabel = todayBucket?.weekdayLabel ?? "今日"
+        let focusMins = todayBucket?.focusMinutes ?? 0
+
+        var schedules: [WidgetScheduleRow] = []
+        if let timed = todayBucket?.timedBlocks {
+            let sortedTimed = timed.sorted { ($0.startMinute ?? 0) < ($1.startMinute ?? 0) }
+            for tb in sortedTimed {
+                let rangeStr = (tb.timeRangeLabel ?? "日程").replacingOccurrences(of: " - ", with: "–")
+                schedules.append(
+                    WidgetScheduleRow(
+                        id: "t-\(tb.memoryId)",
+                        timeBadge: rangeStr,
+                        title: tb.title,
+                        isDone: tb.isDone ?? false,
+                        isAllDay: false,
+                        colorTheme: tb.colorTheme ?? "sky"
+                    )
+                )
+            }
+        }
+        if let allDay = todayBucket?.allDayTasks {
+            for ad in allDay {
+                schedules.append(
+                    WidgetScheduleRow(
+                        id: "a-\(ad.memoryId)",
+                        timeBadge: "全天",
+                        title: ad.title,
+                        isDone: ad.isDone ?? false,
+                        isAllDay: true,
+                        colorTheme: ad.colorTheme ?? "mint"
+                    )
+                )
+            }
+        }
+
+        return TraceCalendarEntry(
+            date: now,
+            monthNumber: monthNum,
+            dayNumber: dayNum,
+            weekdayLabel: wdLabel,
+            focusMinutes: focusMins,
+            unscheduledCount: dto.unscheduledTasks?.count ?? 0,
+            weekDays: weekDots,
+            todaySchedules: schedules,
+            needsLogin: false
+        )
+    }
+
+    static func fetchCalendarEntry() async -> TraceCalendarEntry {
+        let resolved = WidgetAPI.resolveSharedConfig()
+        let base = resolved.base
+        let space = resolved.space
+        let token = resolved.token
+
+        if var comps = URLComponents(string: "\(base)/api/calendar/overview") {
+            var qItems = [
+                URLQueryItem(name: "view", value: "week"),
+                URLQueryItem(name: "include_done", value: "true")
+            ]
+            if token.isEmpty || (!space.isEmpty && space != "default") {
+                qItems.append(URLQueryItem(name: "space_id", value: space.isEmpty ? "default" : space))
+            }
+            comps.queryItems = qItems
+            if let url = comps.url {
+                var req = URLRequest(url: url)
+                req.timeoutInterval = 8
+                if !token.isEmpty {
+                    req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                }
+                if let (data, resp) = try? await URLSession.shared.data(for: req),
+                   let http = resp as? HTTPURLResponse {
+                    if (200...299).contains(http.statusCode),
+                       let parsed = try? decodeCalendarData(data) {
+                        SharedWidgetBridge.saveCalendarSnapshotData(data)
+                        return parsed
+                    }
+                    if http.statusCode == 401 || http.statusCode == 403 {
+                        if let cached = SharedWidgetBridge.loadCalendarSnapshotData(),
+                           let parsed = try? decodeCalendarData(cached) {
+                            return parsed
+                        }
+                        return .placeholder(needsLogin: true)
+                    }
+                }
+            }
+        }
+
+        if let cached = SharedWidgetBridge.loadCalendarSnapshotData(),
+           let parsed = try? decodeCalendarData(cached) {
+            return parsed
+        }
+        return .placeholder(needsLogin: token.isEmpty)
+    }
+}
+
+struct TraceCalendarWidgetEntryView: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: TraceCalendarEntry
+
+    private let tealGradient = LinearGradient(
+        colors: [Color(red: 0.05, green: 0.62, blue: 0.53), Color(red: 0.14, green: 0.48, blue: 0.89)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
+    var body: some View {
+        switch family {
+        case .systemSmall:
+            smallCalView
+        case .systemMedium:
+            mediumCalView
+        case .systemLarge:
+            largeCalView
+        #if os(iOS)
+        case .accessoryRectangular:
+            lockCalView
+        #endif
+        default:
+            mediumCalView
+        }
+    }
+
+    private var smallCalView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(entry.dayNumber)")
+                    .font(.system(size: 28, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Color(red: 0.06, green: 0.58, blue: 0.50))
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("\(entry.monthNumber)月 · \(entry.weekdayLabel)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.secondary)
+                    Text("今日日程 \(entry.todaySchedules.count)")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer(minLength: 0)
+            }
+
+            Divider()
+
+            if entry.needsLogin {
+                Spacer(minLength: 2)
+                Text("🔐 打开应用同步日历排期")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 2)
+            } else if entry.todaySchedules.isEmpty {
+                Spacer(minLength: 2)
+                Text("今日暂无排期日程，轻点规划时间块 ✨")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                Spacer(minLength: 2)
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(entry.todaySchedules.prefix(2)) { row in
+                        HStack(spacing: 5) {
+                            RoundedRectangle(cornerRadius: 1.5)
+                                .fill(row.accentColor)
+                                .frame(width: 3, height: 13)
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(row.title)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .strikethrough(row.isDone)
+                                    .foregroundStyle(row.isDone ? .secondary : .primary)
+                                    .lineLimit(1)
+                                Text(row.timeBadge)
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .widgetURL(URL(string: entry.needsLogin ? "tracetodo://login" : "tracetodo://calendar"))
+    }
+
+    private var mediumCalView: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(entry.monthNumber)月 · \(entry.weekdayLabel)")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.9))
+
+                Text("\(entry.dayNumber)")
+                    .font(.system(size: 34, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.white)
+
+                Spacer(minLength: 2)
+
+                Text(entry.focusMinutes > 0 ? "🍅 今日专注 \(entry.focusMinutes)m" : "📅 今日 \(entry.todaySchedules.count) 项日程")
+                    .font(.system(size: 9.8, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .lineLimit(1)
+
+                Link(destination: URL(string: "tracetodo://calendar")!) {
+                    Label("时间轴", systemImage: "calendar")
+                        .font(.system(size: 10, weight: .bold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.white.opacity(0.22))
+                        .foregroundStyle(.white)
+                        .clipShape(Capsule())
+                }
+            }
+            .padding(11)
+            .frame(width: 110)
+            .frame(maxHeight: .infinity, alignment: .leading)
+            .background(tealGradient)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 6) {
+                if !entry.weekDays.isEmpty {
+                    HStack(spacing: 3) {
+                        ForEach(entry.weekDays) { wd in
+                            VStack(spacing: 1) {
+                                Text(wd.shortWeekday)
+                                    .font(.system(size: 8.5, weight: .semibold))
+                                    .foregroundStyle(wd.isToday ? Color.white : .secondary)
+                                Text("\(wd.dayNumber)")
+                                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                                    .foregroundStyle(wd.isToday ? Color.white : .primary)
+                                Circle()
+                                    .fill(wd.isToday ? Color.white : (wd.hasEvents ? Color(red: 0.06, green: 0.62, blue: 0.53) : Color.clear))
+                                    .frame(width: 3.5, height: 3.5)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 3)
+                            .background(wd.isToday ? Color(red: 0.06, green: 0.60, blue: 0.52) : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        }
+                    }
+                }
+
+                if entry.needsLogin {
+                    Spacer()
+                    Text("🔐 轻点打开 TraceTodo 登录同步日历日程")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                } else if entry.todaySchedules.isEmpty {
+                    Spacer()
+                    Text("✨ 今日暂无排期事项，轻点进入周时间轴排程")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                } else {
+                    ForEach(entry.todaySchedules.prefix(3)) { row in
+                        HStack(spacing: 6) {
+                            RoundedRectangle(cornerRadius: 1.5)
+                                .fill(row.accentColor)
+                                .frame(width: 3, height: 14)
+                            Text(row.timeBadge)
+                                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                                .foregroundStyle(row.accentColor)
+                                .lineLimit(1)
+                            Text(row.title)
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .strikethrough(row.isDone)
+                                .foregroundStyle(row.isDone ? .secondary : .primary)
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .widgetURL(URL(string: entry.needsLogin ? "tracetodo://login" : "tracetodo://calendar"))
+    }
+
+    private var largeCalView: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("📅 TraceTodo · \(entry.monthNumber)月\(entry.dayNumber)日 \(entry.weekdayLabel)")
+                        .font(.system(size: 14, weight: .bold))
+                    Text("今日日程 \(entry.todaySchedules.count) 项 · 待排期池 \(entry.unscheduledCount) 项 · 专注 \(entry.focusMinutes)m")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Link(destination: URL(string: "tracetodo://refresh")!) {
+                    Image(systemName: "arrow.clockwise.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                Link(destination: URL(string: "tracetodo://calendar")!) {
+                    Image(systemName: "calendar.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(Color(red: 0.06, green: 0.60, blue: 0.52))
+                }
+            }
+
+            if !entry.weekDays.isEmpty {
+                HStack(spacing: 5) {
+                    ForEach(entry.weekDays) { wd in
+                        VStack(spacing: 2) {
+                            Text(wd.shortWeekday)
+                                .font(.system(size: 9.5, weight: .semibold))
+                                .foregroundStyle(wd.isToday ? Color.white : .secondary)
+                            Text("\(wd.dayNumber)")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundStyle(wd.isToday ? Color.white : .primary)
+                            Circle()
+                                .fill(wd.isToday ? Color.white : (wd.hasEvents ? Color(red: 0.06, green: 0.62, blue: 0.53) : Color.clear))
+                                .frame(width: 4, height: 4)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 5)
+                        .background(wd.isToday ? tealGradient : LinearGradient(colors: [Color.primary.opacity(0.04)], startPoint: .top, endPoint: .bottom))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                }
+            }
+
+            Divider()
+
+            if entry.todaySchedules.isEmpty {
+                Spacer()
+                Text(entry.needsLogin ? "🔐 打开 TraceTodo 登录后在桌面查看整周排期与时间块" : "🎉 今日暂无排期日程，轻点打开日历将待排期池任务拖入时间轴")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            } else {
+                VStack(alignment: .leading, spacing: 7) {
+                    ForEach(entry.todaySchedules.prefix(6)) { row in
+                        HStack(spacing: 8) {
+                            Image(systemName: row.isDone ? "checkmark.circle.fill" : "clock.fill")
+                                .font(.system(size: 12))
+                                .foregroundStyle(row.isDone ? .green : row.accentColor)
+                            Text(row.timeBadge)
+                                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(row.accentColor.opacity(0.13))
+                                .foregroundStyle(row.accentColor)
+                                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                            Text(row.title)
+                                .font(.system(size: 12.5, weight: .semibold))
+                                .strikethrough(row.isDone)
+                                .foregroundStyle(row.isDone ? .secondary : .primary)
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .widgetURL(URL(string: entry.needsLogin ? "tracetodo://login" : "tracetodo://calendar"))
+    }
+
+    #if os(iOS)
+    private var lockCalView: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Label("\(entry.monthNumber)月\(entry.dayNumber)日 \(entry.weekdayLabel)", systemImage: "calendar")
+                    .font(.caption2.bold())
+                Spacer()
+                Text("\(entry.todaySchedules.count)项")
+                    .font(.caption2)
+            }
+            if let first = entry.todaySchedules.first {
+                Text("\(first.timeBadge) \(first.title)")
+                    .font(.caption)
+                    .lineLimit(1)
+            } else {
+                Text("今日暂无排期日程")
+                    .font(.caption)
+            }
+        }
+        .widgetURL(URL(string: "tracetodo://calendar"))
+    }
+    #endif
+}
+
+struct TraceCalendarWidget: Widget {
+    let kind: String = "TraceCalendarWidget"
+
+    #if os(iOS)
+    private let families: [WidgetFamily] = [
+        .systemSmall,
+        .systemMedium,
+        .systemLarge,
+        .accessoryRectangular
+    ]
+    #else
+    private let families: [WidgetFamily] = [
+        .systemSmall,
+        .systemMedium,
+        .systemLarge
+    ]
+    #endif
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(
+            kind: kind,
+            provider: TraceCalendarStaticProvider()
+        ) { entry in
+            #if os(iOS)
+            TraceCalendarWidgetContainer(entry: entry)
+            #else
+            TraceCalendarWidgetEntryView(entry: entry)
+                .containerBackground(.fill.tertiary, for: .widget)
+            #endif
+        }
+        .configurationDisplayName("TraceTodo 今日日历日程")
+        .description("展示本周迷你日历条、今日时间段排期与全天事项，一键直达周时间轴。")
+        .supportedFamilies(families)
+    }
+}
+
+#if os(iOS)
+private struct TraceCalendarWidgetContainer: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: TraceCalendarEntry
+
+    var body: some View {
+        switch family {
+        case .accessoryRectangular:
+            TraceCalendarWidgetEntryView(entry: entry)
+                .containerBackground(.clear, for: .widget)
+        default:
+            TraceCalendarWidgetEntryView(entry: entry)
+                .containerBackground(.fill.tertiary, for: .widget)
+        }
+    }
+}
+#endif
+
 @main
 struct TraceTodoWidgetsBundle: WidgetBundle {
     var body: some Widget {
         TraceTodoWidget()
+        TraceCalendarWidget()
+        TraceMemoWidget()
         TraceCountdownWidget()
     }
 }
