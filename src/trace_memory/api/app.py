@@ -124,6 +124,10 @@ SCENE_IDS = frozenset(
         "portrait_f_cool",
         "portrait_f_hanfu",
         "portrait_f_vitality",
+        "portrait_f_qipao",
+        "portrait_f_snow",
+        "portrait_f_ballet",
+        "portrait_f_cyber",
     }
 )
 

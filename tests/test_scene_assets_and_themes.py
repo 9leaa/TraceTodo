@@ -71,6 +71,7 @@ class TestSceneAssetsAndThemes(unittest.TestCase):
             "celadon_mist",
             "velvet_noir",
             "obsidian_gold",
+            "tide_blue",
         ):
             self.assertIn(new_id, ids)
 
@@ -80,6 +81,11 @@ class TestSceneAssetsAndThemes(unittest.TestCase):
             ("celadon_mist", "portrait_f_hanfu"),
             ("velvet_noir", "portrait_f_cool"),
             ("obsidian_gold", "portrait_m"),
+            ("tide_blue", "portrait_m_sport"),
+            ("autumn", "portrait_f_qipao"),
+            ("snow_peak", "portrait_f_snow"),
+            ("nebula", "portrait_f_ballet"),
+            ("cyber", "portrait_f_cyber"),
         ):
             code, res = self.api.dispatch(
                 "POST",
@@ -166,6 +172,10 @@ class TestSceneAssetsAndThemes(unittest.TestCase):
             "portrait_f_cool.jpg",
             "portrait_f_hanfu.jpg",
             "portrait_f_vitality.jpg",
+            "portrait_f_qipao.jpg",
+            "portrait_f_snow.jpg",
+            "portrait_f_ballet.jpg",
+            "portrait_f_cyber.jpg",
         ):
             with self.subTest(scene=scene_file):
                 with urllib.request.urlopen(f"http://127.0.0.1:{port}/scenes/{scene_file}", timeout=5) as r:
@@ -219,8 +229,26 @@ class TestSceneAssetsAndThemes(unittest.TestCase):
             "portrait_f_cool",
             "portrait_f_hanfu",
             "portrait_f_vitality",
+            "portrait_f_qipao",
+            "portrait_f_snow",
+            "portrait_f_ballet",
+            "portrait_f_cyber",
+            '[data-theme="tide_blue"]',
+            "theme-gallery-wrap",
+            "theme-group-head",
         ):
             self.assertIn(marker, html, f"Missing UI marker: {marker}")
+
+    def test_theme_catalog_light_dark_partition_is_complete(self) -> None:
+        code, res = self.api.dispatch("GET", "/api/preferences", {"space_id": ["group_sp"]})
+        self.assertEqual(code, 200)
+        cat = res["themes_catalog"]
+        light = [t for t in cat if t["is_dark"] is False]
+        dark = [t for t in cat if t["is_dark"] is True]
+        self.assertEqual(len(light) + len(dark), len(cat))
+        self.assertGreaterEqual(len(light), 5)
+        self.assertGreaterEqual(len(dark), 5)
+        self.assertIn("tide_blue", {t["id"] for t in light})
 
     def test_focus_duration_pills_do_not_override_active_text_color_inline(self) -> None:
         html = (REPO_ROOT / "src" / "trace_memory" / "api" / "dashboard.html").read_text(encoding="utf-8")
