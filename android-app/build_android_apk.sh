@@ -63,8 +63,10 @@ rm -rf "$WORK_DIR" "$OUT_APK"
 mkdir -p "$WORK_DIR/compiled_res" "$WORK_DIR/gen" "$WORK_DIR/classes" "$WORK_DIR/dex" "$WORK_DIR/res_stage" "$DIST_DIR"
 
 cp -R "$SCRIPT_DIR/app/src/main/res/"* "$WORK_DIR/res_stage/"
-if [ "$IS_TEST" = "1" ] && [ -f "$WORK_DIR/res_stage/xml/shortcuts.xml" ]; then
-  sed -i '' "s/com\.tracememory\.tracetodo/${PKG_ID}/g" "$WORK_DIR/res_stage/xml/shortcuts.xml"
+if [ "$IS_TEST" = "1" ]; then
+  if [ -f "$WORK_DIR/res_stage/xml/shortcuts.xml" ]; then
+    sed -i '' "s/com\.tracememory\.tracetodo/${PKG_ID}/g" "$WORK_DIR/res_stage/xml/shortcuts.xml"
+  fi
 fi
 cat > "$WORK_DIR/res_stage/values/strings.xml" <<STRXML
 <?xml version="1.0" encoding="utf-8"?>
@@ -83,6 +85,8 @@ cat > "$WORK_DIR/res_stage/values/strings.xml" <<STRXML
     <string name="sc_ask_long">💬 随手问记忆大脑</string>
     <string name="sc_auth_short">账号登录</string>
     <string name="sc_auth_long">🔐 登录或切换云端账号</string>
+    <string name="widget_label">${APP_LABEL} 四象限待办</string>
+    <string name="widget_desc">在手机桌面实时展示今日四象限优先待办，支持一键刷新与新建</string>
     <color name="ic_launcher_background">#0F172A</color>
 </resources>
 STRXML
@@ -90,15 +94,15 @@ STRXML
 echo "🤖 [1/5] Compiling Android resources with aapt2 ($APP_STEM)..."
 "$AAPT2" compile --dir "$WORK_DIR/res_stage" -o "$WORK_DIR/compiled_res/resources.zip"
 
-echo "🔗 [2/5] Linking resources & AndroidManifest (targetSdk 34, version 1.4.2)..."
+echo "🔗 [2/5] Linking resources & AndroidManifest (targetSdk 34, version 1.4.3)..."
 "$AAPT2" link \
   -I "$ANDROID_JAR" \
   --manifest "$SCRIPT_DIR/app/src/main/AndroidManifest.xml" \
   --rename-manifest-package "$PKG_ID" \
   --min-sdk-version 24 \
   --target-sdk-version 34 \
-  --version-code 6 \
-  --version-name "1.4.2" \
+  --version-code 7 \
+  --version-name "1.4.3" \
   --java "$WORK_DIR/gen" \
   -o "$WORK_DIR/unaligned.apk" \
   "$WORK_DIR/compiled_res/resources.zip"
@@ -111,6 +115,7 @@ javac \
   -encoding UTF-8 \
   -d "$WORK_DIR/classes" \
   "$WORK_DIR/gen/com/tracememory/tracetodo/R.java" \
+  "$SCRIPT_DIR/app/src/main/java/com/tracememory/tracetodo/TodoWidgetProvider.java" \
   "$SCRIPT_DIR/app/src/main/java/com/tracememory/tracetodo/MainActivity.java"
 
 echo "⚡ [4/5] Converting bytecode to universal DEX 035/037 with d8..."

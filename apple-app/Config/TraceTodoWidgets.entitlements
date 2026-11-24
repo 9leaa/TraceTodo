@@ -5,6 +5,13 @@
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>group.com.tracememory.tracetodo</string>
+		<string>group.com.tracememory.tracetodo.ios</string>
+	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.tracememory.tracetodo.ios.widgets</string>
+		<string>$(AppIdentifierPrefix)com.tracememory.tracetodo.ios</string>
+		<string>$(AppIdentifierPrefix)com.tracememory.tracetodo.shared</string>
 	</array>
 </dict>
 </plist>
