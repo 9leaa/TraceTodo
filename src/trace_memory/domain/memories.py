@@ -588,13 +588,19 @@ class MemoryEvidence:
     note_id: str
     note_revision: int
     quote: str = ""
+    # "source": the note's own words support the memory.
+    # "base": a later note's write depended on this note (refers_to); forgetting it voids the memory.
+    role: str = "source"
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "note_id": self.note_id,
             "note_revision": self.note_revision,
             "quote": self.quote,
         }
+        if self.role != "source":
+            out["role"] = self.role
+        return out
 
 
 @dataclass(frozen=True)

@@ -35,6 +35,10 @@ def _merge_evidences(
         (e.note_id, e.note_revision): e for e in old_evs
     }
     for e in new_evs:
+        prev = merged.get((e.note_id, e.note_revision))
+        if prev is not None and prev.role == "base" and e.role != "base":
+            # Never downgrade a dependency marker: forgetting a base note must still void this memory
+            e = MemoryEvidence(note_id=e.note_id, note_revision=e.note_revision, quote=e.quote, role="base")
         merged[(e.note_id, e.note_revision)] = e
     return tuple(merged.values())
 
@@ -286,7 +290,10 @@ class ChangeService:
             # Cascade-clean supporting RawNotes (exclusive notes fully scrubbed; shared notes redact non-overlapping spans)
             purged_note_ids: list[str] = []
             redacted_spans_all: list[str] = []
+            keep_notes = set(proposal.keep_note_ids)
             for nid in old_note_ids:
+                if nid in keep_notes:
+                    continue
                 note = self.note_repo.get(proposal.space_id, nid, include_forgotten=True)
                 if note is None:
                     continue

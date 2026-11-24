@@ -320,6 +320,7 @@ class DeterministicLLMProvider:
         note_text: str,
         default_event_time: str,
         existing_memories: list[MemoryItem] | None = None,
+        recent_notes: list[dict[str, Any]] | None = None,
     ) -> ExtractionBatch:
         raw_relations = [
             RelationSpec(relation_type=r_type, target=target, context=ctx)

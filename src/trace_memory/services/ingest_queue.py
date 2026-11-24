@@ -60,6 +60,10 @@ _SERIAL_BARRIER_SIGNAL_RE = re.compile(
 )
 
 
+class WorkerStopping(Exception):
+    """Raised inside the commit barrier when shutdown starts: the job is requeued, never committed."""
+
+
 def requires_serial_barrier(text: str) -> bool:
     """Return True when `text` references or mutates prior tasks/facts and should wait before extraction."""
     clean = str(text or "").strip()
@@ -96,8 +100,10 @@ class IngestJobRepository:
         idempotency_key: str = "",
         content_hint: str = "",
         requires_barrier: bool | None = None,
+        context_excludes: tuple[str, ...] | list[str] = (),
     ) -> dict[str, Any]:
         job_id = new_id("job")
+        excludes_json = json.dumps([str(x) for x in (context_excludes or ())], ensure_ascii=False)
         now = beijing_now_iso()
         with self.db.transaction() as conn:
             if requires_barrier is None:
@@ -117,10 +123,10 @@ class IngestJobRepository:
                 """
                 INSERT INTO ingest_jobs
                     (job_id, space_id, note_id, actor_id, idempotency_key, requires_barrier, status, attempts,
-                     error_message, result_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, '', '{}', ?, ?)
+                     error_message, result_json, created_at, updated_at, context_excludes_json)
+                VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, '', '{}', ?, ?, ?)
                 """,
-                (job_id, space_id, note_id, actor_id, idempotency_key, barrier_flag, now, now),
+                (job_id, space_id, note_id, actor_id, idempotency_key, barrier_flag, now, now, excludes_json),
             )
             seq_id = int(cur.lastrowid or 0)
         return {
@@ -136,6 +142,7 @@ class IngestJobRepository:
             "error_message": "",
             "created_at": now,
             "updated_at": now,
+            "context_excludes": [str(x) for x in (context_excludes or ())],
         }
 
     def get_job(self, job_id: str) -> dict[str, Any] | None:
@@ -153,7 +160,7 @@ class IngestJobRepository:
                 """
                 UPDATE ingest_jobs
                 SET status = 'cancelled', error_message = ?, updated_at = ?
-                WHERE space_id = ? AND note_id = ? AND status = 'queued'
+                WHERE space_id = ? AND note_id = ? AND status IN ('queued', 'extracted')
                 """,
                 (reason, now, space_id, note_id),
             )
@@ -279,6 +286,177 @@ class IngestJobRepository:
                 (error_message[:300], now, job_id),
             )
 
+    def requeue_on_shutdown(self, job_id: str) -> None:
+        """Put a claimed job back to `queued` without consuming a retry attempt."""
+        now = beijing_now_iso()
+        with self.db.transaction() as conn:
+            conn.execute(
+                """
+                UPDATE ingest_jobs
+                SET status = 'queued', attempts = MAX(0, attempts - 1),
+                    error_message = 'worker_stopping', updated_at = ?
+                WHERE job_id = ? AND status = 'processing'
+                """,
+                (now, job_id),
+            )
+
+    # ------------------------------------------------------------------
+    # v2 two-stage pipeline (parallel extraction + ordered per-space commit)
+    # ------------------------------------------------------------------
+
+    def claim_batch(
+        self,
+        limit: int,
+        in_flight: dict[str, int],
+        last_scheduled: dict[str, float],
+        space_cap: int,
+    ) -> list[dict[str, Any]]:
+        """Atomically claim up to `limit` due jobs in ONE transaction, fair round-robin across spaces.
+
+        Within a space jobs are always claimed in seq order; ordering of the writes themselves is
+        enforced later by the commit pump, so no reference barrier is needed here.
+        """
+        if limit <= 0:
+            return []
+        now_ts = time.time()
+        now = beijing_now_iso()
+        cap = max(1, int(space_cap))
+        with self.db.transaction() as conn:
+            rows = conn.execute(
+                """
+                SELECT rowid AS seq_id, * FROM ingest_jobs
+                WHERE status = 'queued' AND next_run_ts <= ?
+                ORDER BY rowid ASC
+                LIMIT ?
+                """,
+                (now_ts, max(256, limit * 8)),
+            ).fetchall()
+            by_space: dict[str, list[Any]] = {}
+            for r in rows:
+                by_space.setdefault(str(r["space_id"]), []).append(r)
+            order = sorted(
+                by_space.keys(),
+                key=lambda sp: (
+                    in_flight.get(sp, 0) > 0,
+                    last_scheduled.get(sp, 0.0),
+                    int(by_space[sp][0]["seq_id"]),
+                ),
+            )
+            taken = {sp: 0 for sp in order}
+            picked: list[Any] = []
+            progress = True
+            while len(picked) < limit and progress:
+                progress = False
+                for sp in order:
+                    if len(picked) >= limit:
+                        break
+                    q = by_space[sp]
+                    if taken[sp] < len(q) and in_flight.get(sp, 0) + taken[sp] < cap:
+                        picked.append(q[taken[sp]])
+                        taken[sp] += 1
+                        progress = True
+            claimed: list[dict[str, Any]] = []
+            for r in picked:
+                cur = conn.execute(
+                    """
+                    UPDATE ingest_jobs
+                    SET status = 'processing', attempts = attempts + 1, updated_at = ?
+                    WHERE job_id = ? AND status = 'queued'
+                    """,
+                    (now, str(r["job_id"])),
+                )
+                if cur.rowcount == 1:
+                    d = self._row_to_dict(r)
+                    d["status"] = "processing"
+                    d["attempts"] = int(d["attempts"]) + 1
+                    claimed.append(d)
+            return claimed
+
+    def mark_extracted(self, job_id: str, artifact: dict[str, Any]) -> bool:
+        now = beijing_now_iso()
+        with self.db.transaction() as conn:
+            cur = conn.execute(
+                """
+                UPDATE ingest_jobs
+                SET status = 'extracted', extraction_json = ?, extracted_ts = ?,
+                    error_message = '', updated_at = ?
+                WHERE job_id = ? AND status = 'processing'
+                """,
+                (json.dumps(artifact, ensure_ascii=False), time.time(), now, job_id),
+            )
+            return int(cur.rowcount or 0) == 1
+
+    def schedule_retry(self, job_id: str, delay_seconds: float, error_message: str) -> None:
+        """Transient failure: back to `queued` with a not-before time; no thread sleeps on it."""
+        now = beijing_now_iso()
+        with self.db.transaction() as conn:
+            conn.execute(
+                """
+                UPDATE ingest_jobs
+                SET status = 'queued', next_run_ts = ?, error_message = ?, updated_at = ?
+                WHERE job_id = ? AND status = 'processing'
+                """,
+                (time.time() + max(0.0, float(delay_seconds)), error_message[:300], now, job_id),
+            )
+
+    def back_to_queued(self, job_id: str, reason: str) -> None:
+        """Discard a stale extraction artifact (context changed) so the job is extracted again."""
+        now = beijing_now_iso()
+        with self.db.transaction() as conn:
+            conn.execute(
+                """
+                UPDATE ingest_jobs
+                SET status = 'queued', extraction_json = '', extracted_ts = 0, next_run_ts = 0,
+                    error_message = ?, updated_at = ?
+                WHERE job_id = ? AND status = 'extracted'
+                """,
+                (reason[:300], now, job_id),
+            )
+
+    def mark_skipped_ahead(self, job_id: str) -> None:
+        with self.db.transaction() as conn:
+            conn.execute("UPDATE ingest_jobs SET skipped_ahead = 1 WHERE job_id = ?", (job_id,))
+
+    def list_unsettled(self, space_id: str, limit: int = 64) -> list[dict[str, Any]]:
+        """Head of the space's queue: every not-yet-terminal job in seq order."""
+        rows = self.db.query_all(
+            """
+            SELECT rowid AS seq_id, * FROM ingest_jobs
+            WHERE space_id = ? AND status IN ('queued', 'processing', 'extracted')
+            ORDER BY rowid ASC
+            LIMIT ?
+            """,
+            (space_id, max(1, int(limit))),
+        )
+        return [self._row_to_dict(r) for r in rows]
+
+    def spaces_with_status(self, status: str) -> list[str]:
+        rows = self.db.query_all(
+            "SELECT DISTINCT space_id FROM ingest_jobs WHERE status = ?", (status,)
+        )
+        return [str(r["space_id"]) for r in rows]
+
+    def next_retry_ts(self) -> float:
+        row = self.db.query_one(
+            "SELECT MIN(next_run_ts) AS ts FROM ingest_jobs WHERE status = 'queued' AND next_run_ts > ?",
+            (time.time(),),
+        )
+        return float(row["ts"]) if row is not None and row["ts"] is not None else 0.0
+
+    def reset_extracted_to_queued(self) -> int:
+        """Rollback helper (v2 -> v1): legacy workers do not understand `extracted`."""
+        now = beijing_now_iso()
+        with self.db.transaction() as conn:
+            cur = conn.execute(
+                """
+                UPDATE ingest_jobs
+                SET status = 'queued', extraction_json = '', extracted_ts = 0, updated_at = ?
+                WHERE status = 'extracted'
+                """,
+                (now,),
+            )
+            return int(cur.rowcount or 0)
+
     def mark_failed(self, job_id: str, error_message: str) -> None:
         now = beijing_now_iso()
         with self.db.transaction() as conn:
@@ -295,7 +473,7 @@ class IngestJobRepository:
         rows = self.db.query_all(
             """
             SELECT note_id FROM ingest_jobs
-            WHERE space_id = ? AND status IN ('queued', 'processing')
+            WHERE space_id = ? AND status IN ('queued', 'processing', 'extracted')
             ORDER BY created_at DESC, rowid DESC
             LIMIT ?
             """,
@@ -315,7 +493,8 @@ class IngestJobRepository:
         )
         counts = {str(r["status"]): int(r["cnt"]) for r in counts_rows}
         queued = counts.get("queued", 0)
-        processing = counts.get("processing", 0)
+        # `extracted` (v2: waiting for its ordered commit) is still in progress from the user's view
+        processing = counts.get("processing", 0) + counts.get("extracted", 0)
         completed = counts.get("completed", 0)
         failed = counts.get("failed", 0)
         cancelled = counts.get("cancelled", 0)
@@ -395,7 +574,34 @@ class IngestJobRepository:
             "result": result_data,
             "created_at": str(row["created_at"]),
             "updated_at": str(row["updated_at"]),
+            "next_run_ts": float(row["next_run_ts"] or 0) if "next_run_ts" in keys else 0.0,
+            "extracted_ts": float(row["extracted_ts"] or 0) if "extracted_ts" in keys else 0.0,
+            "skipped_ahead": bool(int(row["skipped_ahead"] or 0)) if "skipped_ahead" in keys else False,
+            "context_excludes": IngestJobRepository._json_list(row["context_excludes_json"])
+            if "context_excludes_json" in keys
+            else [],
+            "extraction": IngestJobRepository._json_obj(row["extraction_json"])
+            if "extraction_json" in keys
+            else None,
         }
+
+    @staticmethod
+    def _json_list(raw: Any) -> list[str]:
+        try:
+            data = json.loads(raw or "[]")
+        except Exception:
+            return []
+        return [str(x) for x in data] if isinstance(data, list) else []
+
+    @staticmethod
+    def _json_obj(raw: Any) -> dict[str, Any] | None:
+        if not raw:
+            return None
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return None
+        return data if isinstance(data, dict) else None
 
 
 class IngestWorkerPool:
@@ -424,9 +630,11 @@ class IngestWorkerPool:
             proc_params = inspect.signature(processor).parameters
             self._supports_defer_embeddings = "defer_embeddings" in proc_params
             self._supports_commit_barrier = "commit_barrier" in proc_params
+            self._supports_context_excludes = "context_excludes" in proc_params
         except (TypeError, ValueError):
             self._supports_defer_embeddings = False
             self._supports_commit_barrier = False
+            self._supports_context_excludes = False
 
         self._sched_lock = threading.Lock()
         self._cond = threading.Condition(self._sched_lock)
@@ -455,6 +663,7 @@ class IngestWorkerPool:
                 return
             self._stop_event.clear()
             self.job_repo.recover_interrupted_jobs()
+            self.job_repo.reset_extracted_to_queued()
             self._running = True
             self._threads = [
                 threading.Thread(
@@ -557,12 +766,19 @@ class IngestWorkerPool:
 
     @contextmanager
     def _commit_barrier(self, space_id: str, seq_id: int) -> Iterator[None]:
-        """Wait until all earlier in-flight jobs (`other_seq < seq_id`) in `space_id` have settled."""
+        """Wait until all earlier in-flight jobs (`other_seq < seq_id`) in `space_id` have settled.
+
+        A job that is free to commit is always let through, even during shutdown. A job that would
+        still have to wait when shutdown begins raises `WorkerStopping` and must NOT commit, otherwise
+        it could land before an earlier, still-running job of the same space.
+        """
         with self._sched_lock:
-            while not self._stop_event.is_set():
+            while True:
                 uncommitted = self._uncommitted_seqs.get(space_id)
                 if not uncommitted or min(uncommitted) >= seq_id:
                     break
+                if self._stop_event.is_set():
+                    raise WorkerStopping(f"shutdown while waiting for earlier jobs in {space_id}")
                 self._cond.wait(timeout=0.2)
         yield
 
@@ -636,6 +852,8 @@ class IngestWorkerPool:
                     call_kwargs["defer_embeddings"] = True
                 if self._supports_commit_barrier:
                     call_kwargs["commit_barrier"] = lambda: self._commit_barrier(space_id, seq_id)
+                if self._supports_context_excludes and job.get("context_excludes"):
+                    call_kwargs["context_excludes"] = tuple(job["context_excludes"])
                 res = self.processor(**call_kwargs)
                 deferred_vec = getattr(res, "deferred_vector_sync", None)
                 if callable(deferred_vec):
@@ -672,6 +890,9 @@ class IngestWorkerPool:
                         self.on_job_settled(space_id, settled_status)
                     except Exception:
                         pass
+                return
+            except WorkerStopping:
+                self.job_repo.requeue_on_shutdown(job_id)
                 return
             except Exception as exc:
                 if attempts < self.max_retries and _is_transient_llm_error(exc):
