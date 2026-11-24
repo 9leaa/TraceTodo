@@ -1,90 +1,7 @@
-import AppIntents
 import SwiftUI
 import WidgetKit
 
-// MARK: - Widget Configuration & Interactive Intents
-
-enum WidgetQuadrantFilter: String, AppEnum {
-    case all = "all"
-    case q1 = "Q1_do_first"
-    case q2 = "Q2_schedule"
-
-    static var typeDisplayRepresentation: TypeDisplayRepresentation = TypeDisplayRepresentation(name: "展示范围")
-    static var caseDisplayRepresentations: [WidgetQuadrantFilter: DisplayRepresentation] = [
-        .all: "全部优先级待办",
-        .q1: "仅 Q1 重要且紧急",
-        .q2: "仅 Q2 重要不紧急"
-    ]
-}
-
-struct TraceTodoWidgetConfigIntent: WidgetConfigurationIntent {
-    static var title: LocalizedStringResource = "TraceTodo 桌面待办"
-    static var description = IntentDescription("实时展示四象限待办，自动读取主 App 配置（默认线上环境），支持桌面打卡完成与锁屏展示。")
-
-    @Parameter(title: "服务端地址（留空自动跟随主 App）", default: "")
-    var serverURL: String
-
-    @Parameter(title: "记忆空间 Space ID（留空自动跟随主 App）", default: "")
-    var spaceId: String
-
-    @Parameter(title: "访问令牌 Token（留空自动跟随主 App）", default: "")
-    var authToken: String
-
-    @Parameter(title: "显示象限", default: .all)
-    var filter: WidgetQuadrantFilter
-}
-
-struct RefreshTodoWidgetIntent: AppIntent {
-    static var title: LocalizedStringResource = "刷新桌面待办"
-
-    func perform() async throws -> some IntentResult {
-        WidgetCenter.shared.reloadAllTimelines()
-        return .result()
-    }
-}
-
-struct CompleteWidgetTaskIntent: AppIntent {
-    static var title: LocalizedStringResource = "在桌面打卡完成任务"
-
-    @Parameter(title: "任务 ID")
-    var memoryId: String
-
-    @Parameter(title: "版本号")
-    var version: Int
-
-    @Parameter(title: "服务端地址")
-    var serverURL: String
-
-    @Parameter(title: "Space ID")
-    var spaceId: String
-
-    @Parameter(title: "访问令牌 Token")
-    var authToken: String
-
-    init() {}
-
-    init(memoryId: String, version: Int, serverURL: String, spaceId: String, authToken: String) {
-        self.memoryId = memoryId
-        self.version = version
-        self.serverURL = serverURL
-        self.spaceId = spaceId
-        self.authToken = authToken
-    }
-
-    func perform() async throws -> some IntentResult {
-        await WidgetAPI.completeTask(
-            serverURL: serverURL,
-            spaceId: spaceId,
-            authToken: authToken,
-            memoryId: memoryId,
-            expectedVersion: version
-        )
-        WidgetCenter.shared.reloadAllTimelines()
-        return .result()
-    }
-}
-
-// MARK: - Lightweight Codable Models & Networking
+// MARK: - Lightweight Codable Models & Networking (Zero AppIntents Metadata Dependency)
 
 struct WidgetTaskRow: Identifiable, Hashable {
     let id: String
@@ -177,41 +94,26 @@ private struct RawPayloadDTO: Decodable {
 }
 
 enum WidgetAPI {
-    static func normalizedBase(_ raw: String) -> String {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        if !trimmed.isEmpty {
-            return trimmed
-        }
-        let shared = SharedWidgetBridge.loadConfig().serverURL
+    static func resolveSharedConfig() -> (base: String, space: String, token: String) {
+        let shared = SharedWidgetBridge.loadConfig()
+        let base = shared.serverURL
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        return shared.isEmpty ? SharedWidgetBridge.cloudServerURL : shared
+        let effBase = base.isEmpty ? SharedWidgetBridge.cloudServerURL : base
+        let space = shared.spaceId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let token = shared.authToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (effBase, space.isEmpty ? "default" : space, token)
     }
 
-    static func resolveConfig(_ config: TraceTodoWidgetConfigIntent) -> (base: String, space: String, token: String) {
-        let shared = SharedWidgetBridge.loadConfig()
-        let base = normalizedBase(config.serverURL)
-        let rawSpace = config.spaceId.trimmingCharacters(in: .whitespacesAndNewlines)
-        let space = rawSpace.isEmpty ? shared.spaceId : rawSpace
-        let rawTok = config.authToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        let token = rawTok.isEmpty ? shared.authToken : rawTok
-        return (base, space.isEmpty ? "default" : space, token)
-    }
-
-    private static func decodeEntry(
+    static func decodeEntry(
         from data: Data,
         base: String,
         space: String,
-        token: String,
-        filter: WidgetQuadrantFilter
+        token: String
     ) throws -> TraceTodoWidgetEntry {
         let dto = try JSONDecoder().decode(RawMatrixDTO.self, from: data)
         let filtered = dto.sortedTasks.filter { t in
-            guard t.payload.taskStatus != "done" else { return false }
-            if filter == .q1 { return t.payload.quadrant == "Q1_do_first" }
-            if filter == .q2 { return t.payload.quadrant == "Q2_schedule" }
-            return true
+            t.payload.taskStatus != "done" && t.payload.taskStatus != "canceled"
         }.map { t -> WidgetTaskRow in
             let subs = t.payload.subtasks ?? []
             let prog = subs.isEmpty ? "" : "\(subs.filter(\.done).count)/\(subs.count)"
@@ -232,7 +134,6 @@ enum WidgetAPI {
             serverURL: base,
             spaceId: space,
             authToken: token,
-            filter: filter,
             q1Count: dto.summaryCounts.q1,
             q2Count: dto.summaryCounts.q2,
             q34Count: dto.summaryCounts.q3 + dto.summaryCounts.q4,
@@ -240,38 +141,46 @@ enum WidgetAPI {
             totalDone: dto.summaryCounts.totalDone,
             overdueCount: dto.summaryCounts.overdue,
             tasks: filtered,
+            needsLogin: false,
             isOffline: false
         )
     }
 
     private static func cachedFallbackEntry(
-        config: TraceTodoWidgetConfigIntent,
         base: String,
         space: String,
-        token: String
+        token: String,
+        needsLogin: Bool = false
     ) -> TraceTodoWidgetEntry {
         if let cachedData = SharedWidgetBridge.loadMatrixSnapshotData(),
-           let entry = try? decodeEntry(from: cachedData, base: base, space: space, token: token, filter: config.filter) {
+           let entry = try? decodeEntry(from: cachedData, base: base, space: space, token: token) {
             return entry
         }
-        return .placeholder(config: config, isOffline: true)
+        return .placeholder(base: base, space: space, needsLogin: needsLogin, isOffline: !needsLogin)
     }
 
-    static func fetchEntry(config: TraceTodoWidgetConfigIntent) async -> TraceTodoWidgetEntry {
-        let resolved = resolveConfig(config)
+    static func fetchEntry() async -> TraceTodoWidgetEntry {
+        let resolved = resolveSharedConfig()
         let base = resolved.base
         let space = resolved.space
         let cleanTok = resolved.token
+
+        // First check if we already have an instant snapshot written by the main app AND no network token yet
         guard var comps = URLComponents(string: "\(base)/api/tasks/matrix") else {
-            return cachedFallbackEntry(config: config, base: base, space: space, token: cleanTok)
+            return cachedFallbackEntry(base: base, space: space, token: cleanTok)
         }
-        comps.queryItems = [
-            URLQueryItem(name: "space_id", value: space),
+        var qItems: [URLQueryItem] = [
             URLQueryItem(name: "sort_by", value: "priority"),
             URLQueryItem(name: "include_done", value: "false")
         ]
+        // Crucial: when authenticated with Bearer token, omit `space_id=default` so the backend automatically resolves `current_user.space_id` (avoids HTTP 403 for normal users and empty default space for admins)
+        if cleanTok.isEmpty || (!space.isEmpty && space != "default") {
+            qItems.append(URLQueryItem(name: "space_id", value: space.isEmpty ? "default" : space))
+        }
+        comps.queryItems = qItems
+
         guard let url = comps.url else {
-            return cachedFallbackEntry(config: config, base: base, space: space, token: cleanTok)
+            return cachedFallbackEntry(base: base, space: space, token: cleanTok)
         }
         var req = URLRequest(url: url)
         req.timeoutInterval = 8
@@ -281,46 +190,49 @@ enum WidgetAPI {
 
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
-            guard let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-                return cachedFallbackEntry(config: config, base: base, space: space, token: cleanTok)
+            if let http = resp as? HTTPURLResponse {
+                if http.statusCode == 401 || http.statusCode == 403 {
+                    // Retry once without explicit space_id if 403 occurred on a stale spaceId
+                    if http.statusCode == 403, !cleanTok.isEmpty {
+                        var retryComps = URLComponents(string: "\(base)/api/tasks/matrix")
+                        retryComps?.queryItems = [
+                            URLQueryItem(name: "sort_by", value: "priority"),
+                            URLQueryItem(name: "include_done", value: "false")
+                        ]
+                        if let retryURL = retryComps?.url {
+                            var retryReq = URLRequest(url: retryURL)
+                            retryReq.timeoutInterval = 8
+                            retryReq.setValue("Bearer \(cleanTok)", forHTTPHeaderField: "Authorization")
+                            if let (rData, rResp) = try? await URLSession.shared.data(for: retryReq),
+                               let rHttp = rResp as? HTTPURLResponse,
+                               (200...299).contains(rHttp.statusCode),
+                               let decoded = try? decodeEntry(from: rData, base: base, space: "我的空间", token: cleanTok) {
+                                SharedWidgetBridge.saveMatrixSnapshotData(rData)
+                                return decoded
+                            }
+                        }
+                    }
+                    return cachedFallbackEntry(base: base, space: space, token: cleanTok, needsLogin: true)
+                }
+                guard (200...299).contains(http.statusCode) else {
+                    return cachedFallbackEntry(base: base, space: space, token: cleanTok)
+                }
             }
             SharedWidgetBridge.saveMatrixSnapshotData(data)
-            return try decodeEntry(from: data, base: base, space: space, token: cleanTok, filter: config.filter)
+            return try decodeEntry(from: data, base: base, space: space, token: cleanTok)
         } catch {
-            return cachedFallbackEntry(config: config, base: base, space: space, token: cleanTok)
+            return cachedFallbackEntry(base: base, space: space, token: cleanTok)
         }
-    }
-
-    static func completeTask(serverURL: String, spaceId: String, authToken: String, memoryId: String, expectedVersion: Int) async {
-        let base = normalizedBase(serverURL)
-        guard let url = URL(string: "\(base)/api/tasks/transition") else { return }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.timeoutInterval = 6
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let cleanTok = authToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !cleanTok.isEmpty {
-            req.setValue("Bearer \(cleanTok)", forHTTPHeaderField: "Authorization")
-        }
-        let body: [String: Any] = [
-            "space_id": spaceId.isEmpty ? "default" : spaceId,
-            "memory_id": memoryId,
-            "action": "complete_task",
-            "expected_version": expectedVersion
-        ]
-        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        _ = try? await URLSession.shared.data(for: req)
     }
 }
 
-// MARK: - Timeline Entry & Provider
+// MARK: - Timeline Entry & Static Provider
 
 struct TraceTodoWidgetEntry: TimelineEntry {
     let date: Date
     let serverURL: String
     let spaceId: String
     let authToken: String
-    let filter: WidgetQuadrantFilter
     let q1Count: Int
     let q2Count: Int
     let q34Count: Int
@@ -328,47 +240,66 @@ struct TraceTodoWidgetEntry: TimelineEntry {
     let totalDone: Int
     let overdueCount: Int
     let tasks: [WidgetTaskRow]
+    let needsLogin: Bool
     let isOffline: Bool
 
-    static func placeholder(config: TraceTodoWidgetConfigIntent, isOffline: Bool = false) -> TraceTodoWidgetEntry {
-        TraceTodoWidgetEntry(
+    static func placeholder(
+        base: String = SharedWidgetBridge.cloudServerURL,
+        space: String = "default",
+        needsLogin: Bool = false,
+        isOffline: Bool = false
+    ) -> TraceTodoWidgetEntry {
+        let isEmptyState = needsLogin || isOffline
+        return TraceTodoWidgetEntry(
             date: Date(),
-            serverURL: WidgetAPI.normalizedBase(config.serverURL),
-            spaceId: config.spaceId,
-            authToken: config.authToken.trimmingCharacters(in: .whitespacesAndNewlines),
-            filter: config.filter,
-            q1Count: 2,
-            q2Count: 1,
+            serverURL: base,
+            spaceId: space,
+            authToken: "",
+            q1Count: isEmptyState ? 0 : 2,
+            q2Count: isEmptyState ? 0 : 1,
             q34Count: 0,
-            totalTodo: 3,
-            totalDone: 1,
+            totalTodo: isEmptyState ? 0 : 3,
+            totalDone: isEmptyState ? 0 : 1,
             overdueCount: 0,
-            tasks: isOffline ? [] : [
+            tasks: isEmptyState ? [] : [
                 WidgetTaskRow(id: "demo1", title: "准备学术会议论文汇报", quadrant: "Q1_do_first", priorityScore: 123, dueLabel: "本周六", version: 1, isOverdue: false, subtaskProgress: ""),
-                WidgetTaskRow(id: "demo2", title: "购买婚庆用品", quadrant: "Q1_do_first", priorityScore: 121, dueLabel: "12-24", version: 1, isOverdue: false, subtaskProgress: "1/3"),
-                WidgetTaskRow(id: "demo3", title: "学习算法知识", quadrant: "Q2_schedule", priorityScore: 88, dueLabel: "", version: 1, isOverdue: false, subtaskProgress: "")
+                WidgetTaskRow(id: "demo2", title: "整理阶段复盘笔记", quadrant: "Q1_do_first", priorityScore: 121, dueLabel: "今日", version: 1, isOverdue: false, subtaskProgress: "1/3"),
+                WidgetTaskRow(id: "demo3", title: "阅读深度专业书籍", quadrant: "Q2_schedule", priorityScore: 88, dueLabel: "", version: 1, isOverdue: false, subtaskProgress: "")
             ],
+            needsLogin: needsLogin,
             isOffline: isOffline
         )
     }
 }
 
-struct TraceTodoTimelineProvider: AppIntentTimelineProvider {
+struct TraceTodoStaticProvider: TimelineProvider {
     func placeholder(in context: Context) -> TraceTodoWidgetEntry {
-        .placeholder(config: TraceTodoWidgetConfigIntent())
+        .placeholder()
     }
 
-    func snapshot(for configuration: TraceTodoWidgetConfigIntent, in context: Context) async -> TraceTodoWidgetEntry {
+    func getSnapshot(in context: Context, completion: @escaping (TraceTodoWidgetEntry) -> Void) {
         if context.isPreview {
-            return .placeholder(config: configuration)
+            if let cached = SharedWidgetBridge.loadMatrixSnapshotData(),
+               let entry = try? WidgetAPI.decodeEntry(from: cached, base: SharedWidgetBridge.cloudServerURL, space: "default", token: "") {
+                completion(entry)
+                return
+            }
+            completion(.placeholder())
+            return
         }
-        return await WidgetAPI.fetchEntry(config: configuration)
+        Task {
+            let entry = await WidgetAPI.fetchEntry()
+            completion(entry)
+        }
     }
 
-    func timeline(for configuration: TraceTodoWidgetConfigIntent, in context: Context) async -> Timeline<TraceTodoWidgetEntry> {
-        let entry = await WidgetAPI.fetchEntry(config: configuration)
-        let nextRefresh = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date().addingTimeInterval(900)
-        return Timeline(entries: [entry], policy: .after(nextRefresh))
+    func getTimeline(in context: Context, completion: @escaping (Timeline<TraceTodoWidgetEntry>) -> Void) {
+        Task {
+            let entry = await WidgetAPI.fetchEntry()
+            let mins = entry.needsLogin ? 5 : 15
+            let nextRefresh = Calendar.current.date(byAdding: .minute, value: mins, to: Date()) ?? Date().addingTimeInterval(Double(mins * 60))
+            completion(Timeline(entries: [entry], policy: .after(nextRefresh)))
+        }
     }
 }
 
@@ -386,14 +317,49 @@ struct TraceTodoWidgetEntryView: View {
             mediumView
         case .systemLarge:
             largeView
+        #if os(iOS)
         case .accessoryRectangular:
             accessoryRectView
         case .accessoryCircular:
             accessoryCircularView
         case .accessoryInline:
             accessoryInlineView
+        #endif
         default:
             mediumView
+        }
+    }
+
+    @ViewBuilder
+    private var emptyOrStatusPrompt: some View {
+        if entry.needsLogin {
+            Link(destination: URL(string: "tracetodo://login")!) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("点击打开 App 登录同步", systemImage: "person.crop.circle.badge.plus")
+                        .font(.caption.bold())
+                        .foregroundStyle(Color(red: 0.23, green: 0.50, blue: 0.96))
+                    Text("登录后四象限待办将自动实时显示在桌面")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+        } else if entry.isOffline {
+            Link(destination: URL(string: "tracetodo://refresh")!) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("轻点打开 TraceTodo 同步数据", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.caption.bold())
+                        .foregroundStyle(.orange)
+                    Text("首次添加后打开主应用即可缓存最新待办")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+        } else {
+            Label("今日待办已全部清空 🎉", systemImage: "checkmark.seal.fill")
+                .font(.caption.bold())
+                .foregroundStyle(.green)
         }
     }
 
@@ -421,26 +387,17 @@ struct TraceTodoWidgetEntryView: View {
 
                 Spacer()
 
-                Button(intent: RefreshTodoWidgetIntent()) {
+                Link(destination: URL(string: "tracetodo://refresh")!) {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
             }
 
-            if entry.isOffline {
-                Spacer()
-                Text("离线或未连接\n请轻点进入设置")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Spacer()
-            } else if entry.tasks.isEmpty {
-                Spacer()
-                Label("今日待办已清空 🎉", systemImage: "checkmark.seal.fill")
-                    .font(.caption.bold())
-                    .foregroundStyle(.green)
-                Spacer()
+            if entry.tasks.isEmpty {
+                Spacer(minLength: 2)
+                emptyOrStatusPrompt
+                Spacer(minLength: 2)
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(entry.tasks.prefix(3)) { task in
@@ -469,12 +426,11 @@ struct TraceTodoWidgetEntryView: View {
                 }
             }
         }
-        .widgetURL(URL(string: "tracetodo://overview"))
+        .widgetURL(URL(string: entry.needsLogin ? "tracetodo://login" : "tracetodo://overview"))
     }
 
     private var mediumView: some View {
         HStack(spacing: 12) {
-            // Left Vibrant Summary Card
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("TODO")
@@ -482,12 +438,11 @@ struct TraceTodoWidgetEntryView: View {
                         .tracking(1)
                         .foregroundStyle(.white.opacity(0.85))
                     Spacer()
-                    Button(intent: RefreshTodoWidgetIntent()) {
+                    Link(destination: URL(string: "tracetodo://refresh")!) {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(.white.opacity(0.9))
                     }
-                    .buttonStyle(.plain)
                 }
 
                 Text("\(entry.totalTodo)")
@@ -525,7 +480,6 @@ struct TraceTodoWidgetEntryView: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-            // Right Interactive Top 3 Tasks
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("优先待办")
@@ -539,18 +493,10 @@ struct TraceTodoWidgetEntryView: View {
                     }
                 }
 
-                if entry.isOffline {
-                    Spacer()
-                    Text("当前无法连接服务 \(entry.serverURL)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                } else if entry.tasks.isEmpty {
-                    Spacer()
-                    Text("当前筛选下待办已清空 🎉")
-                        .font(.caption.bold())
-                        .foregroundStyle(.green)
-                    Spacer()
+                if entry.tasks.isEmpty {
+                    Spacer(minLength: 2)
+                    emptyOrStatusPrompt
+                    Spacer(minLength: 2)
                 } else {
                     ForEach(entry.tasks.prefix(3)) { task in
                         interactiveTaskRow(task)
@@ -560,7 +506,7 @@ struct TraceTodoWidgetEntryView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .widgetURL(URL(string: "tracetodo://overview"))
+        .widgetURL(URL(string: entry.needsLogin ? "tracetodo://login" : "tracetodo://overview"))
     }
 
     private var largeView: some View {
@@ -569,17 +515,16 @@ struct TraceTodoWidgetEntryView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("TraceTodo · 四象限工作台")
                         .font(.system(size: 14, weight: .bold))
-                    Text("空间: \(entry.spaceId) · 已完成 \(entry.totalDone)")
+                    Text("已完成 \(entry.totalDone) · 待办 \(entry.totalTodo)")
                         .font(.system(size: 10.5))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button(intent: RefreshTodoWidgetIntent()) {
+                Link(destination: URL(string: "tracetodo://refresh")!) {
                     Image(systemName: "arrow.clockwise.circle.fill")
                         .font(.title3)
                         .foregroundStyle(Color(red: 0.24, green: 0.51, blue: 0.96))
                 }
-                .buttonStyle(.plain)
 
                 Link(destination: URL(string: "tracetodo://new")!) {
                     Image(systemName: "plus.circle.fill")
@@ -597,18 +542,10 @@ struct TraceTodoWidgetEntryView: View {
 
             Divider()
 
-            if entry.isOffline {
+            if entry.tasks.isEmpty {
                 Spacer()
-                Text("当前离线，请检查服务器设置 \(entry.serverURL)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-            } else if entry.tasks.isEmpty {
-                Spacer()
-                Label("全部待办已完成 🎉", systemImage: "checkmark.seal.fill")
-                    .font(.subheadline.bold())
-                    .foregroundStyle(.green)
-                    .frame(maxWidth: .infinity)
+                emptyOrStatusPrompt
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Spacer()
             } else {
                 VStack(alignment: .leading, spacing: 8) {
@@ -619,9 +556,10 @@ struct TraceTodoWidgetEntryView: View {
                 Spacer(minLength: 0)
             }
         }
-        .widgetURL(URL(string: "tracetodo://list"))
+        .widgetURL(URL(string: entry.needsLogin ? "tracetodo://login" : "tracetodo://list"))
     }
 
+    #if os(iOS)
     private var accessoryRectView: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
@@ -636,11 +574,11 @@ struct TraceTodoWidgetEntryView: View {
                     .font(.caption)
                     .lineLimit(1)
             } else {
-                Text(entry.isOffline ? "离线模式" : "全部待办已清空 🎉")
+                Text(entry.needsLogin ? "打开 App 登录同步" : (entry.isOffline ? "轻点同步待办" : "全部待办已清空 🎉"))
                     .font(.caption)
             }
         }
-        .widgetURL(URL(string: "tracetodo://overview"))
+        .widgetURL(URL(string: entry.needsLogin ? "tracetodo://login" : "tracetodo://overview"))
     }
 
     private var accessoryCircularView: some View {
@@ -667,23 +605,16 @@ struct TraceTodoWidgetEntryView: View {
         }
         .widgetURL(URL(string: "tracetodo://overview"))
     }
+    #endif
 
     private func interactiveTaskRow(_ task: WidgetTaskRow, showDetails: Bool = false) -> some View {
-        HStack(spacing: 7) {
-            Button(
-                intent: CompleteWidgetTaskIntent(
-                    memoryId: task.id,
-                    version: task.version,
-                    serverURL: entry.serverURL,
-                    spaceId: entry.spaceId,
-                    authToken: entry.authToken
-                )
-            ) {
+        let completeURL = URL(string: "tracetodo://complete?id=\(task.id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? task.id)&v=\(task.version)")!
+        return HStack(spacing: 7) {
+            Link(destination: completeURL) {
                 Image(systemName: "circle")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(task.tintColor)
             }
-            .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(task.title)
@@ -748,24 +679,33 @@ struct TraceTodoWidgetEntryView: View {
 struct TraceTodoWidget: Widget {
     let kind: String = "TraceTodoWidget"
 
+    #if os(iOS)
+    private let families: [WidgetFamily] = [
+        .systemSmall,
+        .systemMedium,
+        .systemLarge,
+        .accessoryRectangular,
+        .accessoryCircular,
+        .accessoryInline
+    ]
+    #else
+    private let families: [WidgetFamily] = [
+        .systemSmall,
+        .systemMedium,
+        .systemLarge
+    ]
+    #endif
+
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(
+        StaticConfiguration(
             kind: kind,
-            intent: TraceTodoWidgetConfigIntent.self,
-            provider: TraceTodoTimelineProvider()
+            provider: TraceTodoStaticProvider()
         ) { entry in
             TraceTodoWidgetContainer(entry: entry)
         }
         .configurationDisplayName("TraceTodo 四象限待办")
-        .description("支持锁屏壁纸与桌面展示今日四象限待办，直接打卡完成并自动同步云端。")
-        .supportedFamilies([
-            .systemSmall,
-            .systemMedium,
-            .systemLarge,
-            .accessoryRectangular,
-            .accessoryCircular,
-            .accessoryInline
-        ])
+        .description("实时展示今日四象限待办，自动跟随主应用账号同步。")
+        .supportedFamilies(families)
     }
 }
 
@@ -774,6 +714,7 @@ private struct TraceTodoWidgetContainer: View {
     let entry: TraceTodoWidgetEntry
 
     var body: some View {
+        #if os(iOS)
         switch family {
         case .accessoryCircular, .accessoryRectangular, .accessoryInline:
             TraceTodoWidgetEntryView(entry: entry)
@@ -782,24 +723,14 @@ private struct TraceTodoWidgetContainer: View {
             TraceTodoWidgetEntryView(entry: entry)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
+        #else
+        TraceTodoWidgetEntryView(entry: entry)
+            .containerBackground(.fill.tertiary, for: .widget)
+        #endif
     }
 }
 
-// MARK: - Countdown & Anniversary Widget (Home Screen + Lock Screen)
-
-struct TraceCountdownConfigIntent: WidgetConfigurationIntent {
-    static var title: LocalizedStringResource = "TraceTodo 倒数纪念日"
-    static var description = IntentDescription("展示公农历倒数日与正数纪念日大字卡片（如春节、生日、周年纪念），自动跟随主 App 同步。")
-
-    @Parameter(title: "服务端地址（留空自动跟随主 App）", default: "")
-    var serverURL: String
-
-    @Parameter(title: "记忆空间 Space ID（留空自动跟随主 App）", default: "")
-    var spaceId: String
-
-    @Parameter(title: "访问令牌 Token（留空自动跟随主 App）", default: "")
-    var authToken: String
-}
+// MARK: - Countdown & Anniversary Widget (StaticConfiguration)
 
 struct WidgetCountdownRow: Identifiable, Hashable {
     let id: String
@@ -901,43 +832,43 @@ struct TraceCountdownEntry: TimelineEntry {
                     displaySolarDate: "明日",
                     lunarLabel: "置顶目标",
                     colorTheme: "lavender"
-                ),
-                WidgetCountdownRow(
-                    id: "cd3",
-                    title: "双链记忆之旅",
-                    icon: "🌱",
-                    headerBanner: "双链记忆之旅 已经",
-                    displayNumber: "78",
-                    unitLabel: "天",
-                    badgeLabel: "已经",
-                    displaySolarDate: "纪念日",
-                    lunarLabel: "正数纪念",
-                    colorTheme: "mint"
                 )
             ]
         )
     }
 }
 
-struct TraceCountdownTimelineProvider: AppIntentTimelineProvider {
+struct TraceCountdownStaticProvider: TimelineProvider {
     func placeholder(in context: Context) -> TraceCountdownEntry {
         .placeholder()
     }
 
-    func snapshot(for configuration: TraceCountdownConfigIntent, in context: Context) async -> TraceCountdownEntry {
+    func getSnapshot(in context: Context, completion: @escaping (TraceCountdownEntry) -> Void) {
         if context.isPreview {
-            return .placeholder()
+            if let cached = SharedWidgetBridge.loadCountdownsSnapshotData(),
+               let parsed = try? Self.decodeCountdownData(cached),
+               !parsed.items.isEmpty {
+                completion(parsed)
+                return
+            }
+            completion(.placeholder())
+            return
         }
-        return await fetchCountdownEntry(config: configuration)
+        Task {
+            let entry = await Self.fetchCountdownEntry()
+            completion(entry)
+        }
     }
 
-    func timeline(for configuration: TraceCountdownConfigIntent, in context: Context) async -> Timeline<TraceCountdownEntry> {
-        let entry = await fetchCountdownEntry(config: configuration)
-        let nextRefresh = Calendar.current.date(byAdding: .minute, value: 30, to: Date()) ?? Date().addingTimeInterval(1800)
-        return Timeline(entries: [entry], policy: .after(nextRefresh))
+    func getTimeline(in context: Context, completion: @escaping (Timeline<TraceCountdownEntry>) -> Void) {
+        Task {
+            let entry = await Self.fetchCountdownEntry()
+            let nextRefresh = Calendar.current.date(byAdding: .minute, value: 30, to: Date()) ?? Date().addingTimeInterval(1800)
+            completion(Timeline(entries: [entry], policy: .after(nextRefresh)))
+        }
     }
 
-    private func decodeCountdownData(_ data: Data) throws -> TraceCountdownEntry {
+    static func decodeCountdownData(_ data: Data) throws -> TraceCountdownEntry {
         let dto = try JSONDecoder().decode(RawCountdownListDTO.self, from: data)
         let rows = dto.items.map { it in
             WidgetCountdownRow(
@@ -956,16 +887,16 @@ struct TraceCountdownTimelineProvider: AppIntentTimelineProvider {
         return TraceCountdownEntry(date: Date(), todayLunar: dto.todayLunar ?? "", items: rows)
     }
 
-    private func fetchCountdownEntry(config: TraceCountdownConfigIntent) async -> TraceCountdownEntry {
-        let shared = SharedWidgetBridge.loadConfig()
-        let base = WidgetAPI.normalizedBase(config.serverURL)
-        let rawSpace = config.spaceId.trimmingCharacters(in: .whitespacesAndNewlines)
-        let space = rawSpace.isEmpty ? (shared.spaceId.isEmpty ? "default" : shared.spaceId) : rawSpace
-        let rawTok = config.authToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        let token = rawTok.isEmpty ? shared.authToken : rawTok
+    static func fetchCountdownEntry() async -> TraceCountdownEntry {
+        let resolved = WidgetAPI.resolveSharedConfig()
+        let base = resolved.base
+        let space = resolved.space
+        let token = resolved.token
 
         if var comps = URLComponents(string: "\(base)/api/countdowns/list") {
-            comps.queryItems = [URLQueryItem(name: "space_id", value: space)]
+            if token.isEmpty || (!space.isEmpty && space != "default") {
+                comps.queryItems = [URLQueryItem(name: "space_id", value: space.isEmpty ? "default" : space)]
+            }
             if let url = comps.url {
                 var req = URLRequest(url: url)
                 req.timeoutInterval = 8
@@ -975,7 +906,8 @@ struct TraceCountdownTimelineProvider: AppIntentTimelineProvider {
                 if let (data, resp) = try? await URLSession.shared.data(for: req),
                    let http = resp as? HTTPURLResponse,
                    (200...299).contains(http.statusCode),
-                   let parsed = try? decodeCountdownData(data) {
+                   let parsed = try? decodeCountdownData(data),
+                   !parsed.items.isEmpty {
                     SharedWidgetBridge.saveCountdownsSnapshotData(data)
                     return parsed
                 }
@@ -983,7 +915,8 @@ struct TraceCountdownTimelineProvider: AppIntentTimelineProvider {
         }
 
         if let cached = SharedWidgetBridge.loadCountdownsSnapshotData(),
-           let parsed = try? decodeCountdownData(cached) {
+           let parsed = try? decodeCountdownData(cached),
+           !parsed.items.isEmpty {
             return parsed
         }
         return .placeholder()
@@ -1000,12 +933,14 @@ struct TraceCountdownWidgetEntryView: View {
             smallCard
         case .systemMedium:
             mediumWall
+        #if os(iOS)
         case .accessoryCircular:
             lockCircular
         case .accessoryRectangular:
             lockRectangular
         case .accessoryInline:
             lockInline
+        #endif
         default:
             smallCard
         }
@@ -1063,7 +998,6 @@ struct TraceCountdownWidgetEntryView: View {
         let top = primaryItem
         let others = Array(entry.items.dropFirst().prefix(2))
         return HStack(spacing: 12) {
-            // Hero left card
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(top.icon) \(top.title)")
                     .font(.system(size: 12, weight: .bold))
@@ -1092,19 +1026,17 @@ struct TraceCountdownWidgetEntryView: View {
             .background(top.bannerGradient)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-            // Right list of next countdowns / anniversaries
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("⏳ 倒数纪念日")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Button(intent: RefreshTodoWidgetIntent()) {
+                    Link(destination: URL(string: "tracetodo://countdown")!) {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
                 }
 
                 if others.isEmpty {
@@ -1144,6 +1076,7 @@ struct TraceCountdownWidgetEntryView: View {
         .widgetURL(URL(string: "tracetodo://countdown"))
     }
 
+    #if os(iOS)
     private var lockCircular: some View {
         let item = primaryItem
         return ZStack {
@@ -1181,28 +1114,37 @@ struct TraceCountdownWidgetEntryView: View {
         return Text("\(item.icon) \(item.title) · \(item.badgeLabel)\(item.displayNumber)\(item.unitLabel)")
             .widgetURL(URL(string: "tracetodo://countdown"))
     }
+    #endif
 }
 
 struct TraceCountdownWidget: Widget {
     let kind: String = "TraceCountdownWidget"
 
+    #if os(iOS)
+    private let families: [WidgetFamily] = [
+        .systemSmall,
+        .systemMedium,
+        .accessoryCircular,
+        .accessoryRectangular,
+        .accessoryInline
+    ]
+    #else
+    private let families: [WidgetFamily] = [
+        .systemSmall,
+        .systemMedium
+    ]
+    #endif
+
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(
+        StaticConfiguration(
             kind: kind,
-            intent: TraceCountdownConfigIntent.self,
-            provider: TraceCountdownTimelineProvider()
+            provider: TraceCountdownStaticProvider()
         ) { entry in
             TraceCountdownWidgetContainer(entry: entry)
         }
         .configurationDisplayName("TraceTodo 倒数纪念日")
-        .description("桌面与锁屏大字展示公农历倒数日与正数纪念日（春节、生日、周年纪念）。")
-        .supportedFamilies([
-            .systemSmall,
-            .systemMedium,
-            .accessoryCircular,
-            .accessoryRectangular,
-            .accessoryInline
-        ])
+        .description("桌面与锁屏展示公农历倒数日与正数纪念日（春节、生日、周年纪念）。")
+        .supportedFamilies(families)
     }
 }
 
@@ -1211,6 +1153,7 @@ private struct TraceCountdownWidgetContainer: View {
     let entry: TraceCountdownEntry
 
     var body: some View {
+        #if os(iOS)
         switch family {
         case .accessoryCircular, .accessoryRectangular, .accessoryInline:
             TraceCountdownWidgetEntryView(entry: entry)
@@ -1219,6 +1162,10 @@ private struct TraceCountdownWidgetContainer: View {
             TraceCountdownWidgetEntryView(entry: entry)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
+        #else
+        TraceCountdownWidgetEntryView(entry: entry)
+            .containerBackground(.fill.tertiary, for: .widget)
+        #endif
     }
 }
 

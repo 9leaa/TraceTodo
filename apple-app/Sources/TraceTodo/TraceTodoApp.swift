@@ -391,6 +391,9 @@ struct MainContentView: View {
                 selectedSection = .tasks
                 Task { await store.refresh() }
             }
+            .onOpenURL { url in
+                handleDeepLink(url)
+            }
             #endif
 
             // Global Floating "💬 问记忆" Copilot Button (matches Web `#askFabBtn` + ⌘K shortcut)
@@ -647,6 +650,24 @@ struct MainContentView: View {
             store.isPresentingNewTaskSheet = true
         } else if host == "login" || host == "auth" || host == "account" {
             store.openAuthSheetFromAnywhere()
+            return
+        } else if host == "complete" {
+            let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            let memId = comps?.queryItems?.first(where: { $0.name == "id" })?.value ?? ""
+            let ver = Int(comps?.queryItems?.first(where: { $0.name == "v" })?.value ?? "1") ?? 1
+            if !memId.isEmpty {
+                Task {
+                    _ = try? await store.client.transitionTask(
+                        memoryId: memId,
+                        action: "complete_task",
+                        expectedVersion: ver
+                    )
+                    await store.refresh()
+                }
+                return
+            }
+        } else if host == "refresh" {
+            Task { await store.refresh() }
             return
         } else if host == "memories" {
             selectedSection = .memories

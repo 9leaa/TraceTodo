@@ -57,7 +57,7 @@ if [ -n "$XCODE_APP" ]; then
     mkdir -p "$MOD_CACHE"
 
     echo "🍎 Detected Xcode at: $XCODE_APP (Flavor: $APP_STEM)"
-    echo "🔨 [1/3] Compiling pure SwiftUI macOS native binary (arm64)..."
+    echo "🔨 [1/3] Compiling pure SwiftUI macOS native binary + Desktop WidgetKit extension (arm64)..."
     "$SWIFTC" \
         -O \
         -swift-version 5 \
@@ -68,6 +68,61 @@ if [ -n "$XCODE_APP" ]; then
         -sdk "$MAC_SDK" \
         Sources/TraceTodo/*.swift \
         -o "$APP_DIR/Contents/MacOS/TraceTodo"
+
+    MAC_WIDGET_DIR="$APP_DIR/Contents/PlugIns/TraceTodoWidgets.appex/Contents"
+    mkdir -p "$MAC_WIDGET_DIR/MacOS"
+    "$SWIFTC" \
+        -O \
+        -swift-version 5 \
+        -parse-as-library \
+        -module-cache-path "$MOD_CACHE" \
+        ${SWIFT_EXTRA_FLAGS[@]+"${SWIFT_EXTRA_FLAGS[@]}"} \
+        -target arm64-apple-macos14.0 \
+        -sdk "$MAC_SDK" \
+        -framework WidgetKit \
+        -framework SwiftUI \
+        Widgets/TraceTodoWidgets.swift \
+        Sources/TraceTodo/SharedWidgetBridge.swift \
+        -o "$MAC_WIDGET_DIR/MacOS/TraceTodoWidgets"
+    chmod +x "$MAC_WIDGET_DIR/MacOS/TraceTodoWidgets"
+    cat > "$MAC_WIDGET_DIR/Info.plist" <<MWPLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>zh-Hans</string>
+    <key>CFBundleDisplayName</key>
+    <string>${MAC_DISPLAY_NAME}小组件</string>
+    <key>CFBundleExecutable</key>
+    <string>TraceTodoWidgets</string>
+    <key>CFBundleIdentifier</key>
+    <string>${MAC_BUNDLE_ID}.widgets</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>TraceTodoWidgets</string>
+    <key>CFBundlePackageType</key>
+    <string>XPC!</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.4.3</string>
+    <key>CFBundleVersion</key>
+    <string>7</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
+    <key>NSExtension</key>
+    <dict>
+        <key>NSExtensionPointIdentifier</key>
+        <string>com.apple.widgetkit-extension</string>
+    </dict>
+</dict>
+</plist>
+MWPLIST
 
     echo "📱 [2/3] Compiling pure SwiftUI iPhone Simulator app bundle (arm64)..."
     "$SWIFTC" \
@@ -101,12 +156,67 @@ if [ -n "$XCODE_APP" ]; then
         rm -rf "$IPA_STAGE"
         mkdir -p "$IPA_STAGE/Payload"
         cp -R "$BUILT_IOS_APP" "$IPA_STAGE/Payload/TraceTodo.app"
-        /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $IOS_BUNDLE_ID" "$IPA_STAGE/Payload/TraceTodo.app/Info.plist"
-        /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $IOS_DISPLAY_NAME" "$IPA_STAGE/Payload/TraceTodo.app/Info.plist"
-        if [ -f "$IPA_STAGE/Payload/TraceTodo.app/PlugIns/TraceTodoWidgets.appex/Info.plist" ]; then
-            /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${IOS_BUNDLE_ID}.widgets" "$IPA_STAGE/Payload/TraceTodo.app/PlugIns/TraceTodoWidgets.appex/Info.plist"
-            /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName ${IOS_DISPLAY_NAME}小组件" "$IPA_STAGE/Payload/TraceTodo.app/PlugIns/TraceTodoWidgets.appex/Info.plist" || true
+        if [ "$IS_TEST" = "1" ]; then
+            /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $IOS_BUNDLE_ID" "$IPA_STAGE/Payload/TraceTodo.app/Info.plist"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $IOS_DISPLAY_NAME" "$IPA_STAGE/Payload/TraceTodo.app/Info.plist"
+            if [ -f "$IPA_STAGE/Payload/TraceTodo.app/PlugIns/TraceTodoWidgets.appex/Info.plist" ]; then
+                /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${IOS_BUNDLE_ID}.widgets" "$IPA_STAGE/Payload/TraceTodo.app/PlugIns/TraceTodoWidgets.appex/Info.plist"
+            fi
         fi
+        # Embed resolved AppGroup + Shared Keychain entitlements (XML + DER) into IPA Mach-Os
+        # so Sideloadly / AltStore / Feather / TrollStore / Enterprise signers preserve/remap them
+        APP_ENT="$IPA_STAGE/app.entitlements"
+        WGT_ENT="$IPA_STAGE/wgt.entitlements"
+        cat > "$APP_ENT" <<AENT
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>application-identifier</key>
+    <string>TRACETODO0.${IOS_BUNDLE_ID}</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>TRACETODO0</string>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.${IOS_BUNDLE_ID}</string>
+        <string>group.com.tracememory.tracetodo</string>
+    </array>
+    <key>keychain-access-groups</key>
+    <array>
+        <string>TRACETODO0.${IOS_BUNDLE_ID}</string>
+        <string>TRACETODO0.com.tracememory.tracetodo.shared</string>
+    </array>
+</dict>
+</plist>
+AENT
+        cat > "$WGT_ENT" <<WENT
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>application-identifier</key>
+    <string>TRACETODO0.${IOS_BUNDLE_ID}.widgets</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>TRACETODO0</string>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.${IOS_BUNDLE_ID}</string>
+        <string>group.com.tracememory.tracetodo</string>
+    </array>
+    <key>keychain-access-groups</key>
+    <array>
+        <string>TRACETODO0.${IOS_BUNDLE_ID}.widgets</string>
+        <string>TRACETODO0.${IOS_BUNDLE_ID}</string>
+        <string>TRACETODO0.com.tracememory.tracetodo.shared</string>
+    </array>
+</dict>
+</plist>
+WENT
+        if [ -d "$IPA_STAGE/Payload/TraceTodo.app/PlugIns/TraceTodoWidgets.appex" ]; then
+            codesign --force --sign - --entitlements "$WGT_ENT" --generate-entitlement-der "$IPA_STAGE/Payload/TraceTodo.app/PlugIns/TraceTodoWidgets.appex"
+        fi
+        codesign --force --sign - --entitlements "$APP_ENT" --generate-entitlement-der "$IPA_STAGE/Payload/TraceTodo.app"
+        rm -f "$APP_ENT" "$WGT_ENT"
         (cd "$IPA_STAGE" && zip -qry "$IOS_IPA" Payload)
         rm -rf "$IPA_STAGE"
     fi
@@ -143,9 +253,9 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.4.2</string>
+    <string>1.4.3</string>
     <key>CFBundleVersion</key>
-    <string>6</string>
+    <string>7</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
@@ -163,10 +273,24 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <string>拍照附加图片到记忆与随记中</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>选择图片附加到记忆与随记中</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>${MAC_BUNDLE_ID}</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>tracetodo</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>
 PLIST
 
+if [ -d "$APP_DIR/Contents/PlugIns/TraceTodoWidgets.appex" ]; then
+    codesign --force --sign - "$APP_DIR/Contents/PlugIns/TraceTodoWidgets.appex" >/dev/null 2>&1 || true
+fi
 codesign --force --deep --sign - "$APP_DIR" >/dev/null 2>&1 || true
 ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" "$MAC_ZIP"
 
@@ -211,9 +335,9 @@ if [ -f "$IOS_SIM_APP_DIR/TraceTodo" ]; then
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.4.2</string>
+    <string>1.4.3</string>
     <key>CFBundleVersion</key>
-    <string>6</string>
+    <string>7</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>UIDeviceFamily</key>
