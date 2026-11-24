@@ -137,6 +137,18 @@ struct FocusLockView: View {
     @State private var showAbortPrompt: Bool = false
     @State private var abortReason: String = ""
     @State private var isFinishing: Bool = false
+    @State private var lockSceneOverrideId: String = ""
+    @State private var dimOpacity: Double = 0.46
+
+    private var effectiveLockScene: AmbientSceneItem {
+        if !lockSceneOverrideId.isEmpty {
+            return AmbientSceneItem.byId(lockSceneOverrideId)
+        }
+        if store.activeSceneId != "none" {
+            return store.activeSceneItem
+        }
+        return AmbientSceneItem.byId("starfield")
+    }
 
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -171,19 +183,27 @@ struct FocusLockView: View {
     }
 
     var body: some View {
+        let sc = effectiveLockScene
         ZStack {
-            LinearGradient(
-                colors: [Color(red: 0.11, green: 0.10, blue: 0.28), Color(red: 0.04, green: 0.05, blue: 0.10)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            Color(red: 0.04, green: 0.05, blue: 0.10)
+                .ignoresSafeArea()
 
-            VStack(spacing: 22) {
+            RemoteSceneWallpaperImage(sceneId: sc.id, serverURL: store.serverURL)
+                .ignoresSafeArea()
+
+            Color.black.opacity(dimOpacity)
+                .ignoresSafeArea()
+
+            if store.sceneMotion {
+                AmbientParticleCanvasView(accent: sc.accentColor, primary: store.activeTheme.primaryColor)
+                    .ignoresSafeArea()
+            }
+
+            VStack(spacing: 20) {
                 Text(mode == .stopwatch ? "🔒 沉浸正计时专注 · DEEP WORK" : "🔒 沉浸番茄锁屏专注 · DEEP WORK")
                     .font(.caption.bold())
                     .tracking(1.3)
-                    .foregroundStyle(Color(red: 0.77, green: 0.71, blue: 0.99))
+                    .foregroundStyle(Color.white.opacity(0.88))
 
                 Text(task?.title ?? customTitle)
                     .font(.title2.bold())
@@ -193,11 +213,11 @@ struct FocusLockView: View {
 
                 ZStack {
                     Circle()
-                        .stroke(Color.white.opacity(0.14), lineWidth: 12)
+                        .stroke(Color.white.opacity(0.16), lineWidth: 12)
                     Circle()
                         .trim(from: 0, to: progress)
                         .stroke(
-                            LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing),
+                            LinearGradient(colors: [sc.accentColor, store.activeTheme.primaryColor], startPoint: .topLeading, endPoint: .bottomTrailing),
                             style: StrokeStyle(lineWidth: 12, lineCap: .round)
                         )
                         .rotationEffect(.degrees(-90))
@@ -208,12 +228,37 @@ struct FocusLockView: View {
                             .font(.system(size: 50, weight: .heavy, design: .rounded))
                             .monospacedDigit()
                             .foregroundStyle(.white)
-                        Text(task != nil ? "已专注 \(task?.payload.focusSessionsCompleted ?? 0) 轮" : "🌱 自由专注模式")
+                        Text(task != nil ? "已专注 \(task?.payload.focusSessionsCompleted ?? 0) 轮" : "🌱 自由专注 · \(sc.name)")
                             .font(.caption)
-                            .foregroundStyle(Color.white.opacity(0.65))
+                            .foregroundStyle(Color.white.opacity(0.75))
                     }
                 }
                 .frame(width: 210, height: 210)
+
+                // Quick Scene Switcher Strip matching Web `#focusSceneStrip`
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(AmbientSceneItem.catalog.filter { $0.id != "none" }) { item in
+                            let isSel = sc.id == item.id
+                            Button {
+                                lockSceneOverrideId = item.id
+                                SceneWallpaperCache.shared.fetchIfNeeded(sceneId: item.id, serverURL: store.serverURL)
+                            } label: {
+                                Text("\(item.icon) \(item.name)")
+                                    .font(.caption2.bold())
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(isSel ? sc.accentColor.opacity(0.85) : Color.black.opacity(0.42))
+                                    .foregroundStyle(.white)
+                                    .clipShape(Capsule())
+                                    .overlay(Capsule().stroke(Color.white.opacity(isSel ? 0.9 : 0.22), lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 18)
+                }
+                .frame(maxWidth: 560)
 
                 if let curTask = task, !curTask.payload.subtaskList.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
@@ -530,15 +575,19 @@ struct FocusCenterView: View {
                 HStack(spacing: 8) {
                     ForEach([15, 25, 45, 60], id: \.self) { mins in
                         let sel = plannedMinutes == mins
-                        Button("\(mins)m") {
+                        Button("\(mins) 分钟") {
                             if !isRunningInline { plannedMinutes = mins }
                         }
                         .font(.caption.bold())
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(sel ? store.activeTheme.primaryColor : Color.primary.opacity(0.06))
-                        .foregroundStyle(sel ? .white : .primary)
+                        .background(sel ? store.activeTheme.primaryFillColor : Color.primary.opacity(0.07))
+                        .foregroundStyle(sel ? Color.white : Color.primary)
                         .clipShape(Capsule())
+                        .overlay(
+                            Capsule()
+                                .stroke(sel ? store.activeTheme.primaryFillColor : Color.primary.opacity(0.14), lineWidth: 1)
+                        )
                         .buttonStyle(.plain)
                     }
                 }
@@ -586,7 +635,7 @@ struct FocusCenterView: View {
                             .font(.subheadline.bold())
                             .padding(.horizontal, 18)
                             .padding(.vertical, 10)
-                            .background(store.activeTheme.primaryColor)
+                            .background(store.activeTheme.primaryFillColor)
                             .foregroundStyle(.white)
                             .clipShape(Capsule())
                     }

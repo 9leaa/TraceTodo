@@ -4,6 +4,22 @@ import SwiftUI
 import WidgetKit
 #endif
 
+enum TaskQuickScope: String, CaseIterable, Identifiable {
+    case all = "all"
+    case today = "today"
+    case overdue = "overdue"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all: return "全部待办"
+        case .today: return "☀️ 今日聚焦"
+        case .overdue: return "⏰ 逾期顺延"
+        }
+    }
+}
+
 @MainActor
 final class TodoStore: ObservableObject {
     @Published var serverURL: String {
@@ -39,6 +55,8 @@ final class TodoStore: ObservableObject {
     @Published private(set) var lastKnownSyncVersion: Int = -1
     @Published private(set) var lastKnownBeijingDate: String = ""
     @Published var statusBanner: String?
+    @Published var statusBannerUndoLabel: String?
+    private var statusBannerUndoHandler: (() async -> Void)?
     private var ingestPollTask: Task<Void, Never>?
     private var autoSyncTask: Task<Void, Never>?
     private var sseStreamTask: Task<Void, Never>?
@@ -55,6 +73,8 @@ final class TodoStore: ObservableObject {
     @Published var isPresentingNewTaskSheet: Bool = false
     @Published var isPresentingSettingsSheet: Bool = false
     @Published var isPresentingSupervisionSheet: Bool = false
+    @Published var isPresentingFloatingAsk: Bool = false
+    @Published var taskQuickScope: TaskQuickScope = .all
     @Published var editingTaskTarget: TaskItemModel?
     @Published var activeFocusTask: TaskItemModel?
     @Published var activeFocusLaunch: ActiveFocusLaunchConfig?
@@ -62,6 +82,14 @@ final class TodoStore: ObservableObject {
     @Published private(set) var countdownList: CountdownListResponse?
 
     @Published var activeTheme: AppThemeKind = .classic
+    @Published var activeSceneId: String = "none"
+    @Published var sceneIntensity: Int = 2
+    @Published var sceneMotion: Bool = true
+    @Published var syncSceneTheme: Bool = true {
+        didSet {
+            UserDefaults.standard.set(syncSceneTheme, forKey: "tm_scene_sync_theme")
+        }
+    }
     @Published var enabledModules: [String: Bool] = [
         "calendar": true,
         "focus": true,
@@ -114,6 +142,19 @@ final class TodoStore: ObservableObject {
         if savedPom > 0 {
             self.defaultPomodoroMinutes = savedPom
         }
+        if let savedScene = UserDefaults.standard.string(forKey: "tm_scene_id"),
+           AmbientSceneItem.catalog.contains(where: { $0.id == savedScene }) {
+            self.activeSceneId = savedScene
+        }
+        if UserDefaults.standard.object(forKey: "tm_scene_intensity") != nil {
+            self.sceneIntensity = min(3, max(0, UserDefaults.standard.integer(forKey: "tm_scene_intensity")))
+        }
+        if UserDefaults.standard.object(forKey: "tm_scene_motion") != nil {
+            self.sceneMotion = UserDefaults.standard.bool(forKey: "tm_scene_motion")
+        }
+        if UserDefaults.standard.object(forKey: "tm_scene_sync_theme") != nil {
+            self.syncSceneTheme = UserDefaults.standard.bool(forKey: "tm_scene_sync_theme")
+        }
         syncSharedWidgetConfig()
         loadOfflineState()
     }
@@ -158,8 +199,55 @@ final class TodoStore: ObservableObject {
     var q1Count: Int { matrix?.summaryCounts.q1 ?? 0 }
     var totalTodoCount: Int { matrix?.summaryCounts.totalTodo ?? 0 }
 
+    var activeSceneItem: AmbientSceneItem {
+        AmbientSceneItem.byId(activeSceneId)
+    }
+
+    var hasActiveScene: Bool {
+        activeSceneId != "none" && sceneIntensity > 0
+    }
+
+    var cardSurfaceBackground: Color {
+        activeTheme.surfaceBackground.opacity(hasActiveScene ? 0.88 : 1.0)
+    }
+
+    private var todayYMDString: String {
+        if !lastKnownBeijingDate.isEmpty {
+            return String(lastKnownBeijingDate.prefix(10))
+        }
+        let fmt = DateFormatter()
+        fmt.calendar = Calendar(identifier: .gregorian)
+        fmt.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        fmt.dateFormat = "yyyy-MM-dd"
+        return fmt.string(from: Date())
+    }
+
+    func matchesQuickScope(_ task: TaskItemModel, scope: TaskQuickScope) -> Bool {
+        switch scope {
+        case .all:
+            return true
+        case .today:
+            let duePrefix = String((task.payload.dueAt ?? "").prefix(10))
+            return duePrefix == todayYMDString
+                || task.payload.isOverdue == true
+                || task.payload.quadrantKind == .q1
+        case .overdue:
+            return task.payload.isOverdue == true || (task.payload.rolloverCount ?? 0) > 0
+        }
+    }
+
+    func quickScopeCount(_ scope: TaskQuickScope) -> Int {
+        let allItems = matrix?.sortedTasks ?? []
+        return allItems.filter { matchesQuickScope($0, scope: scope) }.count
+    }
+
+    var filteredSortedTasks: [TaskItemModel] {
+        (matrix?.sortedTasks ?? []).filter { matchesQuickScope($0, scope: taskQuickScope) }
+    }
+
     func tasks(for quadrant: QuadrantKind) -> [TaskItemModel] {
-        matrix?.quadrants[quadrant.rawValue]?.tasks ?? []
+        let raw = matrix?.quadrants[quadrant.rawValue]?.tasks ?? []
+        return raw.filter { matchesQuickScope($0, scope: taskQuickScope) }
     }
 
     private var cacheDir: URL {
@@ -682,6 +770,30 @@ final class TodoStore: ObservableObject {
             )
             if let next = res.nextTask, let nextDue = next.payload.dueAt {
                 showBanner("✅ 本期已完成，已生成下一期 (\(String(nextDue.prefix(10))))")
+            } else if action == "complete_task" {
+                let targetId = res.memory?.memoryId ?? task.memoryId
+                let nextVer = res.memory?.version ?? (task.version + 1)
+                showBanner("✅ 已完成「\(task.title)」", undoLabel: "↩ 撤销") { [weak self] in
+                    guard let self else { return }
+                    _ = try? await self.client.transitionTask(
+                        memoryId: targetId,
+                        action: "reopen_task",
+                        expectedVersion: nextVer
+                    )
+                    await self.refresh()
+                }
+            } else if action == "cancel_task" {
+                let targetId = res.memory?.memoryId ?? task.memoryId
+                let nextVer = res.memory?.version ?? (task.version + 1)
+                showBanner("🗑️ 已取消「\(task.title)」", undoLabel: "↩ 撤销") { [weak self] in
+                    guard let self else { return }
+                    _ = try? await self.client.transitionTask(
+                        memoryId: targetId,
+                        action: "reopen_task",
+                        expectedVersion: nextVer
+                    )
+                    await self.refresh()
+                }
             }
             await refresh()
             await refreshSupervisionBoard()
@@ -866,6 +978,26 @@ final class TodoStore: ObservableObject {
             self.defaultPomodoroMinutes = pm
             UserDefaults.standard.set(pm, forKey: "tm_pomodoro_minutes")
         }
+        if let ex = prefs.extra {
+            if let sid = ex.sceneId, AmbientSceneItem.catalog.contains(where: { $0.id == sid }) {
+                self.activeSceneId = sid
+                UserDefaults.standard.set(sid, forKey: "tm_scene_id")
+                if sid != "none" {
+                    SceneWallpaperCache.shared.fetchIfNeeded(sceneId: sid, serverURL: serverURL)
+                }
+            } else if ex.sceneId == nil || ex.sceneId?.isEmpty == true {
+                self.activeSceneId = "none"
+                UserDefaults.standard.set("none", forKey: "tm_scene_id")
+            }
+            if let inten = ex.sceneIntensity {
+                self.sceneIntensity = min(3, max(0, inten))
+                UserDefaults.standard.set(self.sceneIntensity, forKey: "tm_scene_intensity")
+            }
+            if let mot = ex.sceneMotion {
+                self.sceneMotion = mot != 0
+                UserDefaults.standard.set(self.sceneMotion, forKey: "tm_scene_motion")
+            }
+        }
     }
 
     func selectTheme(_ theme: AppThemeKind) async {
@@ -873,7 +1005,70 @@ final class TodoStore: ObservableObject {
         UserDefaults.standard.set(theme.rawValue, forKey: "tm_theme_id")
         if let updated = try? await client.updatePreferences(body: ["theme_id": theme.rawValue]) {
             applyPreferencesResponse(updated)
-            showBanner("🎨 已切换主题：\(theme.title)")
+            showBanner("🎨 已切换主题：\(theme.title)（已跨端同步）")
+        }
+    }
+
+    func selectScene(_ scene: AmbientSceneItem) async {
+        self.activeSceneId = scene.id
+        UserDefaults.standard.set(scene.id, forKey: "tm_scene_id")
+        if scene.id != "none" && self.sceneIntensity == 0 {
+            self.sceneIntensity = 2
+            UserDefaults.standard.set(2, forKey: "tm_scene_intensity")
+        }
+        if scene.id != "none" {
+            SceneWallpaperCache.shared.fetchIfNeeded(sceneId: scene.id, serverURL: serverURL)
+        }
+        let extraDict: [String: Any] = [
+            "scene_id": scene.id,
+            "scene_intensity": self.sceneIntensity,
+            "scene_motion": self.sceneMotion ? 1 : 0,
+        ]
+        var body: [String: Any] = ["extra": extraDict]
+        if scene.id != "none", syncSceneTheme, let paired = scene.pairedTheme {
+            self.activeTheme = paired
+            UserDefaults.standard.set(paired.rawValue, forKey: "tm_theme_id")
+            body["theme_id"] = paired.rawValue
+            if let updated = try? await client.updatePreferences(body: body) {
+                applyPreferencesResponse(updated)
+            }
+            showBanner("\(scene.icon) 主题场景：\(scene.name)（已联动「\(paired.title)」配色）")
+        } else {
+            _ = extraDict.count
+            if let updated = try? await client.updatePreferences(body: body) {
+                applyPreferencesResponse(updated)
+            }
+            showBanner(scene.id == "none" ? "🪽 已关闭环境场景，回归纯净界面" : "\(scene.icon) 环境场景：\(scene.name)")
+        }
+    }
+
+    func setSceneIntensity(_ level: Int) async {
+        self.sceneIntensity = min(3, max(0, level))
+        UserDefaults.standard.set(self.sceneIntensity, forKey: "tm_scene_intensity")
+        let body: [String: Any] = [
+            "extra": [
+                "scene_id": self.activeSceneId,
+                "scene_intensity": self.sceneIntensity,
+                "scene_motion": self.sceneMotion ? 1 : 0,
+            ]
+        ]
+        if let updated = try? await client.updatePreferences(body: body) {
+            applyPreferencesResponse(updated)
+        }
+    }
+
+    func setSceneMotion(_ on: Bool) async {
+        self.sceneMotion = on
+        UserDefaults.standard.set(on, forKey: "tm_scene_motion")
+        let body: [String: Any] = [
+            "extra": [
+                "scene_id": self.activeSceneId,
+                "scene_intensity": self.sceneIntensity,
+                "scene_motion": on ? 1 : 0,
+            ]
+        ]
+        if let updated = try? await client.updatePreferences(body: body) {
+            applyPreferencesResponse(updated)
         }
     }
 
@@ -886,12 +1081,25 @@ final class TodoStore: ObservableObject {
         }
     }
 
-    func showBanner(_ message: String) {
+    func triggerBannerUndo() {
+        guard let handler = statusBannerUndoHandler else { return }
+        statusBanner = nil
+        statusBannerUndoLabel = nil
+        statusBannerUndoHandler = nil
+        Task { await handler() }
+    }
+
+    func showBanner(_ message: String, undoLabel: String? = nil, undoHandler: (() async -> Void)? = nil) {
         statusBanner = message
+        statusBannerUndoLabel = undoLabel
+        statusBannerUndoHandler = undoHandler
+        let waitNs: UInt64 = undoLabel != nil ? 5_200_000_000 : 3_400_000_000
         Task {
-            try? await Task.sleep(nanoseconds: 3_400_000_000)
+            try? await Task.sleep(nanoseconds: waitNs)
             if statusBanner == message {
                 statusBanner = nil
+                statusBannerUndoLabel = nil
+                statusBannerUndoHandler = nil
             }
         }
     }

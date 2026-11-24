@@ -18,11 +18,13 @@ import android.os.Bundle;
 import android.text.InputType;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsetsController;
+import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
 import android.webkit.JavascriptInterface;
@@ -42,6 +44,8 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONObject;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -50,11 +54,13 @@ public class MainActivity extends Activity {
     private static final String PREFS_NAME = "tracetodo_native_prefs";
     private static final String KEY_SERVER_URL = "server_url";
     private static final String KEY_USER_CUSTOMIZED = "server_user_customized";
+    private static final String KEY_LAST_THEME_BG = "last_theme_bg";
 
     private static final int REQ_FILE_CHOOSER = 1001;
     private static final int REQ_WEB_PERMISSIONS = 1002;
     private static final int REQ_POST_NOTIF = 1003;
 
+    private FrameLayout rootLayout;
     private WebView webView;
     private ProgressBar progressBar;
     private LinearLayout offlineOverlay;
@@ -65,15 +71,19 @@ public class MainActivity extends Activity {
 
     private String currentBaseUrl;
     private boolean triedFallbackOnColdLoad = false;
+    private boolean pageLoadedOnce = false;
+    private String pendingDeepAction = null;
+    private String pendingSharedText = null;
     private long lastBackPressMs = 0L;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        applySystemBarColors("#F4F6FB");
-
         SharedPreferences sp = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        int initialBg = sp.getInt(KEY_LAST_THEME_BG, Color.parseColor("#F4F6FB"));
+        applySystemBarColorsInt(initialBg);
+
         String defaultUrl = getString(R.string.default_server_url);
         boolean customized = sp.getBoolean(KEY_USER_CUSTOMIZED, false);
         String savedUrl = sp.getString(KEY_SERVER_URL, "");
@@ -84,20 +94,47 @@ public class MainActivity extends Activity {
             currentBaseUrl = cleanServerUrl(savedUrl);
         }
 
-        buildRootLayout();
+        captureIncomingIntent(getIntent());
+        buildRootLayout(initialBg);
         configureWebView();
         requestNotificationPermissionIfNeeded();
 
         loadServerHome(false);
     }
 
-    private void buildRootLayout() {
-        FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.parseColor("#F4F6FB"));
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        captureIncomingIntent(intent);
+        if (pageLoadedOnce) {
+            dispatchPendingIntentActions();
+        }
+    }
+
+    private void captureIncomingIntent(Intent intent) {
+        if (intent == null) return;
+        String action = intent.getAction();
+        if (Intent.ACTION_SEND.equals(action) && "text/plain".equals(intent.getType())) {
+            String shared = intent.getStringExtra(Intent.EXTRA_TEXT);
+            if (shared != null && !shared.trim().isEmpty()) {
+                pendingSharedText = shared.trim();
+            }
+        } else if (Intent.ACTION_VIEW.equals(action) && intent.getData() != null) {
+            Uri data = intent.getData();
+            if ("tracetodo".equalsIgnoreCase(data.getScheme())) {
+                pendingDeepAction = data.getHost() != null ? data.getHost().toLowerCase() : "";
+            }
+        }
+    }
+
+    private void buildRootLayout(int initialBg) {
+        rootLayout = new FrameLayout(this);
+        rootLayout.setBackgroundColor(initialBg);
 
         webView = new WebView(this);
-        webView.setBackgroundColor(Color.parseColor("#F4F6FB"));
-        root.addView(webView, new FrameLayout.LayoutParams(
+        webView.setBackgroundColor(initialBg);
+        rootLayout.addView(webView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
@@ -110,16 +147,16 @@ public class MainActivity extends Activity {
                 dp(3)
         );
         pbParams.gravity = Gravity.TOP;
-        root.addView(progressBar, pbParams);
+        rootLayout.addView(progressBar, pbParams);
 
         offlineOverlay = buildOfflineOverlay();
         offlineOverlay.setVisibility(View.GONE);
-        root.addView(offlineOverlay, new FrameLayout.LayoutParams(
+        rootLayout.addView(offlineOverlay, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
 
-        setContentView(root);
+        setContentView(rootLayout);
     }
 
     private LinearLayout buildOfflineOverlay() {
@@ -221,7 +258,7 @@ public class MainActivity extends Activity {
         ws.setTextZoom(100);
         ws.setCacheMode(WebSettings.LOAD_DEFAULT);
         ws.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
-        ws.setUserAgentString(ws.getUserAgentString() + " TraceTodoAndroid/1.3.0");
+        ws.setUserAgentString(ws.getUserAgentString() + " TraceTodoAndroid/1.4.0");
 
         webView.addJavascriptInterface(new NativeBridge(), "TraceTodoNative");
 
@@ -269,7 +306,9 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                injectThemeObserverBridge();
+                pageLoadedOnce = true;
+                injectNativeEnhancementBridge();
+                dispatchPendingIntentActions();
             }
 
             @Override
@@ -282,7 +321,7 @@ public class MainActivity extends Activity {
                     if (!customized && !triedFallbackOnColdLoad && !currentBaseUrl.equals(fallbackUrl)) {
                         triedFallbackOnColdLoad = true;
                         currentBaseUrl = fallbackUrl;
-                        view.loadUrl(currentBaseUrl + "/");
+                        view.loadUrl(currentBaseUrl + "/console");
                         return;
                     }
                     String desc = (error != null && error.getDescription() != null)
@@ -357,7 +396,7 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void injectThemeObserverBridge() {
+    private void injectNativeEnhancementBridge() {
         String js = "(function(){"
                 + "if(window.__ttAndroidBridgeInstalled)return;"
                 + "window.__ttAndroidBridgeInstalled=true;"
@@ -373,8 +412,60 @@ public class MainActivity extends Activity {
                 + "setTimeout(syncBar,180);"
                 + "new MutationObserver(function(){setTimeout(syncBar,40);})"
                 + ".observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});"
+                + "var fo=document.getElementById('focusOverlay');"
+                + "if(fo){"
+                + "  new MutationObserver(function(){"
+                + "    if(window.TraceTodoNative&&window.TraceTodoNative.setKeepScreenOn){"
+                + "      window.TraceTodoNative.setKeepScreenOn(Boolean(fo.open));"
+                + "    }"
+                + "  }).observe(fo,{attributes:true,attributeFilter:['open']});"
+                + "}"
+                + "document.addEventListener('click',function(ev){"
+                + "  var btn=ev.target&&ev.target.closest?ev.target.closest('button,.scene-card-item,.theme-card-item'):null;"
+                + "  if(btn&&window.TraceTodoNative&&window.TraceTodoNative.lightTap){"
+                + "    window.TraceTodoNative.lightTap();"
+                + "  }"
+                + "  var a=ev.target&&ev.target.closest?ev.target.closest('a[download]'):null;"
+                + "  if(a&&a.href&&a.href.indexOf('blob:')===0&&window.TraceTodoNative&&window.TraceTodoNative.shareExportedText){"
+                + "    ev.preventDefault();"
+                + "    var fname=a.getAttribute('download')||'tracetodo-export.md';"
+                + "    fetch(a.href).then(function(r){return r.text();}).then(function(txt){"
+                + "      window.TraceTodoNative.shareExportedText(fname,txt);"
+                + "    }).catch(function(){});"
+                + "  }"
+                + "},true);"
                 + "})();";
         webView.evaluateJavascript(js, null);
+    }
+
+    private void dispatchPendingIntentActions() {
+        if (pendingSharedText != null && !pendingSharedText.isEmpty()) {
+            final String textToInject = pendingSharedText;
+            pendingSharedText = null;
+            String quoted = JSONObject.quote(textToInject);
+            String js = "(function(){"
+                    + "if(typeof switchTab==='function')switchTab('tasks');"
+                    + "var inp=document.getElementById('quickInput')||document.querySelector('input.main-input');"
+                    + "if(inp){inp.value=" + quoted + ";inp.dispatchEvent(new Event('input',{bubbles:true}));inp.focus();}"
+                    + "if(typeof showToast==='function')showToast('✨ 已带入分享文本，点击「AI 录入」即可归档');"
+                    + "})();";
+            webView.postDelayed(() -> webView.evaluateJavascript(js, null), 280);
+        }
+        if (pendingDeepAction != null && !pendingDeepAction.isEmpty()) {
+            final String act = pendingDeepAction;
+            pendingDeepAction = null;
+            String js;
+            if ("focus".equals(act)) {
+                js = "if(typeof switchTab==='function')switchTab('focus');";
+            } else if ("calendar".equals(act)) {
+                js = "if(typeof switchTab==='function')switchTab('calendar');";
+            } else if ("ask".equals(act)) {
+                js = "if(typeof toggleAskFloatPanel==='function')toggleAskFloatPanel();else if(typeof switchTab==='function')switchTab('ask');";
+            } else {
+                js = "if(typeof switchTab==='function')switchTab('tasks');var q=document.getElementById('quickInput')||document.querySelector('input.main-input');if(q)q.focus();";
+            }
+            webView.postDelayed(() -> webView.evaluateJavascript(js, null), 260);
+        }
     }
 
     private final class NativeBridge {
@@ -384,7 +475,49 @@ public class MainActivity extends Activity {
                 Integer parsed = parseCssColor(cssColor);
                 if (parsed != null) {
                     applySystemBarColorsInt(parsed);
+                    rootLayout.setBackgroundColor(parsed);
                     webView.setBackgroundColor(parsed);
+                    getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                            .edit()
+                            .putInt(KEY_LAST_THEME_BG, parsed)
+                            .apply();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void setKeepScreenOn(final boolean keepOn) {
+            runOnUiThread(() -> {
+                Window w = getWindow();
+                if (w == null) return;
+                if (keepOn) {
+                    w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                } else {
+                    w.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void lightTap() {
+            runOnUiThread(() -> {
+                if (webView != null) {
+                    webView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void shareExportedText(final String filename, final String content) {
+            runOnUiThread(() -> {
+                if (content == null || content.isEmpty()) return;
+                Intent send = new Intent(Intent.ACTION_SEND);
+                send.setType("text/markdown");
+                send.putExtra(Intent.EXTRA_SUBJECT, filename != null ? filename : "TraceTodo-Export.md");
+                send.putExtra(Intent.EXTRA_TEXT, content);
+                try {
+                    startActivity(Intent.createChooser(send, "导出 / 分享知识库 Markdown"));
+                } catch (Exception ignored) {
                 }
             });
         }
@@ -418,13 +551,6 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {
         }
         return null;
-    }
-
-    private void applySystemBarColors(String hex) {
-        try {
-            applySystemBarColorsInt(Color.parseColor(hex));
-        } catch (Exception ignored) {
-        }
     }
 
     private void applySystemBarColorsInt(int color) {
@@ -527,7 +653,7 @@ public class MainActivity extends Activity {
         if (!isRetry) {
             triedFallbackOnColdLoad = false;
         }
-        webView.loadUrl(currentBaseUrl + "/");
+        webView.loadUrl(currentBaseUrl + "/console");
     }
 
     private void requestNotificationPermissionIfNeeded() {

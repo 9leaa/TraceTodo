@@ -245,6 +245,40 @@ struct CalendarSlotTarget: Identifiable {
 
 // MARK: - Main Calendar Timeline & Month Panorama View
 
+struct CalendarFoldBand: Identifiable, Equatable {
+    let startHour: Int
+    let endHour: Int // exclusive
+    var id: String { "\(startHour)-\(endHour)" }
+    var label: String { String(format: "%02d–%02d", startHour, endHour) }
+}
+
+struct CalendarWeekLayoutMetrics {
+    let hourHeights: [CGFloat]
+    let hourOffsets: [CGFloat]
+    let totalHeight: CGFloat
+    let foldedBands: [CalendarFoldBand]
+
+    func y(forMinute minute: Int) -> CGFloat {
+        let clamped = max(0, min(1440, minute))
+        if clamped >= 1440 { return totalHeight }
+        let h = clamped / 60
+        let rem = CGFloat(clamped % 60) / 60.0
+        return hourOffsets[h] + rem * hourHeights[h]
+    }
+
+    func foldedBandStarting(at hour: Int) -> CalendarFoldBand? {
+        foldedBands.first { $0.startHour == hour }
+    }
+
+    func isInsideFoldedBand(_ hour: Int) -> Bool {
+        foldedBands.contains { hour >= $0.startHour && hour < $0.endHour }
+    }
+
+    func heightForBand(_ band: CalendarFoldBand) -> CGFloat {
+        (band.startHour..<band.endHour).reduce(CGFloat(0)) { $0 + hourHeights[$1] }
+    }
+}
+
 struct CalendarTimelineView: View {
     @EnvironmentObject var store: TodoStore
     @State private var mode: CalendarCanvasMode = .week
@@ -253,8 +287,80 @@ struct CalendarTimelineView: View {
     @State private var isLoading: Bool = false
     @State private var slotTarget: CalendarSlotTarget?
     @State private var editingTask: TaskItemModel?
+    @State private var adaptiveDensity: Bool = true
+    @State private var expandedBandIds: Set<String> = []
 
-    private let hourHeight: CGFloat = 46
+    private let hourHeight: CGFloat = 44
+
+    private func buildWeekLayout(days: [CalendarDayBucket]) -> CalendarWeekLayoutMetrics {
+        guard adaptiveDensity, !days.isEmpty else {
+            let heights = Array(repeating: hourHeight, count: 24)
+            var offsets: [CGFloat] = []
+            var acc: CGFloat = 0
+            for h in 0..<24 {
+                offsets.append(acc)
+                acc += heights[h]
+            }
+            return CalendarWeekLayoutMetrics(hourHeights: heights, hourOffsets: offsets, totalHeight: acc, foldedBands: [])
+        }
+
+        var busyHours = Set<Int>()
+        for d in days {
+            for blk in d.timedBlocks {
+                let sH = max(0, blk.startMinute / 60)
+                let eH = min(23, max(sH, (max(blk.startMinute + 1, blk.endMinute) - 1) / 60))
+                for h in sH...eH { busyHours.insert(h) }
+            }
+            for fb in d.focusBlocks {
+                let sH = max(0, fb.startMinute / 60)
+                let eH = min(23, max(sH, (max(fb.startMinute + 1, fb.endMinute) - 1) / 60))
+                for h in sH...eH { busyHours.insert(h) }
+            }
+        }
+        if days.contains(where: \.isToday), let nowMin = overview?.nowMinute {
+            busyHours.insert(min(23, max(0, nowMin / 60)))
+        }
+
+        // Find contiguous idle runs across the entire 7-day week
+        var bands: [CalendarFoldBand] = []
+        var h = 0
+        while h < 24 {
+            if busyHours.contains(h) {
+                h += 1
+                continue
+            }
+            let start = h
+            while h < 24 && !busyHours.contains(h) {
+                h += 1
+            }
+            let end = h
+            let len = end - start
+            let touchesSleep = start < 7 || end > 22
+            if (touchesSleep && len >= 2) || len >= 2 {
+                let cand = CalendarFoldBand(startHour: start, endHour: end)
+                if !expandedBandIds.contains(cand.id) {
+                    bands.append(cand)
+                }
+            }
+        }
+
+        var heights = Array(repeating: hourHeight, count: 24)
+        for b in bands {
+            let len = max(1, b.endHour - b.startHour)
+            let perHour = max(5.0, 28.0 / CGFloat(len))
+            for hr in b.startHour..<b.endHour {
+                heights[hr] = perHour
+            }
+        }
+
+        var offsets: [CGFloat] = []
+        var acc: CGFloat = 0
+        for hr in 0..<24 {
+            offsets.append(acc)
+            acc += heights[hr]
+        }
+        return CalendarWeekLayoutMetrics(hourHeights: heights, hourOffsets: offsets, totalHeight: acc, foldedBands: bands)
+    }
 
     static func todayYMD() -> String {
         let f = DateFormatter()
@@ -360,6 +466,23 @@ struct CalendarTimelineView: View {
                     }
                     .buttonStyle(.bordered)
 
+                    if mode == .week {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                if adaptiveDensity && !expandedBandIds.isEmpty {
+                                    expandedBandIds.removeAll()
+                                } else {
+                                    adaptiveDensity.toggle()
+                                    expandedBandIds.removeAll()
+                                }
+                            }
+                        } label: {
+                            Text(adaptiveDensity ? "↕ 自适应折叠" : "═ 等高展开")
+                                .font(.caption.bold())
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
                     Spacer()
 
                     Button {
@@ -368,7 +491,7 @@ struct CalendarTimelineView: View {
                         Label("时段排期", systemImage: "plus")
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(store.activeTheme.primaryColor)
+                    .tint(store.activeTheme.primaryFillColor)
                 }
             }
         }
@@ -406,202 +529,272 @@ struct CalendarTimelineView: View {
             ProgressView("正在加载周时间轴...")
                 .frame(maxWidth: .infinity, minHeight: 240)
         } else {
+            let minGridWidth = 52 + CGFloat(max(7, days.count)) * 106
             ScrollView(.horizontal, showsIndicators: true) {
                 VStack(spacing: 0) {
-                    // 1. Sticky Day Headers
-                    HStack(spacing: 0) {
-                        Text("UTC+8")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 48)
-
-                        ForEach(days) { d in
-                            let busyH = Double(d.busyMinutes) / 60.0
-                            let freeH = Double(d.awakeFreeMinutes) / 60.0
-                            VStack(spacing: 2) {
-                                Text("\(d.weekdayLabel)\(d.isToday ? "·今" : "")")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(d.isToday ? store.activeTheme.primaryColor : .secondary)
-                                Text("\(d.month)/\(d.day)")
-                                    .font(.system(size: 14, weight: .heavy, design: .rounded))
-                                Text("忙\(String(format: "%.1f", busyH))h 闲\(String(format: "%.0f", freeH))h")
-                                    .font(.system(size: 9.5))
-                                    .foregroundStyle(.secondary)
-                                if let cd = d.countdowns.first {
-                                    Text("\(cd.icon) \(cd.title)")
-                                        .font(.system(size: 9.5, weight: .bold))
-                                        .foregroundStyle(store.activeTheme.primaryColor)
-                                        .lineLimit(1)
-                                }
-                            }
-                            .frame(width: 106)
-                            .padding(.vertical, 6)
-                            .background(d.isToday ? store.activeTheme.primaryColor.opacity(0.10) : Color.clear)
-                            .overlay(alignment: .bottom) {
-                                if d.date == selectedDate {
-                                    Rectangle()
-                                        .fill(store.activeTheme.primaryColor)
-                                        .frame(height: 2.5)
-                                }
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                selectedDate = d.date
-                            }
-                        }
-                    }
-                    .background(Color.primary.opacity(0.03))
-
+                    weekHeaderRow(days: days)
                     Divider()
-
-                    // 2. All-day row
-                    HStack(alignment: .top, spacing: 0) {
-                        Text("全天")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 48, height: 32)
-
-                        ForEach(days) { d in
-                            VStack(alignment: .leading, spacing: 3) {
-                                if d.allDayTasks.isEmpty {
-                                    Text("+ 全天")
-                                        .font(.system(size: 9.5))
-                                        .foregroundStyle(.tertiary)
-                                } else {
-                                    ForEach(d.allDayTasks) { item in
-                                        Text("\(item.isDone ? "✓ " : "")\(item.title)")
-                                            .font(.system(size: 10, weight: .semibold))
-                                            .lineLimit(1)
-                                            .padding(.horizontal, 5)
-                                            .padding(.vertical, 2)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                            .background(item.macaron.cardBackground)
-                                            .foregroundStyle(Color.black.opacity(0.82))
-                                            .clipShape(RoundedRectangle(cornerRadius: 5))
-                                            .onTapGesture {
-                                                openTaskEditor(memoryId: item.memoryId)
-                                            }
-                                    }
-                                }
-                            }
-                            .padding(4)
-                            .frame(width: 106, alignment: .topLeading)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                slotTarget = CalendarSlotTarget(date: d.date, hour: 9, isAllDay: true)
-                            }
-                        }
-                    }
-
+                    weekAllDayRow(days: days)
                     Divider()
-
-                    // 3. 00:00 - 24:00 Scrollable Time Grid
-                    ScrollViewReader { proxy in
-                        ScrollView(.vertical, showsIndicators: true) {
-                            HStack(alignment: .top, spacing: 0) {
-                                // Hour Labels Gutter
-                                VStack(spacing: 0) {
-                                    ForEach(0..<24, id: \.self) { h in
-                                        Text(String(format: "%02d:00", h))
-                                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                            .foregroundStyle(.secondary)
-                                            .frame(width: 48, height: hourHeight, alignment: .topTrailing)
-                                            .padding(.trailing, 4)
-                                            .id("cal_hour_\(h)")
-                                    }
-                                }
-
-                                // 7 Day Columns
-                                ForEach(days) { d in
-                                    dayTimelineColumn(d)
-                                }
-                            }
-                        }
-                        .frame(height: 460)
-                        .onAppear {
-                            proxy.scrollTo("cal_hour_8", anchor: .top)
-                        }
-                    }
+                    weekTimeGridSection(days: days)
                 }
-                .frame(minWidth: 48 + CGFloat(max(7, days.count)) * 106)
+                .frame(minWidth: minGridWidth)
             }
-            .background(.background)
+            .background(store.cardSurfaceBackground)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    .stroke(Color.primary.opacity(0.09), lineWidth: 1)
             )
         }
     }
 
-    private func dayTimelineColumn(_ day: CalendarDayBucket) -> some View {
+    private func weekHeaderRow(days: [CalendarDayBucket]) -> some View {
+        HStack(spacing: 0) {
+            Text("UTC+8")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 52)
+
+            ForEach(days) { d in
+                weekDayHeaderCell(d)
+            }
+        }
+        .background(Color.primary.opacity(0.03))
+    }
+
+    private func weekDayHeaderCell(_ d: CalendarDayBucket) -> some View {
+        let busyH = Double(d.busyMinutes) / 60.0
+        let freeH = Double(d.awakeFreeMinutes) / 60.0
+        return VStack(spacing: 2) {
+            Text("\(d.weekdayLabel)\(d.isToday ? "·今" : "")")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(d.isToday ? store.activeTheme.primaryColor : .secondary)
+            Text("\(d.month)/\(d.day)")
+                .font(.system(size: 14, weight: .heavy, design: .rounded))
+            Text("忙\(String(format: "%.1f", busyH))h 闲\(String(format: "%.0f", freeH))h")
+                .font(.system(size: 9.5))
+                .foregroundStyle(.secondary)
+            if let cd = d.countdowns.first {
+                Text("\(cd.icon) \(cd.title)")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundStyle(store.activeTheme.primaryColor)
+                    .lineLimit(1)
+            }
+        }
+        .frame(width: 106)
+        .padding(.vertical, 6)
+        .background(d.isToday ? store.activeTheme.primaryColor.opacity(0.10) : Color.clear)
+        .overlay(alignment: .bottom) {
+            if d.date == selectedDate {
+                Rectangle()
+                    .fill(store.activeTheme.primaryColor)
+                    .frame(height: 2.5)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            selectedDate = d.date
+        }
+    }
+
+    private func weekAllDayRow(days: [CalendarDayBucket]) -> some View {
+        let isDark = store.activeTheme.isDark
+        return HStack(alignment: .top, spacing: 0) {
+            Text("全天")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 52, height: 32)
+
+            ForEach(days) { d in
+                VStack(alignment: .leading, spacing: 3) {
+                    if d.allDayTasks.isEmpty {
+                        Text("+ 全天")
+                            .font(.system(size: 9.5))
+                            .foregroundStyle(.tertiary)
+                    } else {
+                        ForEach(d.allDayTasks) { item in
+                            Text("\(item.isDone ? "✓ " : "")\(item.title)")
+                                .font(.system(size: 10, weight: .semibold))
+                                .lineLimit(1)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(isDark ? item.macaron.accentColor.opacity(0.24) : item.macaron.cardBackground)
+                                .foregroundStyle(isDark ? Color.white.opacity(0.92) : Color.black.opacity(0.82))
+                                .clipShape(RoundedRectangle(cornerRadius: 5))
+                                .onTapGesture {
+                                    openTaskEditor(memoryId: item.memoryId)
+                                }
+                        }
+                    }
+                }
+                .padding(4)
+                .frame(width: 106, alignment: .topLeading)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    slotTarget = CalendarSlotTarget(date: d.date, hour: 9, isAllDay: true)
+                }
+            }
+        }
+    }
+
+    private func weekTimeGridSection(days: [CalendarDayBucket]) -> some View {
+        let layout = buildWeekLayout(days: days)
+        return ScrollView(.vertical, showsIndicators: true) {
+            HStack(alignment: .top, spacing: 0) {
+                weekHourGutter(layout: layout)
+                ForEach(days) { d in
+                    dayTimelineColumn(d, layout: layout)
+                }
+            }
+        }
+        .frame(maxHeight: 540)
+    }
+
+    private func weekHourGutter(layout: CalendarWeekLayoutMetrics) -> some View {
+        ZStack(alignment: .topTrailing) {
+            Color.clear.frame(width: 52, height: layout.totalHeight)
+
+            ForEach(0..<24, id: \.self) { h in
+                if !layout.isInsideFoldedBand(h) {
+                    let prevFolded = h > 0 && layout.isInsideFoldedBand(h - 1)
+                    Text(String(format: "%02d:00", h))
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .padding(.trailing, 5)
+                        .offset(y: layout.hourOffsets[h] + (prevFolded ? 2 : 0))
+                }
+            }
+
+            ForEach(layout.foldedBands) { band in
+                let bandTop = layout.hourOffsets[band.startHour]
+                let bandH = layout.heightForBand(band)
+                Button {
+                    _ = withAnimation(.easeInOut(duration: 0.2)) {
+                        expandedBandIds.insert(band.id)
+                    }
+                } label: {
+                    Text(band.label)
+                        .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(store.cardSurfaceBackground)
+                        .foregroundStyle(.secondary)
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(Color.primary.opacity(0.14), lineWidth: 0.8))
+                }
+                .buttonStyle(.plain)
+                .frame(width: 50, height: bandH, alignment: .center)
+                .offset(y: bandTop)
+                .help("全周空闲时段 \(band.label)，点击展开")
+            }
+        }
+        .frame(width: 52, height: layout.totalHeight)
+    }
+
+    private func dayTimelineColumn(_ day: CalendarDayBucket, layout: CalendarWeekLayoutMetrics) -> some View {
         let colWidth: CGFloat = 106
+        let isDark = store.activeTheme.isDark
         return ZStack(alignment: .topLeading) {
-            // 24 Clickable Hour Slots
+            // 24 Clickable Hour / Folded Band Slots
             VStack(spacing: 0) {
                 ForEach(0..<24, id: \.self) { h in
+                    let folded = layout.isInsideFoldedBand(h)
                     let isRest = h < 8 || h >= 22
                     Rectangle()
-                        .fill(isRest ? Color.primary.opacity(0.025) : Color.clear)
-                        .frame(width: colWidth, height: hourHeight)
+                        .fill(folded ? Color.primary.opacity(0.035) : (isRest ? Color.primary.opacity(0.018) : Color.clear))
+                        .frame(width: colWidth, height: layout.hourHeights[h])
                         .overlay(alignment: .bottom) {
-                            Rectangle()
-                                .fill(Color.primary.opacity(0.06))
-                                .frame(height: 0.6)
+                            if !folded || layout.foldedBands.contains(where: { $0.endHour - 1 == h }) {
+                                Rectangle()
+                                    .fill(Color.primary.opacity(0.06))
+                                    .frame(height: 0.6)
+                            }
                         }
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            selectedDate = day.date
-                            slotTarget = CalendarSlotTarget(date: day.date, hour: h, isAllDay: false)
+                            if let band = layout.foldedBands.first(where: { h >= $0.startHour && h < $0.endHour }) {
+                                _ = withAnimation(.easeInOut(duration: 0.2)) {
+                                    expandedBandIds.insert(band.id)
+                                }
+                            } else {
+                                selectedDate = day.date
+                                slotTarget = CalendarSlotTarget(date: day.date, hour: h, isAllDay: false)
+                            }
                         }
                 }
             }
 
             // Completed Focus Track Pills
             ForEach(day.focusBlocks) { fb in
-                let topY = (CGFloat(fb.startMinute) / 60.0) * hourHeight
-                let hVal = max(18, (CGFloat(fb.durationMinutes) / 60.0) * hourHeight)
+                let topY = layout.y(forMinute: fb.startMinute)
+                let botY = layout.y(forMinute: fb.endMinute)
+                let hVal = max(17, botY - topY)
                 Text("🍅\(fb.durationMinutes)m")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(isDark ? store.activeTheme.primaryColor : .green)
+                    .lineLimit(1)
                     .padding(.horizontal, 4)
-                    .frame(height: hVal, alignment: .topLeading)
-                    .background(Color.green.opacity(0.14))
+                    .frame(height: hVal, alignment: .center)
+                    .background((isDark ? store.activeTheme.primaryColor : Color.green).opacity(0.16))
                     .clipShape(RoundedRectangle(cornerRadius: 5))
-                    .offset(x: colWidth - 46, y: topY)
+                    .offset(x: colWidth - 48, y: topY)
                     .allowsHitTesting(false)
             }
 
-            // Scheduled Macaron Task Blocks
+            // Scheduled Macaron Task Blocks (single-line when compact, multi-line when tall — zero text overlap!)
             ForEach(day.timedBlocks) { blk in
-                let topY = (CGFloat(blk.startMinute) / 60.0) * hourHeight
-                let hVal = max(22, (CGFloat(blk.durationMinutes) / 60.0) * hourHeight - 2)
+                let topY = layout.y(forMinute: blk.startMinute)
+                let botY = layout.y(forMinute: blk.endMinute)
+                let hVal = max(20, botY - topY - 1.5)
                 let totalCols = CGFloat(max(1, blk.colTotal))
                 let idx = CGFloat(min(max(0, blk.colIdx), max(0, blk.colTotal - 1)))
                 let blkW = max(36, (colWidth - 4) / totalCols - 2)
                 let offsetX = 2 + idx * ((colWidth - 4) / totalCols)
+                let cardBg = isDark ? blk.macaron.accentColor.opacity(0.28) : blk.macaron.cardBackground
+                let titleFg = isDark ? Color.white.opacity(0.94) : Color.black.opacity(0.85)
+                let timeFg = isDark ? Color.white.opacity(0.78) : blk.macaron.accentColor
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(String(blk.timeRangeLabel.prefix(5)))
-                        .font(.system(size: 8.5, weight: .bold))
-                        .foregroundStyle(blk.macaron.accentColor)
-                    Text("\(blk.isDone ? "✓ " : "")\(blk.title)")
-                        .font(.system(size: 10.5, weight: .bold))
-                        .foregroundStyle(Color.black.opacity(0.84))
-                        .strikethrough(blk.isDone)
-                        .lineLimit(hVal > 40 ? 2 : 1)
+                Group {
+                    if hVal < 35 {
+                        HStack(spacing: 3) {
+                            Text(String(blk.timeRangeLabel.prefix(5)))
+                                .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                .foregroundStyle(timeFg)
+                            Text("\(blk.isDone ? "✓" : "")\(blk.title)")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(titleFg)
+                                .strikethrough(blk.isDone)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 5)
+                        .frame(width: blkW, height: hVal, alignment: .leading)
+                    } else {
+                        VStack(alignment: .leading, spacing: 1.5) {
+                            Text(blk.timeRangeLabel)
+                                .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                .foregroundStyle(timeFg)
+                                .lineLimit(1)
+                            Text("\(blk.isDone ? "✓ " : "")\(blk.title)")
+                                .font(.system(size: 10.5, weight: .bold))
+                                .foregroundStyle(titleFg)
+                                .strikethrough(blk.isDone)
+                                .lineLimit(hVal > 52 ? 3 : 2)
+                        }
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 3)
+                        .frame(width: blkW, height: hVal, alignment: .topLeading)
+                    }
                 }
-                .padding(.horizontal, 5)
-                .padding(.vertical, 3)
-                .frame(width: blkW, height: hVal, alignment: .topLeading)
-                .background(blk.macaron.cardBackground)
+                .background(cardBg)
                 .overlay(alignment: .leading) {
                     Rectangle()
                         .fill(blk.macaron.accentColor)
                         .frame(width: 3)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .opacity(blk.isDone ? 0.6 : 1.0)
+                .opacity(blk.isDone ? 0.62 : 1.0)
                 .offset(x: offsetX, y: topY)
                 .onTapGesture {
                     openTaskEditor(memoryId: blk.memoryId)
@@ -610,7 +803,7 @@ struct CalendarTimelineView: View {
 
             // Current Time Red Indicator Line
             if day.isToday, let nowMin = overview?.nowMinute {
-                let nowY = (CGFloat(nowMin) / 60.0) * hourHeight
+                let nowY = layout.y(forMinute: nowMin)
                 HStack(spacing: 0) {
                     Circle()
                         .fill(Color.red)
@@ -623,7 +816,7 @@ struct CalendarTimelineView: View {
                 .allowsHitTesting(false)
             }
         }
-        .frame(width: colWidth, height: 24 * hourHeight)
+        .frame(width: colWidth, height: layout.totalHeight)
         .overlay(alignment: .leading) {
             Rectangle()
                 .fill(Color.primary.opacity(0.07))

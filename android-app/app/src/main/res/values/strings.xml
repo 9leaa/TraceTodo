@@ -4,5 +4,13 @@
     <string name="default_server_url">https://todo.531party.cn</string>
     <string name="fallback_server_url">http://43.228.79.133:18090</string>
     <string name="test_server_url">http://43.228.79.133:18091</string>
+    <string name="sc_capture_short">极速录入</string>
+    <string name="sc_capture_long">➕ 一句话极速记待办</string>
+    <string name="sc_focus_short">番茄专注</string>
+    <string name="sc_focus_long">🍅 开启番茄专注钟</string>
+    <string name="sc_calendar_short">日历排期</string>
+    <string name="sc_calendar_long">📅 查看周视图时间轴</string>
+    <string name="sc_ask_short">问记忆</string>
+    <string name="sc_ask_long">💬 随手问记忆大脑</string>
     <color name="ic_launcher_background">#0F172A</color>
 </resources>

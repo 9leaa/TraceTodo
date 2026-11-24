@@ -141,8 +141,247 @@ enum AppThemeKind: String, CaseIterable, Codable, Identifiable {
         }
     }
 
+    /// High-contrast fill color for white-text primary buttons and active duration pills (matches Web `--primary-fill`).
+    var primaryFillColor: Color {
+        switch self {
+        case .westlake: return Color(red: 0.06, green: 0.46, blue: 0.43)
+        case .autumn: return Color(red: 0.76, green: 0.25, blue: 0.05)
+        case .warmIvory: return Color(red: 0.52, green: 0.30, blue: 0.05)
+        case .tideBlue: return Color(red: 0.03, green: 0.35, blue: 0.52)
+        case .deepForest: return Color(red: 0.02, green: 0.59, blue: 0.41)
+        case .nebula: return Color(red: 0.49, green: 0.23, blue: 0.93)
+        case .cyber: return Color(red: 0.05, green: 0.45, blue: 0.56)
+        case .polar: return Color(red: 0.05, green: 0.58, blue: 0.53)
+        case .velvetNoir: return Color(red: 0.64, green: 0.11, blue: 0.69)
+        case .obsidianGold: return Color(red: 0.63, green: 0.38, blue: 0.03)
+        default: return primaryColor
+        }
+    }
+
     var railSelectedBg: Color {
         primaryColor.opacity(isDark ? 0.22 : 0.12)
+    }
+}
+
+// MARK: - Ambient Portrait & Nature Scene Catalog (Synced with Web SCENE_CATALOG)
+
+enum AmbientSceneCategory: String, CaseIterable, Identifiable {
+    case all = "all"
+    case male = "male"
+    case female = "female"
+    case nature = "nature"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all: return "全部"
+        case .male: return "✨ 帅哥"
+        case .female: return "🌸 美女"
+        case .nature: return "🌌 自然科幻"
+        }
+    }
+}
+
+struct AmbientSceneItem: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let subtitle: String
+    let category: AmbientSceneCategory
+    let icon: String
+    let accentColor: Color
+    let pairedTheme: AppThemeKind?
+
+    var isPortrait: Bool {
+        category == .male || category == .female
+    }
+
+    static let catalog: [AmbientSceneItem] = [
+        AmbientSceneItem(id: "none", name: "无场景", subtitle: "纯净无壁纸背景", category: .all, icon: "🪽", accentColor: .purple, pairedTheme: nil),
+        // Male Series (4)
+        AmbientSceneItem(id: "portrait_m_sunny", name: "阳光少年", subtitle: "暖阳白衫 · 清爽书院学长", category: .male, icon: "☀️", accentColor: Color(red: 0.96, green: 0.62, blue: 0.04), pairedTheme: .warmIvory),
+        AmbientSceneItem(id: "portrait_m_ancient", name: "竹影公子", subtitle: "青竹烟雨 · 温润古风雅士", category: .male, icon: "🎋", accentColor: Color(red: 0.20, green: 0.83, blue: 0.60), pairedTheme: .celadonMist),
+        AmbientSceneItem(id: "portrait_m_sport", name: "海风型男", subtitle: "晴海落日 · 清爽运动少年", category: .male, icon: "🌊", accentColor: Color(red: 0.22, green: 0.74, blue: 0.97), pairedTheme: .tideBlue),
+        AmbientSceneItem(id: "portrait_m", name: "禁欲绅士", subtitle: "高定西装 · 都市暗夜电影", category: .male, icon: "🕴️", accentColor: Color(red: 0.98, green: 0.75, blue: 0.14), pairedTheme: .obsidianGold),
+        // Female Series (8)
+        AmbientSceneItem(id: "portrait_f_cool", name: "清冷御姐", subtitle: "暮色天际 · 都市高智晚风", category: .female, icon: "💎", accentColor: Color(red: 0.96, green: 0.45, blue: 0.71), pairedTheme: .velvetNoir),
+        AmbientSceneItem(id: "portrait_f_hanfu", name: "江南仕女", subtitle: "烟雨水榭 · 宋韵汉服清雅", category: .female, icon: "🏮", accentColor: Color(red: 0.18, green: 0.83, blue: 0.75), pairedTheme: .celadonMist),
+        AmbientSceneItem(id: "portrait_f_vitality", name: "元气甜妹", subtitle: "晴空海湾 · 明媚治愈少女", category: .female, icon: "🌻", accentColor: Color(red: 0.22, green: 0.74, blue: 0.97), pairedTheme: .warmIvory),
+        AmbientSceneItem(id: "portrait_f", name: "樱花佳人", subtitle: "暮樱漫舞 · 温柔浪漫写真", category: .female, icon: "🌸", accentColor: Color(red: 0.98, green: 0.66, blue: 0.83), pairedTheme: .sakura),
+        AmbientSceneItem(id: "portrait_f_campus", name: "奶糖学妹", subtitle: "双马尾学院风 · 银杏暖阳甜笑", category: .female, icon: "🎀", accentColor: Color(red: 0.98, green: 0.66, blue: 0.83), pairedTheme: .warmIvory),
+        AmbientSceneItem(id: "portrait_f_snow", name: "雪域红梅", subtitle: "红氅白雪落梅 · 清冽冬日写真", category: .female, icon: "❄️", accentColor: Color(red: 0.88, green: 0.11, blue: 0.28), pairedTheme: .snowPeak),
+        AmbientSceneItem(id: "portrait_f_lolita", name: "洋装甜心", subtitle: "洛丽塔蕾丝茶会 · 粉霞玫瑰", category: .female, icon: "🍰", accentColor: Color(red: 0.96, green: 0.45, blue: 0.71), pairedTheme: .sakura),
+        AmbientSceneItem(id: "portrait_f_cyber", name: "赛博歌姬", subtitle: "全息霓虹舞台 · 电音偶像光轨", category: .female, icon: "🎤", accentColor: Color(red: 0.91, green: 0.47, blue: 0.98), pairedTheme: .cyber),
+        // Nature & Sci-Fi Series (6)
+        AmbientSceneItem(id: "starfield", name: "银河星空", subtitle: "璀璨星云 · 深空静谧冥想", category: .nature, icon: "🌌", accentColor: Color(red: 0.65, green: 0.55, blue: 0.98), pairedTheme: .nebula),
+        AmbientSceneItem(id: "scifi", name: "科幻夜城", subtitle: "未来天际 · 全息流光夜雨", category: .nature, icon: "🏙️", accentColor: Color(red: 0.13, green: 0.83, blue: 0.93), pairedTheme: .cyber),
+        AmbientSceneItem(id: "neon", name: "霓虹光轨", subtitle: "赛博街景 · 炫彩电音律动", category: .nature, icon: "⚡", accentColor: Color(red: 0.22, green: 0.74, blue: 0.97), pairedTheme: .cyber),
+        AmbientSceneItem(id: "nature", name: "森林秘境", subtitle: "晨雾松林 · 萤火虫呼吸感", category: .nature, icon: "🌲", accentColor: Color(red: 0.20, green: 0.83, blue: 0.60), pairedTheme: .deepForest),
+        AmbientSceneItem(id: "aurora", name: "极地极光", subtitle: "冰原雪峰 · 绿紫极光漫舞", category: .nature, icon: "🌠", accentColor: Color(red: 0.37, green: 0.92, blue: 0.83), pairedTheme: .polar),
+        AmbientSceneItem(id: "ocean", name: "深海之梦", subtitle: "蔚蓝光束 · 静谧深潜气泡", category: .nature, icon: "🌊", accentColor: Color(red: 0.13, green: 0.83, blue: 0.93), pairedTheme: .snowPeak),
+    ]
+
+    static func byId(_ id: String) -> AmbientSceneItem {
+        catalog.first(where: { $0.id == id }) ?? catalog[0]
+    }
+}
+
+// MARK: - Disk-Cached Remote Scene Image Loader
+
+@MainActor
+final class SceneWallpaperCache: ObservableObject {
+    static let shared = SceneWallpaperCache()
+    @Published private var loadedData: [String: Data] = [:]
+    private var inFlight: Set<String> = []
+
+    private var cacheFolder: URL {
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let dir = base.appendingPathComponent("TraceTodoSceneWallpapers", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    func imageData(for sceneId: String, serverURL: String) -> Data? {
+        guard !sceneId.isEmpty, sceneId != "none" else { return nil }
+        if let mem = loadedData[sceneId] {
+            return mem
+        }
+        let diskURL = cacheFolder.appendingPathComponent("\(sceneId).jpg")
+        if let disk = try? Data(contentsOf: diskURL), disk.count > 1024 {
+            loadedData[sceneId] = disk
+            return disk
+        }
+        fetchIfNeeded(sceneId: sceneId, serverURL: serverURL)
+        return nil
+    }
+
+    func fetchIfNeeded(sceneId: String, serverURL: String) {
+        guard !sceneId.isEmpty, sceneId != "none", !inFlight.contains(sceneId) else { return }
+        let cleanBase = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: "\(cleanBase)/scenes/\(sceneId).jpg") else { return }
+        inFlight.insert(sceneId)
+        let diskURL = cacheFolder.appendingPathComponent("\(sceneId).jpg")
+        Task {
+            defer { inFlight.remove(sceneId) }
+            do {
+                let (data, resp) = try await URLSession.shared.data(from: url)
+                if let http = resp as? HTTPURLResponse, http.statusCode == 200, data.count > 1024 {
+                    try? data.write(to: diskURL, options: .atomic)
+                    self.loadedData[sceneId] = data
+                }
+            } catch {
+                // Keep silent on offline; next render retries cleanly
+            }
+        }
+    }
+}
+
+struct RemoteSceneWallpaperImage: View {
+    let sceneId: String
+    let serverURL: String
+    @ObservedObject private var cache = SceneWallpaperCache.shared
+
+    var body: some View {
+        GeometryReader { geo in
+            if let data = cache.imageData(for: sceneId, serverURL: serverURL) {
+                #if os(macOS)
+                if let nsImg = NSImage(data: data) {
+                    Image(nsImage: nsImg)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geo.size.width, height: geo.size.height, alignment: Alignment(horizontal: .trailing, vertical: .top))
+                        .clipped()
+                }
+                #else
+                if let uiImg = UIImage(data: data) {
+                    Image(uiImage: uiImg)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geo.size.width, height: geo.size.height, alignment: Alignment(horizontal: .trailing, vertical: .top))
+                        .clipped()
+                }
+                #endif
+            } else {
+                let item = AmbientSceneItem.byId(sceneId)
+                LinearGradient(
+                    colors: [item.accentColor.opacity(0.28), Color.black.opacity(0.18)],
+                    startPoint: .topTrailing,
+                    endPoint: .bottomLeading
+                )
+            }
+        }
+    }
+}
+
+/// Full-window ambient scene wallpaper + scrim + subtle drifting bokeh/star particles (matches Web `#ambientSceneLayer`).
+struct AmbientSceneBackgroundView: View {
+    @EnvironmentObject var store: TodoStore
+
+    private static let intensityOpacities: [Double] = [0.0, 0.26, 0.48, 0.72]
+
+    var body: some View {
+        ZStack {
+            store.activeTheme.canvasBackground
+
+            if store.hasActiveScene {
+                let sc = store.activeSceneItem
+                let idx = min(3, max(0, store.sceneIntensity))
+                let imgOpacity = Self.intensityOpacities[idx]
+
+                RemoteSceneWallpaperImage(sceneId: sc.id, serverURL: store.serverURL)
+                    .opacity(imgOpacity)
+                    .animation(.easeInOut(duration: 0.45), value: sc.id)
+
+                LinearGradient(
+                    colors: [
+                        store.activeTheme.canvasBackground.opacity(0.36),
+                        store.activeTheme.canvasBackground.opacity(0.58),
+                        store.activeTheme.canvasBackground.opacity(0.76),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+
+                if store.sceneMotion {
+                    AmbientParticleCanvasView(accent: sc.accentColor, primary: store.activeTheme.primaryColor)
+                        .opacity(0.65)
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+}
+
+struct AmbientParticleCanvasView: View {
+    let accent: Color
+    let primary: Color
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { timeline in
+            let t = timeline.date.timeIntervalSinceReferenceDate
+            Canvas { context, size in
+                guard size.width > 10, size.height > 10 else { return }
+                for i in 0..<18 {
+                    let seed = Double(i) * 1.731
+                    let xFrac = (sin(seed * 2.3 + t * 0.08) * 0.5 + 0.5)
+                    let yRaw = (seed * 0.19 - t * (0.015 + Double(i % 4) * 0.004)).truncatingRemainder(dividingBy: 1.0)
+                    let yFrac = yRaw < 0 ? yRaw + 1.0 : yRaw
+                    let radius = CGFloat(2.2 + Double(i % 5) * 1.3)
+                    let alpha = 0.16 + 0.20 * (0.5 + 0.5 * sin(t * 0.9 + seed))
+                    let rect = CGRect(
+                        x: CGFloat(xFrac) * size.width - radius,
+                        y: CGFloat(yFrac) * size.height - radius,
+                        width: radius * 2,
+                        height: radius * 2
+                    )
+                    let col = (i % 2 == 0 ? accent : primary).opacity(alpha)
+                    context.fill(Path(ellipseIn: rect), with: .color(col))
+                }
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
 
@@ -179,11 +418,24 @@ enum ModuleToggleKey: String, CaseIterable, Identifiable {
     }
 }
 
+struct SpacePreferencesExtra: Codable {
+    let sceneId: String?
+    let sceneIntensity: Int?
+    let sceneMotion: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case sceneId = "scene_id"
+        case sceneIntensity = "scene_intensity"
+        case sceneMotion = "scene_motion"
+    }
+}
+
 struct SpacePreferencesResponse: Codable {
     let spaceId: String
     let themeId: String
     let enabledModules: [String: Bool]
     let pomodoroMinutes: Int?
+    let extra: SpacePreferencesExtra?
     let updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
@@ -191,6 +443,7 @@ struct SpacePreferencesResponse: Codable {
         case themeId = "theme_id"
         case enabledModules = "enabled_modules"
         case pomodoroMinutes = "pomodoro_minutes"
+        case extra
         case updatedAt = "updated_at"
     }
 }
@@ -320,35 +573,67 @@ enum UnifiedTodoSubmode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-/// Converged "待办" primary tab combining Overview, 4-Quadrant Matrix, and Priority List.
+/// Converged "待办" primary tab combining Overview, 4-Quadrant Matrix, and Priority List, plus Quick Scope Filters.
 struct UnifiedTodoHostView: View {
     @EnvironmentObject var store: TodoStore
     @State private var submode: UnifiedTodoSubmode = .overview
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                if store.isModuleEnabled(.countdown) {
-                    TodoCountdownCapsuleStripView()
-                } else {
-                    Text("📋 待办中心")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(.secondary)
+            VStack(spacing: 8) {
+                HStack(spacing: 12) {
+                    if store.isModuleEnabled(.countdown) {
+                        TodoCountdownCapsuleStripView()
+                    } else {
+                        Text("📋 待办中心")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Picker("视图", selection: $submode) {
+                        ForEach(UnifiedTodoSubmode.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 220)
                 }
 
-                Spacer()
-
-                Picker("视图", selection: $submode) {
-                    ForEach(UnifiedTodoSubmode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
+                // Quick Scope Filter Pills matching Web `#todoQuickScopeBar`
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(TaskQuickScope.allCases) { scope in
+                            let isSel = store.taskQuickScope == scope
+                            let cnt = store.quickScopeCount(scope)
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.16)) {
+                                    store.taskQuickScope = scope
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text(scope.label)
+                                        .font(.system(size: 11.5, weight: isSel ? .bold : .medium))
+                                    Text("\(cnt)")
+                                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                        .opacity(isSel ? 0.92 : 0.65)
+                                }
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 5)
+                                .background(isSel ? store.activeTheme.primaryFillColor : Color.primary.opacity(0.06))
+                                .foregroundStyle(isSel ? Color.white : Color.primary)
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        Spacer(minLength: 0)
                     }
                 }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 230)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 9)
-            .background(Color.primary.opacity(0.025))
+            .background(store.cardSurfaceBackground.opacity(0.75))
 
             Divider()
 
@@ -363,25 +648,6 @@ struct UnifiedTodoHostView: View {
                 SortedTaskListView()
             }
         }
-    }
-
-    private var nearestCountdownInfo: (badge: String, title: String)? {
-        let fmt = ISO8601DateFormatter()
-        let todos = (store.matrix?.sortedTasks ?? []).filter { !$0.payload.isDone && ($0.payload.dueAt?.isEmpty == false) }
-        var best: (Date, TaskItemModel)?
-        for t in todos {
-            guard let raw = t.payload.dueAt else { continue }
-            let parsed = fmt.date(from: raw) ?? ISO8601DateFormatter().date(from: String(raw.prefix(19)) + "Z")
-            if let d = parsed {
-                if best == nil || d < best!.0 {
-                    best = (d, t)
-                }
-            }
-        }
-        guard let (dueDate, task) = best else { return nil }
-        let days = Int(ceil(dueDate.timeIntervalSinceNow / 86400.0))
-        let badge = days < 0 ? "逾期 \(abs(days)) 天" : (days == 0 ? "就在今天" : "还有 \(days) 天")
-        return (badge, task.title)
     }
 }
 
@@ -454,47 +720,107 @@ struct QuickNotesStreamView: View {
     }
 }
 
-/// Reusable Appearance Theme Gallery & Module Toggles sections inside SettingsSyncView.
+/// Reusable Appearance Theme Gallery (Light/Dark grouped), Portrait/Nature Scene Gallery, & Module Toggles inside SettingsSyncView.
 struct ThemeAndModulesSettingsSections: View {
     @EnvironmentObject var store: TodoStore
+    @State private var sceneCategory: AmbientSceneCategory = .all
+
+    private var filteredScenes: [AmbientSceneItem] {
+        if sceneCategory == .all {
+            return AmbientSceneItem.catalog
+        }
+        return AmbientSceneItem.catalog.filter { $0.category == sceneCategory }
+    }
 
     var body: some View {
-        Section("🎨 外观主题画廊（纯 Token 矢量 · 跨端同步）") {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 10)], spacing: 10) {
-                ForEach(AppThemeKind.allCases) { theme in
-                    let isSel = store.activeTheme == theme
-                    Button {
-                        Task { await store.selectTheme(theme) }
-                    } label: {
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack {
-                                Circle().fill(theme.primaryColor).frame(width: 14, height: 14)
-                                Circle().fill(theme.accentColor).frame(width: 14, height: 14)
-                                Spacer()
-                                if isSel {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(theme.primaryColor)
-                                }
-                            }
-                            Text(theme.title)
-                                .font(.subheadline.bold())
-                                .foregroundStyle(.primary)
-                            Text(theme.subtitle)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(theme.primaryColor.opacity(isSel ? 0.12 : 0.04))
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(isSel ? theme.primaryColor : Color.primary.opacity(0.1), lineWidth: isSel ? 2 : 1)
-                        )
+        Section("🎨 精选矢量外观主题（亮/暗分组 · 跨端同步）") {
+            VStack(alignment: .leading, spacing: 14) {
+                themeGroupBlock(isDark: false, title: "☀️ 亮色主题")
+                Divider()
+                themeGroupBlock(isDark: true, title: "🌙 暗色主题")
+            }
+            .padding(.vertical, 4)
+        }
+
+        Section("✨ 人物写真与环境场景主题（帅哥 · 美女 · 自然科幻）") {
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle("🎨 点击场景时自动联动契合主题配色", isOn: $store.syncSceneTheme)
+                    .font(.caption.weight(.semibold))
+
+                Picker("分类", selection: $sceneCategory) {
+                    ForEach(AmbientSceneCategory.allCases) { cat in
+                        Text(cat.label).tag(cat)
                     }
-                    .buttonStyle(.plain)
                 }
+                .pickerStyle(.segmented)
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
+                    ForEach(filteredScenes) { sc in
+                        let isSel = store.activeSceneId == sc.id
+                        Button {
+                            Task { await store.selectScene(sc) }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 5) {
+                                ZStack(alignment: .topTrailing) {
+                                    if sc.id == "none" {
+                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                            .fill(Color.primary.opacity(0.05))
+                                            .frame(height: 72)
+                                            .overlay(Text("🪽").font(.title3))
+                                    } else {
+                                        RemoteSceneWallpaperImage(sceneId: sc.id, serverURL: store.serverURL)
+                                            .frame(height: 72)
+                                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                    }
+                                    if isSel {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.system(size: 16, weight: .bold))
+                                            .foregroundStyle(.white, store.activeTheme.primaryFillColor)
+                                            .padding(5)
+                                    }
+                                }
+                                Text("\(sc.icon) \(sc.name)")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                Text(sc.subtitle)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            .padding(7)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(store.activeTheme.primaryColor.opacity(isSel ? 0.12 : 0.03))
+                            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                    .stroke(isSel ? store.activeTheme.primaryColor : Color.primary.opacity(0.10), lineWidth: isSel ? 2 : 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    Text("💡 全站氛围光强度")
+                        .font(.caption.bold())
+                    Picker("强度", selection: Binding(
+                        get: { store.sceneIntensity },
+                        set: { val in Task { await store.setSceneIntensity(val) } }
+                    )) {
+                        Text("关闭").tag(0)
+                        Text("微光").tag(1)
+                        Text("标准").tag(2)
+                        Text("沉浸").tag(3)
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                Toggle("🪽 开启氛围微光粒子飘动", isOn: Binding(
+                    get: { store.sceneMotion },
+                    set: { val in Task { await store.setSceneMotion(val) } }
+                ))
+                .font(.caption)
             }
             .padding(.vertical, 4)
         }
@@ -514,6 +840,78 @@ struct ThemeAndModulesSettingsSections: View {
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func themeGroupBlock(isDark: Bool, title: String) -> some View {
+        let list = AppThemeKind.allCases.filter { $0.isDark == isDark }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title)
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(list.count) 套")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 142), spacing: 10)], spacing: 10) {
+                ForEach(list) { theme in
+                    let isSel = store.activeTheme == theme
+                    Button {
+                        Task { await store.selectTheme(theme) }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 5) {
+                            ZStack(alignment: .topLeading) {
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [theme.primaryColor, theme.accentColor],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                    .frame(height: 32)
+                                HStack {
+                                    Text(theme.isDark ? "🌙 暗色" : "☀️ 亮色")
+                                        .font(.system(size: 9.5, weight: .bold))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.white.opacity(0.92))
+                                        .foregroundStyle(Color.black.opacity(0.85))
+                                        .clipShape(Capsule())
+                                    Spacer()
+                                    if isSel {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.system(size: 14, weight: .bold))
+                                            .foregroundStyle(.white)
+                                    }
+                                }
+                                .padding(.horizontal, 6)
+                                .padding(.top, 6)
+                            }
+                            Text(theme.title)
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Text(theme.subtitle)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(theme.primaryColor.opacity(isSel ? 0.12 : 0.04))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(isSel ? theme.primaryColor : Color.primary.opacity(0.10), lineWidth: isSel ? 2 : 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
