@@ -581,6 +581,50 @@ struct UnifiedTodoHostView: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 8) {
+                if !store.isAuthenticated {
+                    HStack(spacing: 10) {
+                        Image(systemName: "person.crop.circle.badge.exclamationmark")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(store.activeTheme.primaryColor)
+
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("当前未登录云端账号")
+                                .font(.system(size: 12.5, weight: .bold))
+                            Text("登录或注册账号后，可跨 iOS / macOS / Android / Web 实时同步待办、记忆与主题")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+
+                        Spacer(minLength: 6)
+
+                        Button {
+                            store.openAuthSheetFromAnywhere()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "lock.open.fill")
+                                    .font(.system(size: 11, weight: .bold))
+                                Text("登录 / 注册")
+                                    .font(.system(size: 12, weight: .bold))
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(store.activeTheme.primaryFillColor)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(store.activeTheme.primaryColor.opacity(store.activeTheme.isDark ? 0.18 : 0.09))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(store.activeTheme.primaryColor.opacity(0.26), lineWidth: 1)
+                    )
+                }
+
                 HStack(spacing: 12) {
                     if store.isModuleEnabled(.countdown) {
                         TodoCountdownCapsuleStripView()

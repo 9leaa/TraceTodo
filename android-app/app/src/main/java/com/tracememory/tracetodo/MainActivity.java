@@ -459,6 +459,8 @@ public class MainActivity extends Activity {
                 js = "if(typeof switchTab==='function')switchTab('focus');";
             } else if ("calendar".equals(act)) {
                 js = "if(typeof switchTab==='function')switchTab('calendar');";
+            } else if ("login".equals(act) || "auth".equals(act) || "account".equals(act)) {
+                js = "if(typeof openAuthModal==='function')openAuthModal();";
             } else if ("ask".equals(act)) {
                 js = "if(typeof toggleAskFloatPanel==='function')toggleAskFloatPanel();else if(typeof switchTab==='function')switchTab('ask');";
             } else {

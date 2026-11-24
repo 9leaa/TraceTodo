@@ -450,7 +450,34 @@
       border-color: var(--border);
       color: var(--heading);
     }
-    .header-account { grid-area: account; border-color: var(--border); background: var(--surface); }
+    .header-account {
+      grid-area: account;
+      border-radius: 999px;
+      padding: 7px 13px;
+      border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+      background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      max-width: 156px;
+    }
+    .header-account [data-control-label] {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .header-account[data-authed="0"] {
+      background: var(--primary-fill, var(--primary));
+      border-color: var(--primary-fill, var(--primary));
+      color: #ffffff;
+      box-shadow: 0 3px 10px color-mix(in srgb, var(--primary) 28%, transparent);
+    }
+    .header-account[data-authed="0"]:hover {
+      background: var(--primary-fill, var(--primary));
+      border-color: var(--primary-fill, var(--primary));
+      color: #ffffff;
+      filter: brightness(1.06);
+    }
     input.main-input {
       min-width: 0;
       background: var(--surface);
@@ -3343,7 +3370,7 @@
       <button type="button" id="openPrefsBtn" onclick="openPrefsModal()"><span class="control-icon" aria-hidden="true">🎨</span><span data-control-label>外观/模块</span></button>
       <button type="button" id="notifToggleBtn" onclick="toggleWebNotifications()"><span class="control-icon" aria-hidden="true">🔔</span><span data-control-label>通知</span></button>
     </div>
-    <button type="button" class="header-account" id="accountBtn" onclick="openAuthModal()"><span class="control-icon" aria-hidden="true">👤</span><span data-control-label>登录</span></button>
+    <button type="button" class="header-account" id="accountBtn" data-authed="0" onclick="openAuthModal()"><span class="control-icon" aria-hidden="true">🔐</span><span data-control-label>登录 / 注册</span></button>
   </header>
   <input type="file" id="sharedImageFileInput" class="sr-only-file-input" accept=".jpg,.jpeg,.png,.webp,.gif,.bmp" multiple tabindex="-1" aria-hidden="true" onchange="onImageFilesSelected(event)" oncancel="onImagePickerCancel()" />
   <div id="quickMediaDraftBar" style="display:none;padding:6px 20px;background:var(--surface);border-bottom:1px solid var(--border);align-items:center;gap:10px;flex-wrap:wrap;">
@@ -4342,6 +4369,14 @@
       <div style="display:flex;justify-content:space-between;align-items:center;padding:0 4px;">
         <strong style="font-size:15.5px;">🎨 外观主题画廊 & 🧩 防臃肿模块开关</strong>
         <button type="button" onclick="closePrefsModal()" style="border-radius:999px;padding:4px 12px;font-size:12px;">完成</button>
+      </div>
+
+      <div class="duodo-card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:700;font-size:13.5px;" id="prefsAccountSummaryTitle">👤 账号与多端云同步</div>
+          <div style="font-size:11.5px;color:var(--muted);" id="prefsAccountSummarySub">登录账号后，主题壁纸、四象限待办与长期记忆将跨端实时同步</div>
+        </div>
+        <button type="button" class="primary" id="prefsOpenAuthBtn" onclick="closePrefsModal(); openAuthModal();" style="border-radius:999px;padding:7px 15px;font-weight:600;">🔐 登录 / 注册</button>
       </div>
 
       <div class="duodo-card" style="display:grid;gap:10px;">
@@ -8579,8 +8614,30 @@
       const adminTab = document.getElementById('adminTabBtn');
       const syncBtn = document.getElementById('syncMdBtn');
       const isAdmin = currentUser?.role === 'admin';
-      btn.querySelector('[data-control-label]').textContent = currentUser ? '账号' : '登录';
-      btn.title = currentUser?.display_name || currentUser?.username || '';
+      const authed = Boolean(currentUser);
+      btn.setAttribute('data-authed', authed ? '1' : '0');
+      const icoEl = btn.querySelector('.control-icon');
+      if (icoEl) icoEl.textContent = authed ? '👤' : '🔐';
+      btn.querySelector('[data-control-label]').textContent = authed
+        ? (currentUser.display_name || currentUser.username || '我的账号')
+        : '登录 / 注册';
+      btn.title = authed
+        ? `当前账号：${currentUser.display_name || currentUser.username}（点击管理配额或切换账号）`
+        : '点击登录或注册云端账号';
+      const prefsTitle = document.getElementById('prefsAccountSummaryTitle');
+      const prefsSub = document.getElementById('prefsAccountSummarySub');
+      const prefsBtn = document.getElementById('prefsOpenAuthBtn');
+      if (prefsTitle && prefsSub && prefsBtn) {
+        if (authed) {
+          prefsTitle.textContent = `👤 已登录：${currentUser.display_name || currentUser.username}`;
+          prefsSub.textContent = `专属空间：${currentUser.space_id} · 点击查看今日配额、修改密码或切换账号`;
+          prefsBtn.textContent = '👤 账号中心';
+        } else {
+          prefsTitle.textContent = '🔐 当前未登录云端账号';
+          prefsSub.textContent = '登录或注册账号后，主题壁纸、四象限待办与长期记忆将跨端实时同步';
+          prefsBtn.textContent = '🔐 登录 / 注册';
+        }
+      }
       adminTab.style.display = isAdmin ? 'flex' : 'none';
       syncBtn.hidden = Boolean(currentUser) && !isAdmin;
     }

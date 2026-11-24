@@ -37,15 +37,15 @@
             android:data="tracetodo://calendar" />
     </shortcut>
     <shortcut
-        android:shortcutId="open_ask"
+        android:shortcutId="open_account"
         android:enabled="true"
         android:icon="@mipmap/ic_launcher_round"
-        android:shortcutShortLabel="@string/sc_ask_short"
-        android:shortcutLongLabel="@string/sc_ask_long">
+        android:shortcutShortLabel="@string/sc_auth_short"
+        android:shortcutLongLabel="@string/sc_auth_long">
         <intent
             android:action="android.intent.action.VIEW"
             android:targetPackage="com.tracememory.tracetodo"
             android:targetClass="com.tracememory.tracetodo.MainActivity"
-            android:data="tracetodo://ask" />
+            android:data="tracetodo://login" />
     </shortcut>
 </shortcuts>
