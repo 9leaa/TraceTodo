@@ -38,10 +38,11 @@ fi
 
 APP_DIR="$SCRIPT_DIR/dist/${APP_STEM}.app"
 MAC_ZIP="$SCRIPT_DIR/dist/${APP_STEM}-macOS.zip"
+MAC_DMG="$SCRIPT_DIR/dist/${APP_STEM}-macOS.dmg"
 IOS_SIM_APP_DIR="$SCRIPT_DIR/dist/iOS-Simulator/${APP_STEM}.app"
 IOS_IPA="$SCRIPT_DIR/dist/${APP_STEM}-iOS.ipa"
 
-rm -rf "$APP_DIR" "$IOS_SIM_APP_DIR" "$MAC_ZIP" "$IOS_IPA"
+rm -rf "$APP_DIR" "$IOS_SIM_APP_DIR" "$MAC_ZIP" "$MAC_DMG" "$IOS_IPA"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 mkdir -p "$IOS_SIM_APP_DIR"
 
@@ -62,7 +63,7 @@ if [ -n "$XCODE_APP" ]; then
         -swift-version 5 \
         -parse-as-library \
         -module-cache-path "$MOD_CACHE" \
-        "${SWIFT_EXTRA_FLAGS[@]}" \
+        ${SWIFT_EXTRA_FLAGS[@]+"${SWIFT_EXTRA_FLAGS[@]}"} \
         -target arm64-apple-macos14.0 \
         -sdk "$MAC_SDK" \
         Sources/TraceTodo/*.swift \
@@ -74,7 +75,7 @@ if [ -n "$XCODE_APP" ]; then
         -swift-version 5 \
         -parse-as-library \
         -module-cache-path "$MOD_CACHE" \
-        "${SWIFT_EXTRA_FLAGS[@]}" \
+        ${SWIFT_EXTRA_FLAGS[@]+"${SWIFT_EXTRA_FLAGS[@]}"} \
         -target arm64-apple-ios17.0-simulator \
         -sdk "$IOS_SIM_SDK" \
         Sources/TraceTodo/*.swift \
@@ -142,9 +143,9 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.2.0</string>
+    <string>1.3.0</string>
     <key>CFBundleVersion</key>
-    <string>2</string>
+    <string>3</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
@@ -168,6 +169,14 @@ PLIST
 
 codesign --force --deep --sign - "$APP_DIR" >/dev/null 2>&1 || true
 ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" "$MAC_ZIP"
+
+DMG_STAGE="/tmp/tracetodo_dmg_stage_${APP_STEM}"
+rm -rf "$DMG_STAGE"
+mkdir -p "$DMG_STAGE"
+cp -R "$APP_DIR" "$DMG_STAGE/"
+ln -s /Applications "$DMG_STAGE/Applications"
+hdiutil create -volname "$MAC_DISPLAY_NAME" -srcfolder "$DMG_STAGE" -ov -format UDZO "$MAC_DMG" >/dev/null 2>&1 || true
+rm -rf "$DMG_STAGE"
 
 if [ -f "$IOS_SIM_APP_DIR/TraceTodo" ]; then
     chmod +x "$IOS_SIM_APP_DIR/TraceTodo"
@@ -202,9 +211,9 @@ if [ -f "$IOS_SIM_APP_DIR/TraceTodo" ]; then
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.2.0</string>
+    <string>1.3.0</string>
     <key>CFBundleVersion</key>
-    <string>2</string>
+    <string>3</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>UIDeviceFamily</key>
@@ -240,5 +249,6 @@ fi
 
 echo "✅ Built macOS app: $APP_DIR"
 echo "✅ Built macOS zip: $MAC_ZIP"
+[ -f "$MAC_DMG" ] && echo "✅ Built macOS dmg: $MAC_DMG"
 echo "✅ Built iOS Simulator app: $IOS_SIM_APP_DIR"
 [ -f "$IOS_IPA" ] && echo "✅ Built iOS IPA: $IOS_IPA"

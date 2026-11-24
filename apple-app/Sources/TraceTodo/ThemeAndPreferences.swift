@@ -7,7 +7,16 @@ enum AppThemeKind: String, CaseIterable, Codable, Identifiable {
     case autumn = "autumn"
     case goldenGate = "golden_gate"
     case snowPeak = "snow_peak"
+    case sakura = "sakura"
+    case warmIvory = "warm_ivory"
+    case celadonMist = "celadon_mist"
+    case tideBlue = "tide_blue"
     case deepForest = "deep_forest"
+    case nebula = "nebula"
+    case cyber = "cyber"
+    case polar = "polar"
+    case velvetNoir = "velvet_noir"
+    case obsidianGold = "obsidian_gold"
 
     var id: String { rawValue }
 
@@ -18,7 +27,16 @@ enum AppThemeKind: String, CaseIterable, Codable, Identifiable {
         case .autumn: return "秋林枫叶橙"
         case .goldenGate: return "金门落日红"
         case .snowPeak: return "雪山冰川蓝"
+        case .sakura: return "樱语粉霞"
+        case .warmIvory: return "暖阳白衫"
+        case .celadonMist: return "青竹烟雨"
+        case .tideBlue: return "海盐潮蓝"
         case .deepForest: return "深林暗夜"
+        case .nebula: return "星穹紫夜"
+        case .cyber: return "赛博霓虹"
+        case .polar: return "极光夜航"
+        case .velvetNoir: return "丝绒夜宴"
+        case .obsidianGold: return "黑曜流金"
         }
     }
 
@@ -29,12 +47,26 @@ enum AppThemeKind: String, CaseIterable, Codable, Identifiable {
         case .autumn: return "暖阳银杏琥珀 · 层林微插画"
         case .goldenGate: return "朱砂海湾霞光 · 长桥微插画"
         case .snowPeak: return "凛冽日照雪峰 · 冰川微插画"
+        case .sakura: return "暮樱粉紫霞光 · 落瓣微插画"
+        case .warmIvory: return "蜜拿铁亚麻米白 · 书院暖阳"
+        case .celadonMist: return "墨竹天青烟雨 · 宋韵清雅"
+        case .tideBlue: return "清透海盐橘落日 · 晴海潮风"
         case .deepForest: return "护眼松石暗色 · 星夜松影微插画"
+        case .nebula: return "银河星云暗色 · 紫罗兰霓虹微光"
+        case .cyber: return "夜城雨雾青品红 · 全息光轨"
+        case .polar: return "冰原极光松石暗色 · 雪夜流萤"
+        case .velvetNoir: return "微醺玫紫丝绒 · 都市夜风"
+        case .obsidianGold: return "黑曜熔金松石影 · 暗夜电影"
         }
     }
 
     var isDark: Bool {
-        self == .deepForest
+        switch self {
+        case .deepForest, .nebula, .cyber, .polar, .velvetNoir, .obsidianGold:
+            return true
+        default:
+            return false
+        }
     }
 
     var primaryColor: Color {
@@ -44,7 +76,16 @@ enum AppThemeKind: String, CaseIterable, Codable, Identifiable {
         case .autumn: return Color(red: 0.92, green: 0.35, blue: 0.05)
         case .goldenGate: return Color(red: 0.86, green: 0.15, blue: 0.15)
         case .snowPeak: return Color(red: 0.01, green: 0.52, blue: 0.78)
+        case .sakura: return Color(red: 0.86, green: 0.15, blue: 0.47)
+        case .warmIvory: return Color(red: 0.63, green: 0.38, blue: 0.03)
+        case .celadonMist: return Color(red: 0.05, green: 0.45, blue: 0.56)
+        case .tideBlue: return Color(red: 0.01, green: 0.41, blue: 0.63)
         case .deepForest: return Color(red: 0.06, green: 0.73, blue: 0.51)
+        case .nebula: return Color(red: 0.55, green: 0.36, blue: 0.96)
+        case .cyber: return Color(red: 0.02, green: 0.71, blue: 0.83)
+        case .polar: return Color(red: 0.18, green: 0.83, blue: 0.75)
+        case .velvetNoir: return Color(red: 0.91, green: 0.47, blue: 0.98)
+        case .obsidianGold: return Color(red: 0.92, green: 0.70, blue: 0.03)
         }
     }
 
@@ -55,7 +96,16 @@ enum AppThemeKind: String, CaseIterable, Codable, Identifiable {
         case .autumn: return Color(red: 0.85, green: 0.47, blue: 0.02)
         case .goldenGate: return Color(red: 0.88, green: 0.11, blue: 0.28)
         case .snowPeak: return Color(red: 0.31, green: 0.27, blue: 0.90)
+        case .sakura: return Color(red: 0.66, green: 0.33, blue: 0.97)
+        case .warmIvory: return Color(red: 0.05, green: 0.58, blue: 0.53)
+        case .celadonMist: return Color(red: 0.08, green: 0.50, blue: 0.24)
+        case .tideBlue: return Color(red: 0.98, green: 0.45, blue: 0.09)
         case .deepForest: return Color(red: 0.22, green: 0.74, blue: 0.97)
+        case .nebula: return Color(red: 0.93, green: 0.28, blue: 0.60)
+        case .cyber: return Color(red: 0.85, green: 0.27, blue: 0.94)
+        case .polar: return Color(red: 0.51, green: 0.55, blue: 0.97)
+        case .velvetNoir: return Color(red: 0.49, green: 0.23, blue: 0.93)
+        case .obsidianGold: return Color(red: 0.18, green: 0.83, blue: 0.75)
         }
     }
 
@@ -66,13 +116,27 @@ enum AppThemeKind: String, CaseIterable, Codable, Identifiable {
         case .autumn: return Color(red: 0.99, green: 0.96, blue: 0.94)
         case .goldenGate: return Color(red: 1.00, green: 0.96, blue: 0.96)
         case .snowPeak: return Color(red: 0.93, green: 0.96, blue: 1.00)
+        case .sakura: return Color(red: 0.99, green: 0.95, blue: 0.97)
+        case .warmIvory: return Color(red: 0.98, green: 0.96, blue: 0.93)
+        case .celadonMist: return Color(red: 0.95, green: 0.97, blue: 0.96)
+        case .tideBlue: return Color(red: 0.94, green: 0.97, blue: 0.99)
         case .deepForest: return Color(red: 0.04, green: 0.08, blue: 0.07)
+        case .nebula: return Color(red: 0.05, green: 0.04, blue: 0.12)
+        case .cyber: return Color(red: 0.02, green: 0.06, blue: 0.10)
+        case .polar: return Color(red: 0.03, green: 0.07, blue: 0.09)
+        case .velvetNoir: return Color(red: 0.08, green: 0.04, blue: 0.09)
+        case .obsidianGold: return Color(red: 0.04, green: 0.04, blue: 0.06)
         }
     }
 
     var surfaceBackground: Color {
         switch self {
         case .deepForest: return Color(red: 0.08, green: 0.14, blue: 0.12)
+        case .nebula: return Color(red: 0.09, green: 0.08, blue: 0.20)
+        case .cyber: return Color(red: 0.05, green: 0.11, blue: 0.15)
+        case .polar: return Color(red: 0.05, green: 0.13, blue: 0.15)
+        case .velvetNoir: return Color(red: 0.13, green: 0.07, blue: 0.15)
+        case .obsidianGold: return Color(red: 0.08, green: 0.09, blue: 0.11)
         default: return Color.white
         }
     }
@@ -232,6 +296,15 @@ struct ThemeHeaderArtworkView: View {
                     tree.closeSubpath()
                     context.fill(tree, with: .color(theme.primaryColor.opacity(0.28)))
                 }
+            default:
+                let orb1 = Path(ellipseIn: CGRect(x: w - 98, y: -8, width: 52, height: 52))
+                let orb2 = Path(ellipseIn: CGRect(x: w - 52, y: 10, width: 38, height: 38))
+                context.fill(orb1, with: .color(theme.primaryColor.opacity(theme.isDark ? 0.24 : 0.14)))
+                context.fill(orb2, with: .color(theme.accentColor.opacity(theme.isDark ? 0.22 : 0.14)))
+                var arc = Path()
+                arc.move(to: CGPoint(x: w - 150, y: h - 6))
+                arc.addQuadCurve(to: CGPoint(x: w - 8, y: h * 0.45), control: CGPoint(x: w - 80, y: 12))
+                context.stroke(arc, with: .color(theme.primaryColor.opacity(0.38)), lineWidth: 2)
             }
         }
         .frame(width: 220, height: 54)
