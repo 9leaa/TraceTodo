@@ -38,9 +38,6 @@ struct TaskCardView: View {
                             .font(.system(size: 14.5, weight: .semibold))
                             .strikethrough(task.payload.isDone)
                             .foregroundStyle(task.payload.isDone ? .secondary : .primary)
-                            .onTapGesture {
-                                store.editingTaskTarget = task
-                            }
 
                         if let reason = task.payload.priorityReason, !reason.isEmpty {
                             Text(reason)
@@ -49,8 +46,11 @@ struct TaskCardView: View {
                                 .lineLimit(2)
                         }
                     }
-
-                    Spacer(minLength: 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        store.editingTaskTarget = task
+                    }
 
                     Text("\(qKind.shortCode) · \(Int(task.payload.priorityScore))")
                         .font(.system(size: 11, weight: .bold))
