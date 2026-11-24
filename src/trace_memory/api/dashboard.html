@@ -23,6 +23,26 @@
         }
       } catch (e) {}
     })();
+    (function () {
+      try {
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('guest') === '1') {
+          sessionStorage.setItem('tm_guest_mode', '1');
+        }
+        var hasToken = Boolean((localStorage.getItem('tm_auth_token') || '').trim());
+        var hasShare = Boolean((params.get('share_token') || '').trim());
+        var isGuest = sessionStorage.getItem('tm_guest_mode') === '1';
+        if (!hasToken && !hasShare && !isGuest) {
+          window.__tmRedirectingToLanding = true;
+          document.documentElement.style.visibility = 'hidden';
+          var nextRaw = window.location.pathname + window.location.search + window.location.hash;
+          var target = (nextRaw && nextRaw !== '/' && nextRaw !== '/index.html')
+            ? '/home?next=' + encodeURIComponent(nextRaw)
+            : '/home';
+          window.location.replace(target);
+        }
+      } catch (e) {}
+    })();
   </script>
   <style>
     :root {
@@ -4308,7 +4328,8 @@
           <input id="profNewPw" type="password" placeholder="新密码（至少 6 位）" />
           <button type="button" onclick="changeMyPassword(this)">更新密码</button>
         </div>
-        <div style="display:flex;justify-content:flex-end;gap:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+          <a href="/home" style="display:inline-flex;align-items:center;gap:5px;border-radius:10px;border:1px solid var(--border);padding:8px 12px;font-size:13px;background:var(--surface);color:var(--text);font-weight:500;text-decoration:none;">🌐 访问官网</a>
           <button type="button" onclick="logoutAccount()" style="color:#dc2626;">退出登录</button>
         </div>
       </div>
@@ -4724,14 +4745,16 @@
       }
       data._httpStatus = res.status;
       if (res.status === 401 && !activeShareToken) {
+        const hadToken = Boolean(authToken);
         if (authToken) {
           authToken = '';
           localStorage.removeItem('tm_auth_token');
           currentUser = null;
           updateAccountUi();
         }
-        if (authRequiredFlag) {
-          openAuthModal(true, data.error || '登录状态已失效，请重新登录');
+        try { sessionStorage.removeItem('tm_guest_mode'); } catch (e) {}
+        if (authRequiredFlag || hadToken) {
+          redirectToLanding('auth=login&reason=expired');
         }
       }
       return data;
@@ -8683,12 +8706,28 @@
       });
     }
 
+    function redirectToLanding(query = '') {
+      window.__tmRedirectingToLanding = true;
+      try { document.documentElement.style.visibility = 'hidden'; } catch (e) {}
+      if (typeof stopSyncEventStream === 'function') {
+        stopSyncEventStream();
+      }
+      const nextRaw = window.location.pathname + window.location.search + window.location.hash;
+      const params = new URLSearchParams(query);
+      if (nextRaw && nextRaw !== '/' && nextRaw !== '/index.html' && !params.has('next') && !params.has('logged_out')) {
+        params.set('next', nextRaw);
+      }
+      const qs = params.toString();
+      window.location.replace(qs ? `/home?${qs}` : '/home');
+    }
+
     async function logoutAccount() {
       try { await apiPost('/api/auth/logout'); } catch (e) {}
       authToken = '';
       localStorage.removeItem('tm_auth_token');
       localStorage.removeItem('tm_offline_queue');
       localStorage.removeItem('tm_sent_reminders');
+      try { sessionStorage.removeItem('tm_guest_mode'); } catch (e) {}
       currentUser = null;
       currentQuota = null;
       lastLoadedTasks = [];
@@ -8714,12 +8753,12 @@
       if (document.getElementById('panel-admin').classList.contains('active')) {
         switchTab('tasks');
       }
-      showToast('已退出登录');
-      reloadAll();
+      redirectToLanding('logged_out=1');
     }
 
     function applyAuthStatusData(data) {
       if (!data) return;
+      const hadToken = Boolean(authToken);
       authRequiredFlag = !!data.auth_required;
       hasUsersFlag = data.has_users !== false;
       allowRegFlag = data.allow_registration !== false;
@@ -8727,17 +8766,27 @@
         currentUser = data.user;
         currentQuota = data.quota || null;
         authLockOpen = false;
+        try { sessionStorage.removeItem('tm_guest_mode'); } catch (e) {}
       } else {
-        if (authToken && (data._httpStatus === 200 || data._httpStatus === undefined)) {
+        const serverConfirmedUnauth = data._httpStatus === 200 || data._httpStatus === undefined;
+        if (authToken && serverConfirmedUnauth) {
           authToken = '';
           localStorage.removeItem('tm_auth_token');
         }
         currentUser = null;
         currentQuota = null;
+        if (hadToken && serverConfirmedUnauth && !activeShareToken) {
+          try { sessionStorage.removeItem('tm_guest_mode'); } catch (e) {}
+          updateAccountUi();
+          redirectToLanding('auth=login&reason=expired');
+          return;
+        }
       }
       updateAccountUi();
       if (authRequiredFlag && !currentUser && !activeShareToken) {
-        openAuthModal(true);
+        try { sessionStorage.removeItem('tm_guest_mode'); } catch (e) {}
+        redirectToLanding('auth=login');
+        return;
       }
       if (typeof syncAskFabVisibility === 'function') syncAskFabVisibility();
     }
@@ -12650,6 +12699,7 @@
     }
 
     async function reloadAll() {
+      if (window.__tmRedirectingToLanding) return;
       renderInitialTasksSkeleton();
       try {
         const explicitBootSpace = (currentUser && currentUser.role !== 'admin')
@@ -12663,11 +12713,13 @@
           cache: 'no-store',
         });
         const boot = await parseApiResponse(bootRes);
+        if (window.__tmRedirectingToLanding) return;
         if (boot && boot.auth) {
           applyAuthStatusData(boot.auth);
         } else {
           await syncAuthStatus();
         }
+        if (window.__tmRedirectingToLanding) return;
         if (headerOffline) headerOffline.hidden = true;
         if (authRequiredFlag && !currentUser && !activeShareToken) return;
         if (boot && boot.preferences) {
@@ -12789,7 +12841,7 @@
     }
 
     function ensureSyncEventStream() {
-      if (activeShareToken || document.hidden) return;
+      if (window.__tmRedirectingToLanding || activeShareToken || document.hidden) return;
       if (authRequiredFlag && !authToken) {
         stopSyncEventStream();
         return;
@@ -12928,7 +12980,7 @@
     });
 
     async function checkRemoteSyncState(forceReloadOnChange = true) {
-      if (_syncCheckInFlight || activeShareToken) return;
+      if (window.__tmRedirectingToLanding || _syncCheckInFlight || activeShareToken) return;
       if (authRequiredFlag && !authToken) return;
       _syncCheckInFlight = true;
       try {
@@ -12991,10 +13043,13 @@
     });
     setInterval(() => { if (!document.hidden) checkTaskReminders(); }, 30_000);
     setInterval(() => { if (!document.hidden && !_sseConnected) checkRemoteSyncState(true); }, 10_000);
-    reloadAll().then(() => {
-      if (_knownSyncVersion < 0) checkRemoteSyncState(false);
-      ensureSyncEventStream();
-    });
+    if (!window.__tmRedirectingToLanding) {
+      reloadAll().then(() => {
+        if (window.__tmRedirectingToLanding) return;
+        if (_knownSyncVersion < 0) checkRemoteSyncState(false);
+        ensureSyncEventStream();
+      });
+    }
   </script>
 </body>
 </html>
