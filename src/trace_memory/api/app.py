@@ -63,7 +63,7 @@ PWA_MANIFEST_JSON = json.dumps(
 
 PWA_SW_JS = """const CACHE_NAME = 'trace-todo-shell-v3';
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(['/', '/manifest.webmanifest', '/icon.png', '/icon.svg'])));
+  e.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(['/', '/home', '/manifest.webmanifest', '/icon.png', '/icon.svg'])));
   self.skipWaiting();
 });
 self.addEventListener('activate', (e) => {
@@ -76,7 +76,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
-  if (url.pathname === '/' || url.pathname === '/manifest.webmanifest' || url.pathname === '/icon.png' || url.pathname === '/icon.svg') {
+  if (url.pathname === '/' || url.pathname === '/home' || url.pathname === '/welcome' || url.pathname === '/official' || url.pathname === '/manifest.webmanifest' || url.pathname === '/icon.png' || url.pathname === '/icon.svg') {
     e.respondWith(fetch(e.request).then((res) => {
       const clone = res.clone();
       caches.open(CACHE_NAME).then((c) => c.put(e.request, clone));
@@ -106,6 +106,7 @@ from trace_memory.services.auth_service import UserAccount
 
 
 DASHBOARD_HTML_PATH = Path(__file__).with_name("dashboard.html")
+LANDING_HTML_PATH = Path(__file__).with_name("landing.html")
 APP_ICON_PNG_PATH = Path(__file__).with_name("app_icon.png")
 SCENES_DIR = Path(__file__).with_name("scenes")
 def _scene_file(filename: str) -> Path | None:
@@ -130,24 +131,39 @@ _DASHBOARD_CACHE: dict[str, Any] = {
     "bytes": b"",
     "etag": "",
 }
+_LANDING_CACHE: dict[str, Any] = {
+    "key": None,
+    "bytes": b"",
+    "etag": "",
+}
 
 _GZIP_SKIP_PREFIXES = ("/api/sync/stream", "/api/media/file", "/scenes/")
 _GZIP_SKIP_EXACT = frozenset({"/icon.png", "/apple-touch-icon.png", "/favicon.ico"})
 
 
-def _load_dashboard_html_cached() -> tuple[bytes, str]:
-    """Return `(utf8_bytes, weak_etag)` for `DASHBOARD_HTML_PATH`, cached by `(path, mtime_ns, size)`."""
-    st = DASHBOARD_HTML_PATH.stat()
-    cache_key = (str(DASHBOARD_HTML_PATH), st.st_mtime_ns, st.st_size)
-    if _DASHBOARD_CACHE["key"] == cache_key:
-        return _DASHBOARD_CACHE["bytes"], _DASHBOARD_CACHE["etag"]
-    raw_bytes = DASHBOARD_HTML_PATH.read_bytes()
+def _load_html_cached(html_path: Path, cache: dict[str, Any]) -> tuple[bytes, str]:
+    """Return `(utf8_bytes, weak_etag)` for `html_path`, cached by `(path, mtime_ns, size)`."""
+    st = html_path.stat()
+    cache_key = (str(html_path), st.st_mtime_ns, st.st_size)
+    if cache["key"] == cache_key:
+        return cache["bytes"], cache["etag"]
+    raw_bytes = html_path.read_bytes()
     digest = hashlib.sha256(raw_bytes).hexdigest()[:16]
     etag = f'W/"{digest}"'
-    _DASHBOARD_CACHE["key"] = cache_key
-    _DASHBOARD_CACHE["bytes"] = raw_bytes
-    _DASHBOARD_CACHE["etag"] = etag
+    cache["key"] = cache_key
+    cache["bytes"] = raw_bytes
+    cache["etag"] = etag
     return raw_bytes, etag
+
+
+def _load_dashboard_html_cached() -> tuple[bytes, str]:
+    """Return `(utf8_bytes, weak_etag)` for `DASHBOARD_HTML_PATH`, cached by `(path, mtime_ns, size)`."""
+    return _load_html_cached(DASHBOARD_HTML_PATH, _DASHBOARD_CACHE)
+
+
+def _load_landing_html_cached() -> tuple[bytes, str]:
+    """Return `(utf8_bytes, weak_etag)` for `LANDING_HTML_PATH`, cached by `(path, mtime_ns, size)`."""
+    return _load_html_cached(LANDING_HTML_PATH, _LANDING_CACHE)
 
 
 def _normalize_etag_token(token: str) -> str:
@@ -1911,11 +1927,8 @@ def create_fastapi_app(container: AppContainer) -> Any:
         allow_headers=["*"],
     )
 
-    @app.get("/", response_class=HTMLResponse)
-    @app.get("/index.html", response_class=HTMLResponse)
-    @app.get("/console", response_class=HTMLResponse)
-    async def index(request: Request) -> Response:
-        html_bytes, etag = _load_dashboard_html_cached()
+    def _serve_cached_html(request: Request, loader: Any) -> Response:
+        html_bytes, etag = loader()
         resp_headers = {
             "Cache-Control": "no-cache",
             "ETag": etag,
@@ -1927,6 +1940,18 @@ def create_fastapi_app(container: AppContainer) -> Any:
             media_type="text/html; charset=utf-8",
             headers=resp_headers,
         )
+
+    @app.get("/", response_class=HTMLResponse)
+    @app.get("/index.html", response_class=HTMLResponse)
+    @app.get("/console", response_class=HTMLResponse)
+    async def index(request: Request) -> Response:
+        return _serve_cached_html(request, _load_dashboard_html_cached)
+
+    @app.get("/home", response_class=HTMLResponse)
+    @app.get("/welcome", response_class=HTMLResponse)
+    @app.get("/official", response_class=HTMLResponse)
+    async def landing_page(request: Request) -> Response:
+        return _serve_cached_html(request, _load_landing_html_cached)
 
     @app.get("/manifest.webmanifest")
     async def manifest() -> Response:
@@ -2133,23 +2158,29 @@ def run_web_server(container: AppContainer, host: str = "127.0.0.1", port: int =
             self._send_cors()
             self.end_headers()
 
+        def _serve_cached_html(self, loader: Any) -> None:
+            html_bytes, etag = loader()
+            if _etag_matches(self.headers.get("If-None-Match"), etag):
+                self.send_response(HTTPStatus.NOT_MODIFIED)
+                self._send_cors()
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("ETag", etag)
+                self.end_headers()
+                return
+            self._write_raw(
+                200,
+                "text/html; charset=utf-8",
+                html_bytes,
+                extra_headers={"Cache-Control": "no-cache", "ETag": etag},
+            )
+
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             if parsed.path in ("/", "/index.html", "/console"):
-                html_bytes, etag = _load_dashboard_html_cached()
-                if _etag_matches(self.headers.get("If-None-Match"), etag):
-                    self.send_response(HTTPStatus.NOT_MODIFIED)
-                    self._send_cors()
-                    self.send_header("Cache-Control", "no-cache")
-                    self.send_header("ETag", etag)
-                    self.end_headers()
-                    return
-                self._write_raw(
-                    200,
-                    "text/html; charset=utf-8",
-                    html_bytes,
-                    extra_headers={"Cache-Control": "no-cache", "ETag": etag},
-                )
+                self._serve_cached_html(_load_dashboard_html_cached)
+                return
+            if parsed.path in ("/home", "/welcome", "/official"):
+                self._serve_cached_html(_load_landing_html_cached)
                 return
             if parsed.path == "/manifest.webmanifest":
                 self._write_raw(200, "application/manifest+json", PWA_MANIFEST_JSON.encode("utf-8"))

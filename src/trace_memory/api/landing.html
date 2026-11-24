@@ -1,0 +1,2345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#2563eb" />
+  <meta name="description" content="TraceTodo — AI 长期记忆驱动的艾森豪威尔四象限待办、时间画布、沉浸番茄钟、双链星图与全端实时同步中心。" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" type="image/png" href="/icon.png" />
+  <link rel="apple-touch-icon" href="/icon.png" />
+  <title>TraceTodo · AI 长期记忆驱动的四象限待办与执行中心</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface-soft: #f1f5f9;
+      --ink: #0f172a;
+      --ink-2: #334155;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --brand: #2563eb;
+      --brand-2: #6366f1;
+      --brand-3: #7c3aed;
+      --brand-grad: linear-gradient(135deg, #2563eb 0%, #6366f1 52%, #7c3aed 100%);
+      --brand-soft: #eff6ff;
+      --dark-bg: #090d1a;
+      --dark-surface: rgba(17, 24, 39, 0.78);
+      --dark-border: rgba(148, 163, 184, 0.2);
+      --mc-lavender: #ede5ff; --mc-lavender-acc: #7c3aed;
+      --mc-pink: #ffe2ec;     --mc-pink-acc: #db2777;
+      --mc-sky: #dff2ff;      --mc-sky-acc: #0284c7;
+      --mc-butter: #fff4bd;   --mc-butter-acc: #ca8a04;
+      --mc-mint: #d7fbe0;     --mc-mint-acc: #059669;
+      --mc-peach: #ffe6ca;    --mc-peach-acc: #ea580c;
+      --shadow-sm: 0 2px 10px rgba(15, 23, 42, 0.05);
+      --shadow-md: 0 12px 32px rgba(15, 23, 42, 0.08);
+      --shadow-lg: 0 28px 70px rgba(37, 99, 235, 0.14);
+      --radius-lg: 22px;
+      --radius-md: 16px;
+      --sans: "SF Pro Display", "PingFang SC", "Hiragino Sans GB", -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      --mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --scene-acc: #818cf8;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    a { color: inherit; text-decoration: none; }
+    button { font-family: inherit; cursor: pointer; }
+    [hidden] { display: none !important; }
+    button:focus-visible, a:focus-visible, input:focus-visible {
+      outline: 2px solid var(--brand);
+      outline-offset: 2px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Ambient Hero Backdrop */
+    .hero-backdrop {
+      position: relative;
+      background:
+        radial-gradient(900px 420px at 12% -6%, rgba(37, 99, 235, 0.14), transparent 70%),
+        radial-gradient(760px 440px at 90% 4%, rgba(124, 58, 237, 0.13), transparent 70%),
+        radial-gradient(640px 360px at 50% 45%, rgba(14, 165, 233, 0.07), transparent 75%),
+        var(--bg);
+    }
+
+    /* 1. Sticky Glassmorphic Navigation */
+    .site-nav {
+      position: sticky;
+      top: 0;
+      z-index: 60;
+      backdrop-filter: blur(18px) saturate(160%);
+      -webkit-backdrop-filter: blur(18px) saturate(160%);
+      background: rgba(248, 250, 252, 0.84);
+      border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+    }
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      height: 68px;
+    }
+    .nav-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .nav-brand img {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+    }
+    .nav-wordmark {
+      font-weight: 800;
+      font-size: 19px;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+    }
+    .nav-badge {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--brand);
+      background: var(--brand-soft);
+      border: 1px solid #bfdbfe;
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink-2);
+    }
+    .nav-links a {
+      padding: 6px 2px;
+      transition: color 0.16s ease;
+      white-space: nowrap;
+    }
+    .nav-links a:hover { color: var(--brand); }
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 700;
+      padding: 9px 18px;
+      border: 1px solid transparent;
+      transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+      white-space: nowrap;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary {
+      background: var(--brand-grad);
+      color: #ffffff;
+      box-shadow: 0 8px 22px rgba(37, 99, 235, 0.26);
+    }
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 26px rgba(37, 99, 235, 0.34);
+    }
+    .btn-ghost {
+      background: rgba(255, 255, 255, 0.9);
+      color: var(--ink);
+      border-color: var(--border-strong);
+    }
+    .btn-ghost:hover {
+      background: #ffffff;
+      border-color: var(--brand);
+      color: var(--brand);
+    }
+    .btn-subtle {
+      background: transparent;
+      color: var(--ink-2);
+      border-color: transparent;
+      padding: 9px 14px;
+    }
+    .btn-subtle:hover { background: rgba(15, 23, 42, 0.05); color: var(--ink); }
+    .btn-lg { padding: 13px 26px; font-size: 15.5px; }
+    .user-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: #ffffff;
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--ink);
+      box-shadow: var(--shadow-sm);
+    }
+    .user-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+    }
+
+    /* 2. Hero Section */
+    .hero-sec { padding: 54px 0 72px; }
+    .hero-head {
+      text-align: center;
+      max-width: 860px;
+      margin: 0 auto 38px;
+    }
+    .eyebrow-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--brand);
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid #bfdbfe;
+      padding: 6px 14px;
+      border-radius: 999px;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 20px;
+    }
+    .hero-title {
+      margin: 0 0 18px;
+      font-size: clamp(32px, 4.8vw, 56px);
+      font-weight: 800;
+      line-height: 1.14;
+      letter-spacing: -0.03em;
+      color: var(--ink);
+    }
+    .hero-title .grad-txt {
+      background: var(--brand-grad);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .hero-sub {
+      margin: 0 auto 28px;
+      max-width: 700px;
+      font-size: clamp(15.5px, 1.8vw, 18.5px);
+      color: var(--ink-2);
+      line-height: 1.7;
+    }
+    .hero-cta-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .hero-meta-strip {
+      margin-top: 20px;
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 18px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .hero-meta-strip span { display: inline-flex; align-items: center; gap: 5px; }
+
+    /* Interactive macOS Workspace Frame */
+    .preview-frame {
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid rgba(203, 213, 225, 0.9);
+      border-radius: 26px;
+      box-shadow: var(--shadow-lg), 0 4px 20px rgba(15, 23, 42, 0.06);
+      overflow: hidden;
+      backdrop-filter: blur(12px);
+    }
+    .frame-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 13px 20px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .win-dots { display: flex; gap: 7px; align-items: center; }
+    .win-dots i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+    .win-dots i:nth-child(1) { background: #ef4444; }
+    .win-dots i:nth-child(2) { background: #f59e0b; }
+    .win-dots i:nth-child(3) { background: #10b981; }
+
+    .preview-tabs {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface-soft);
+      padding: 4px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .preview-tab-btn {
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12.5px;
+      font-weight: 700;
+      padding: 6px 14px;
+      border-radius: 999px;
+      transition: all 0.16s ease;
+    }
+    .preview-tab-btn.active {
+      background: #ffffff;
+      color: var(--brand);
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+    }
+    .frame-status-pill {
+      font-size: 12px;
+      font-weight: 700;
+      color: #059669;
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      padding: 4px 10px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    /* Interactive AI Capture Bar inside Frame */
+    .demo-capture-bar {
+      padding: 16px 20px;
+      background: #f8fafc;
+      border-bottom: 1px solid var(--border);
+      display: grid;
+      gap: 10px;
+    }
+    .demo-input-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #ffffff;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 14px;
+      padding: 8px 10px 8px 14px;
+      box-shadow: var(--shadow-sm);
+    }
+    .demo-input-text {
+      flex: 1;
+      min-width: 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .demo-chips {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .demo-chip-label { font-size: 12px; font-weight: 700; color: var(--muted); }
+    .demo-chip {
+      border: 1px solid var(--border-strong);
+      background: #ffffff;
+      color: var(--ink-2);
+      border-radius: 999px;
+      padding: 4px 11px;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.15s ease;
+    }
+    .demo-chip:hover, .demo-chip.active {
+      border-color: var(--brand);
+      background: var(--brand-soft);
+      color: var(--brand);
+    }
+    .demo-ai-output {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      background: linear-gradient(90deg, #eff6ff 0%, #f5f3ff 100%);
+      border: 1px solid #c7d2fe;
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-size: 13px;
+      animation: fadeSlide 0.25s ease;
+    }
+    @keyframes fadeSlide {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .demo-out-badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .tag-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 700;
+    }
+    .tag-q1 { background: #fee2e2; color: #b91c1c; }
+    .tag-q2 { background: #dbeafe; color: #1d4ed8; }
+    .tag-q3 { background: #fef3c7; color: #b45309; }
+    .tag-mem { background: #ede9fe; color: #6d28d9; }
+    .tag-ok { background: #d1fae5; color: #047857; }
+
+    .preview-stage { padding: 20px; background: #ffffff; min-height: 360px; }
+    .preview-pane { display: none; }
+    .preview-pane.active { display: block; animation: fadeSlide 0.22s ease; }
+
+    /* Quadrant Preview Grid */
+    .q-grid-demo {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .q-box {
+      border-radius: 16px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+    .q-box.q1 { background: #fef2f2; border-color: #fecaca; }
+    .q-box.q2 { background: #eff6ff; border-color: #bfdbfe; }
+    .q-box.q3 { background: #fffbeb; border-color: #fde68a; }
+    .q-box.q4 { background: #f8fafc; border-color: #cbd5e1; }
+    .q-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .q-card {
+      background: #ffffff;
+      border-radius: 13px;
+      padding: 11px 12px;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+      display: grid;
+      gap: 7px;
+      transition: transform 0.14s ease, opacity 0.18s ease;
+    }
+    .q-card.mc-lavender { background: linear-gradient(135deg, #ffffff 0%, var(--mc-lavender) 100%); }
+    .q-card.mc-sky { background: linear-gradient(135deg, #ffffff 0%, var(--mc-sky) 100%); }
+    .q-card.mc-butter { background: linear-gradient(135deg, #ffffff 0%, var(--mc-butter) 100%); }
+    .q-card.mc-mint { background: linear-gradient(135deg, #ffffff 0%, var(--mc-mint) 100%); }
+    .q-card.mc-peach { background: linear-gradient(135deg, #ffffff 0%, var(--mc-peach) 100%); }
+    .q-card.done { opacity: 0.62; }
+    .q-card.done .q-card-title { text-decoration: line-through; color: var(--muted); }
+    .q-card-top { display: flex; align-items: flex-start; gap: 9px; }
+    .q-check {
+      width: 19px;
+      height: 19px;
+      border-radius: 6px;
+      border: 2px solid #94a3b8;
+      background: #ffffff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 800;
+      color: #ffffff;
+      flex-shrink: 0;
+      margin-top: 2px;
+      padding: 0;
+    }
+    .q-card.done .q-check { background: #10b981; border-color: #10b981; }
+    .q-card-title { font-size: 13.5px; font-weight: 700; color: var(--ink); line-height: 1.35; }
+    .q-card-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; color: var(--ink-2); }
+    .sub-prog {
+      height: 5px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.08);
+      overflow: hidden;
+    }
+    .sub-prog > i { display: block; height: 100%; border-radius: 999px; background: var(--brand-grad); }
+
+    /* Calendar Preview */
+    .cal-demo-strip {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .cd-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 12px;
+      font-size: 12.5px;
+      font-weight: 700;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+    }
+    .cd-pill b { color: var(--brand); font-size: 14px; }
+    .cal-demo-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .cal-col {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+    .cal-col-hdr {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--ink-2);
+      padding-bottom: 6px;
+      border-bottom: 1px dashed var(--border-strong);
+    }
+    .cal-col.today { border-color: #93c5fd; background: #f0f7ff; }
+    .cal-slot {
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      border-left: 3px solid;
+    }
+    .cal-slot small { display: block; font-size: 11px; font-weight: 600; opacity: 0.8; margin-top: 2px; }
+
+    /* Pomodoro Mini Preview */
+    .pomo-demo-wrap {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 24px;
+      align-items: center;
+      background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+      color: #f8fafc;
+      border-radius: 18px;
+      padding: 24px;
+    }
+    .pomo-ring-box {
+      position: relative;
+      width: 196px;
+      height: 196px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .pomo-time {
+      position: absolute;
+      text-align: center;
+    }
+    .pomo-time strong {
+      display: block;
+      font-size: 36px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 1px;
+    }
+    .pomo-time span { font-size: 12px; color: #cbd5e1; }
+    .pomo-sublist { display: grid; gap: 8px; margin: 14px 0; }
+    .pomo-subitem {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      padding: 8px 12px;
+      border-radius: 10px;
+    }
+
+    /* Mini Graph Preview */
+    .mini-graph-wrap {
+      position: relative;
+      height: 310px;
+      border-radius: 18px;
+      overflow: hidden;
+      background: radial-gradient(circle at 30% 25%, #1e1b4b, #090d1a 70%);
+      border: 1px solid rgba(129, 140, 248, 0.28);
+    }
+    #miniGraphCanvas { width: 100%; height: 100%; display: block; }
+    .mini-graph-hud {
+      position: absolute;
+      left: 14px;
+      bottom: 14px;
+      right: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      pointer-events: none;
+    }
+    .hud-chip {
+      background: rgba(15, 23, 42, 0.78);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      color: #e2e8f0;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 5px 11px;
+      border-radius: 999px;
+      backdrop-filter: blur(8px);
+    }
+
+    /* Section Headings */
+    .section-pad { padding: 84px 0; }
+    .sec-head {
+      text-align: center;
+      max-width: 720px;
+      margin: 0 auto 44px;
+    }
+    .sec-kicker {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--brand);
+      background: var(--brand-soft);
+      padding: 4px 12px;
+      border-radius: 999px;
+      margin-bottom: 12px;
+    }
+    .sec-title {
+      margin: 0 0 12px;
+      font-size: clamp(26px, 3.2vw, 38px);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+    .sec-desc { margin: 0; font-size: 16px; color: var(--muted); }
+
+    /* 3. Bento Feature Grid */
+    .bento-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .bento-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    .bento-card:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-md);
+      border-color: #bfdbfe;
+    }
+    .bento-ico {
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+    }
+    .bento-card h3 { margin: 0; font-size: 18px; font-weight: 800; color: var(--ink); }
+    .bento-card p { margin: 0; font-size: 14px; color: var(--ink-2); line-height: 1.65; }
+    .bento-tags { margin-top: auto; padding-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .bento-tag {
+      font-size: 11.5px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: var(--surface-soft);
+      color: var(--ink-2);
+    }
+
+    /* 4. Three-Layer Truth & Traceable Memory Engine */
+    .engine-sec {
+      background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .pipeline-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      margin-bottom: 24px;
+    }
+    .pipe-step {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 22px;
+      position: relative;
+      box-shadow: var(--shadow-sm);
+    }
+    .pipe-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 10px;
+      background: var(--brand-grad);
+      color: #ffffff;
+      font-weight: 800;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+    .pipe-step h3 { margin: 0 0 8px; font-size: 17px; font-weight: 800; }
+    .pipe-step p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
+    .pipe-code {
+      margin-top: 12px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: #334155;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 10px;
+    }
+
+    .qa-audit-card {
+      background: #ffffff;
+      border: 1px solid #c7d2fe;
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      box-shadow: var(--shadow-md);
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 22px;
+      align-items: center;
+    }
+    .qa-bubble {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 16px;
+      display: grid;
+      gap: 10px;
+    }
+    .qa-cite {
+      background: #eff6ff;
+      border-left: 3px solid var(--brand);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      color: var(--ink-2);
+    }
+    .metric-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .metric-pill {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      font-weight: 700;
+      background: #f1f5f9;
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 999px;
+      color: var(--ink);
+    }
+
+    /* 5. Dark Signature Showcase (Star Graph & Real Scene Themes) */
+    .dark-showcase {
+      background:
+        radial-gradient(880px 460px at 18% 12%, rgba(99, 102, 241, 0.22), transparent 65%),
+        radial-gradient(740px 440px at 86% 78%, rgba(6, 182, 212, 0.16), transparent 65%),
+        var(--dark-bg);
+      color: #f8fafc;
+      padding: 88px 0;
+    }
+    .dark-showcase .sec-kicker {
+      background: rgba(99, 102, 241, 0.2);
+      color: #a5b4fc;
+      border: 1px solid rgba(165, 180, 252, 0.28);
+    }
+    .dark-showcase .sec-desc { color: #94a3b8; }
+
+    .graph-split {
+      display: grid;
+      grid-template-columns: minmax(0, 1.55fr) minmax(290px, 1fr);
+      gap: 20px;
+      align-items: stretch;
+      margin-bottom: 64px;
+    }
+    .graph-canvas-card {
+      position: relative;
+      height: 410px;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      background: radial-gradient(circle at 50% 45%, #161b33 0%, #070a14 100%);
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+    }
+    #landingGraphCanvas { width: 100%; height: 100%; display: block; cursor: pointer; }
+    .graph-legend-bar {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      pointer-events: none;
+    }
+    .graph-legend-pills {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      background: rgba(9, 13, 26, 0.78);
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      color: #e2e8f0;
+      backdrop-filter: blur(8px);
+    }
+    .legend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+
+    .inspector-glass {
+      background: var(--dark-surface);
+      border: 1px solid var(--dark-border);
+      border-radius: var(--radius-lg);
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      backdrop-filter: blur(14px);
+    }
+    .insp-label { font-size: 11.5px; font-weight: 800; letter-spacing: 0.06em; color: #94a3b8; text-transform: uppercase; }
+    .insp-title { font-size: 20px; font-weight: 800; color: #ffffff; margin: 0; line-height: 1.3; }
+    .insp-excerpt {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 13.5px;
+      color: #cbd5e1;
+      line-height: 1.65;
+    }
+    .insp-links { display: flex; flex-wrap: wrap; gap: 7px; }
+    .insp-link-chip {
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(99, 102, 241, 0.2);
+      border: 1px solid rgba(165, 180, 252, 0.35);
+      color: #c7d2fe;
+      cursor: pointer;
+    }
+    .insp-link-chip:hover { background: rgba(99, 102, 241, 0.36); color: #ffffff; }
+
+    /* Immersive Scene Gallery */
+    .themes-wrap {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 24px;
+      align-items: center;
+    }
+    .scene-stage {
+      position: relative;
+      height: 360px;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      box-shadow: 0 24px 55px rgba(0, 0, 0, 0.45);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 20px;
+    }
+    .scene-stage img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.5s ease;
+    }
+    .scene-stage:hover img { transform: scale(1.03); }
+    .scene-scrim {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(9, 13, 26, 0.25) 0%, rgba(9, 13, 26, 0.82) 100%);
+    }
+    .scene-stage-top, .scene-stage-bot { position: relative; z-index: 2; }
+    .scene-stage-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 5px 12px;
+      border-radius: 999px;
+      background: rgba(9, 13, 26, 0.65);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      backdrop-filter: blur(8px);
+    }
+    .scene-thumbs {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .scene-thumb-btn {
+      position: relative;
+      aspect-ratio: 16 / 10;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 2px solid rgba(255, 255, 255, 0.16);
+      padding: 0;
+      background: #111827;
+      transition: transform 0.16s ease, border-color 0.16s ease;
+    }
+    .scene-thumb-btn.active {
+      border-color: var(--scene-acc);
+      box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.35);
+      transform: translateY(-2px);
+    }
+    .scene-thumb-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .scene-thumb-btn span {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 3px 6px;
+      font-size: 10.5px;
+      font-weight: 700;
+      color: #ffffff;
+      background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.78));
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .anti-bloat-box {
+      margin-top: 18px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+      padding: 14px 16px;
+      font-size: 13px;
+      color: #cbd5e1;
+      display: grid;
+      gap: 8px;
+    }
+    .module-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+    .module-pills span {
+      font-size: 11.5px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.09);
+      color: #e2e8f0;
+    }
+
+    /* 6. Ecosystem & Developer Integration */
+    .eco-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .eco-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .eco-card h3 { margin: 0; font-size: 18px; font-weight: 800; }
+    .eco-card p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
+    .code-box {
+      margin: 4px 0 0;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 12px;
+      padding: 12px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      line-height: 1.5;
+      overflow-x: auto;
+    }
+
+    /* 7. Closing CTA Banner & Footer */
+    .cta-banner {
+      background: var(--brand-grad);
+      color: #ffffff;
+      border-radius: 28px;
+      padding: 48px 36px;
+      text-align: center;
+      box-shadow: 0 24px 60px rgba(37, 99, 235, 0.25);
+    }
+    .cta-banner h2 { margin: 0 0 12px; font-size: clamp(24px, 3.2vw, 36px); font-weight: 800; }
+    .cta-banner p { margin: 0 auto 24px; max-width: 600px; font-size: 15.5px; color: rgba(255, 255, 255, 0.9); }
+    .btn-white {
+      background: #ffffff;
+      color: var(--brand);
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.16);
+    }
+    .btn-white:hover { transform: translateY(-1px); background: #f8fafc; }
+    .btn-white-outline {
+      background: rgba(255, 255, 255, 0.14);
+      color: #ffffff;
+      border-color: rgba(255, 255, 255, 0.45);
+    }
+    .btn-white-outline:hover { background: rgba(255, 255, 255, 0.24); }
+
+    .site-footer {
+      border-top: 1px solid var(--border);
+      background: #ffffff;
+      padding: 32px 0;
+      margin-top: 72px;
+    }
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .footer-links { display: flex; gap: 18px; flex-wrap: wrap; font-weight: 600; }
+    .footer-links a:hover { color: var(--brand); }
+
+    /* 8. Built-in Auth Modal + Toast */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.56);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 200;
+    }
+    .modal-backdrop.open { display: flex; }
+    .auth-sheet {
+      position: relative;
+      width: 100%;
+      max-width: 430px;
+      background: #ffffff;
+      border-radius: 24px;
+      padding: 28px 26px 24px;
+      box-shadow: 0 30px 80px rgba(15, 23, 42, 0.28);
+      border: 1px solid var(--border);
+      display: grid;
+      gap: 14px;
+      animation: fadeSlide 0.2s ease;
+    }
+    .auth-close {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: #f8fafc;
+      color: var(--ink-2);
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .auth-hero { text-align: center; display: grid; gap: 6px; justify-items: center; }
+    .auth-hero img { width: 52px; height: 52px; border-radius: 14px; box-shadow: 0 8px 20px rgba(37, 99, 235, 0.22); }
+    .auth-hero h2 { margin: 4px 0 0; font-size: 20px; font-weight: 800; }
+    .auth-hero p { margin: 0; font-size: 13px; color: var(--muted); }
+    .seg-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      background: #f1f5f9;
+      padding: 4px;
+      border-radius: 12px;
+    }
+    .seg-tab {
+      border: none;
+      background: transparent;
+      padding: 8px 12px;
+      border-radius: 9px;
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--muted);
+    }
+    .seg-tab.active {
+      background: #ffffff;
+      color: var(--ink);
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+    }
+    .auth-field {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #f8fafc;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+    .auth-field:focus-within { border-color: var(--brand); background: #ffffff; }
+    .auth-field input {
+      border: none;
+      background: transparent;
+      outline: none;
+      width: 100%;
+      font-size: 14px;
+      color: var(--ink);
+      font-family: inherit;
+    }
+    .auth-notice {
+      display: none;
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-size: 12.5px;
+      line-height: 1.45;
+    }
+    .auth-err {
+      display: none;
+      background: #fef2f2;
+      color: #dc2626;
+      border: 1px solid #fecaca;
+      padding: 9px 12px;
+      border-radius: 10px;
+      font-size: 12.5px;
+    }
+
+    .landing-toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      background: #0f172a;
+      color: #ffffff;
+      padding: 10px 18px;
+      border-radius: 999px;
+      font-size: 13.5px;
+      font-weight: 600;
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.25);
+      display: none;
+      z-index: 260;
+      max-width: calc(100vw - 32px);
+      text-align: center;
+    }
+
+    @media (max-width: 1024px) {
+      .nav-links { display: none; }
+      .bento-grid, .pipeline-grid, .eco-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .qa-audit-card, .graph-split, .themes-wrap { grid-template-columns: 1fr; }
+      .cal-demo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 680px) {
+      .container { padding: 0 16px; }
+      .nav-badge { display: none; }
+      .hero-sec { padding: 34px 0 48px; }
+      .section-pad { padding: 56px 0; }
+      .q-grid-demo, .bento-grid, .pipeline-grid, .eco-grid, .cal-demo-grid, .pomo-demo-wrap {
+        grid-template-columns: 1fr;
+      }
+      .scene-thumbs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .cta-banner { padding: 34px 20px; }
+      .graph-canvas-card { height: 320px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { transition: none !important; animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="hero-backdrop">
+    <!-- 1. Top Navigation -->
+    <header class="site-nav">
+      <div class="container nav-inner">
+        <a href="/home" class="nav-brand" aria-label="TraceTodo 官网首页">
+          <img src="/icon.png" alt="TraceTodo 图标" />
+          <span class="nav-wordmark">TraceTodo</span>
+          <span class="nav-badge">AI 记忆待办</span>
+        </a>
+
+        <nav class="nav-links" aria-label="主导航">
+          <a href="#features">核心能力</a>
+          <a href="#memory-engine">记忆引擎</a>
+          <a href="#star-graph">双链星图</a>
+          <a href="#themes">主题场景</a>
+          <a href="#ecosystem">全端 &amp; MCP</a>
+        </nav>
+
+        <div class="nav-actions" id="navAuthActions">
+          <span class="user-pill" id="navUserPill" hidden><i class="user-dot"></i><span id="navUserName"></span></span>
+          <button type="button" class="btn btn-subtle" id="navLoginBtn" onclick="openLandingAuth('login')">登录</button>
+          <button type="button" class="btn btn-primary" id="navPrimaryBtn" onclick="openLandingAuth('register')">免费注册</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 2. Hero & Interactive Workspace Preview -->
+    <section class="hero-sec" id="hero">
+      <div class="container">
+        <div class="hero-head">
+          <div class="eyebrow-pill">✨ 长期记忆驱动 · 可追溯 · 全端实时同步</div>
+          <h1 class="hero-title">
+            把一句话变成<span class="grad-txt">四象限行动</span>，<br />让每一次思考都沉淀为长期记忆。
+          </h1>
+          <p class="hero-sub">
+            TraceTodo 融合可追溯长期记忆、艾森豪威尔四象限待办、周/月时间画布、沉浸番茄钟与双链星图。
+            语音或截屏随手记下，AI 自动归类排序、随截止时间动态提权，并在 Web、macOS、iOS 与 MCP Agent 间毫秒级同步。
+          </p>
+          <div class="hero-cta-row">
+            <button type="button" class="btn btn-primary btn-lg" id="heroPrimaryCta" onclick="handleHeroPrimaryAction()">立即开启 TraceTodo →</button>
+            <button type="button" class="btn btn-ghost btn-lg" id="heroSecondaryCta" onclick="handleHeroSecondaryAction()">已有账号？立即登录</button>
+            <button type="button" class="btn btn-subtle btn-lg" id="heroGuestBtn" hidden onclick="enterLocalGuestMode()">本地免登录体验 →</button>
+          </div>
+          <div class="hero-meta-strip">
+            <span>✅ 100% 原文可溯源</span>
+            <span>⚡ 临期 48h/24h 自动提权</span>
+            <span>🕸️ Obsidian 双向视图 &amp; MCP</span>
+            <span>🍎 Mac / iPhone / PWA 同源同步</span>
+          </div>
+        </div>
+
+        <!-- Interactive macOS Product Preview -->
+        <div class="preview-frame" aria-label="TraceTodo 产品交互预览">
+          <div class="frame-topbar">
+            <div class="win-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div class="preview-tabs" role="tablist" aria-label="工作台视图切换">
+              <button type="button" class="preview-tab-btn active" role="tab" aria-selected="true" data-pane="quadrant" onclick="switchPreviewPane('quadrant', this)">田 四象限</button>
+              <button type="button" class="preview-tab-btn" role="tab" aria-selected="false" data-pane="calendar" onclick="switchPreviewPane('calendar', this)">📅 时间画布</button>
+              <button type="button" class="preview-tab-btn" role="tab" aria-selected="false" data-pane="focus" onclick="switchPreviewPane('focus', this)">🍅 沉浸专注</button>
+              <button type="button" class="preview-tab-btn" role="tab" aria-selected="false" data-pane="graph" onclick="switchPreviewPane('graph', this)">🕸️ 双链星图</button>
+            </div>
+            <div class="frame-status-pill">● SSE 实时同步已就绪</div>
+          </div>
+
+          <div class="demo-capture-bar">
+            <div class="demo-input-row">
+              <span aria-hidden="true">🎙️</span>
+              <span class="demo-input-text" id="demoCaptureText">明天下午 3 点前修复微信支付回调超时</span>
+              <span class="tag-pill tag-ok">AI 极速拆解</span>
+            </div>
+            <div class="demo-chips">
+              <span class="demo-chip-label">点选示例体验 AI 自动归类：</span>
+              <button type="button" class="demo-chip active" onclick="selectDemoSample(0, this)">💳 修复微信支付回调超时</button>
+              <button type="button" class="demo-chip" onclick="selectDemoSample(1, this)">🧠 我习惯上午处理核心架构设计</button>
+              <button type="button" class="demo-chip" onclick="selectDemoSample(2, this)">🎉 下周五纪念日提醒订餐厅</button>
+            </div>
+            <div class="demo-ai-output" id="demoAiOutput">
+              <div class="demo-out-badges">
+                <span class="tag-pill tag-q1">Q1 重要且紧急</span>
+                <span class="tag-pill tag-mem">关联记忆：线上结算链路</span>
+                <span style="color:var(--ink-2);font-weight:600;">自动提权：24h 内截止 · 已生成 3 步 AI 拆解子任务</span>
+              </div>
+              <span style="font-size:12px;color:var(--muted);font-family:var(--mono);">RawNote #rev1 → MemoryVersion v1</span>
+            </div>
+          </div>
+
+          <div class="preview-stage">
+            <!-- Tab 1: 4-Quadrant -->
+            <div class="preview-pane active" id="pane-quadrant">
+              <div class="q-grid-demo">
+                <div class="q-box q1">
+                  <div class="q-head"><span style="color:#dc2626;">Q1 · 重要且紧急（立即推进）</span><span>2 项</span></div>
+                  <div class="q-card mc-peach">
+                    <div class="q-card-top">
+                      <button type="button" class="q-check" aria-label="切换完成状态" onclick="toggleDemoTask(this)">✓</button>
+                      <div>
+                        <div class="q-card-title">修复微信支付回调超时与幂等校验</div>
+                        <div class="q-card-meta"><span class="tag-pill tag-q1">临期提权 +2</span><span>优先分 96</span><span>子任务 2/3</span></div>
+                      </div>
+                    </div>
+                    <div class="sub-prog"><i style="width:66%;"></i></div>
+                  </div>
+                  <div class="q-card mc-lavender">
+                    <div class="q-card-top">
+                      <button type="button" class="q-check" aria-label="切换完成状态" onclick="toggleDemoTask(this)">✓</button>
+                      <div>
+                        <div class="q-card-title">确认季度线上服务 SLA 巡检报告</div>
+                        <div class="q-card-meta"><span>今日 18:00 截止</span><span>已开启好友监工</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="q-box q2">
+                  <div class="q-head"><span style="color:#2563eb;">Q2 · 重要不紧急（核心投入）</span><span>2 项</span></div>
+                  <div class="q-card mc-sky">
+                    <div class="q-card-top">
+                      <button type="button" class="q-check" aria-label="切换完成状态" onclick="toggleDemoTask(this)">✓</button>
+                      <div>
+                        <div class="q-card-title">重构双源检索 RRF 排序与向量清理管线</div>
+                        <div class="q-card-meta"><span class="tag-pill tag-mem">偏好联动：上午深度思考</span><span>锁定 Q2</span></div>
+                      </div>
+                    </div>
+                    <div class="sub-prog"><i style="width:45%;"></i></div>
+                  </div>
+                  <div class="q-card mc-mint">
+                    <div class="q-card-top">
+                      <button type="button" class="q-check" aria-label="切换完成状态" onclick="toggleDemoTask(this)">✓</button>
+                      <div>
+                        <div class="q-card-title">整理本周系统架构复盘笔记</div>
+                        <div class="q-card-meta"><span>Obsidian 双向同步</span><span>每周重复</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="q-box q3">
+                  <div class="q-head"><span style="color:#d97706;">Q3 · 紧急不重要（快处理/委派）</span><span>1 项</span></div>
+                  <div class="q-card mc-butter">
+                    <div class="q-card-top">
+                      <button type="button" class="q-check" aria-label="切换完成状态" onclick="toggleDemoTask(this)">✓</button>
+                      <div>
+                        <div class="q-card-title">核对测试环境证书续期邮件</div>
+                        <div class="q-card-meta"><span>建议 15 分钟快速清零</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="q-box q4">
+                  <div class="q-head"><span style="color:#475569;">Q4 · 不重要不紧急（顺延观察）</span><span>1 项</span></div>
+                  <div class="q-card">
+                    <div class="q-card-top">
+                      <button type="button" class="q-check" aria-label="切换完成状态" onclick="toggleDemoTask(this)">✓</button>
+                      <div>
+                        <div class="q-card-title">收藏的桌面效率插件评测清单</div>
+                        <div class="q-card-meta"><span>防臃肿：低优不打扰今日聚焦</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tab 2: Calendar Timeline -->
+            <div class="preview-pane" id="pane-calendar">
+              <div class="cal-demo-strip">
+                <div class="cd-pill">🎂 结婚纪念日 · 还有 <b>11</b> 天</div>
+                <div class="cd-pill">🚀 v2.4 版本发布 · 还有 <b>4</b> 天</div>
+                <div class="cd-pill">🏮 农历十月十五 · 下元节</div>
+              </div>
+              <div class="cal-demo-grid">
+                <div class="cal-col today">
+                  <div class="cal-col-hdr"><span>今天 · 周二</span><span>3 个时段</span></div>
+                  <div class="cal-slot" style="background:var(--mc-sky);border-color:var(--mc-sky-acc);">09:30–11:30<small>核心检索架构深度专注</small></div>
+                  <div class="cal-slot" style="background:var(--mc-peach);border-color:var(--mc-peach-acc);">14:00–15:00<small>修复支付回调超时问题</small></div>
+                  <div class="cal-slot" style="background:var(--mc-mint);border-color:var(--mc-mint-acc);">19:30–20:00<small>每日日记 &amp; Dream 复盘</small></div>
+                </div>
+                <div class="cal-col">
+                  <div class="cal-col-hdr"><span>周三</span><span>2 个时段</span></div>
+                  <div class="cal-slot" style="background:var(--mc-lavender);border-color:var(--mc-lavender-acc);">10:00–11:30<small>团队 SLA 评审对齐</small></div>
+                  <div class="cal-slot" style="background:var(--mc-butter);border-color:var(--mc-butter-acc);">16:00–16:45<small>每周知识库 Markdown 回流</small></div>
+                </div>
+                <div class="cal-col">
+                  <div class="cal-col-hdr"><span>周四</span><span>2 个时段</span></div>
+                  <div class="cal-slot" style="background:var(--mc-sky);border-color:var(--mc-sky-acc);">09:30–11:00<small>压测与全链路基准回归</small></div>
+                  <div class="cal-slot" style="background:var(--mc-pink);border-color:var(--mc-pink-acc);">18:30–19:30<small>预订周五纪念日餐厅</small></div>
+                </div>
+                <div class="cal-col">
+                  <div class="cal-col-hdr"><span>周五</span><span>1 个时段</span></div>
+                  <div class="cal-slot" style="background:var(--mc-mint);border-color:var(--mc-mint-acc);">15:00–16:30<small>v2.4 发布验收与监工同步</small></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tab 3: Focus Lock -->
+            <div class="preview-pane" id="pane-focus">
+              <div class="pomo-demo-wrap">
+                <div class="pomo-ring-box">
+                  <svg width="196" height="196" viewBox="0 0 196 196" aria-hidden="true">
+                    <circle cx="98" cy="98" r="84" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="11"></circle>
+                    <circle id="demoFocusArc" cx="98" cy="98" r="84" fill="none" stroke="#818cf8" stroke-width="11" stroke-linecap="round" stroke-dasharray="395 528" transform="rotate(-90 98 98)"></circle>
+                  </svg>
+                  <div class="pomo-time">
+                    <strong id="demoFocusClock">18:45</strong>
+                    <span id="demoFocusLabel">沉浸番茄中 · 深度工作</span>
+                  </div>
+                </div>
+                <div>
+                  <div style="font-size:12px;font-weight:700;color:#a5b4fc;letter-spacing:0.06em;">FOCUS LOCK · 当前锁定任务</div>
+                  <h3 style="margin:6px 0 4px;font-size:20px;">重构双源检索 RRF 排序管线</h3>
+                  <p style="margin:0;font-size:13px;color:#cbd5e1;">锁屏状态下可直接勾选子步骤，支持雨声/炉火氛围音与自由正计时切换。</p>
+                  <div class="pomo-sublist">
+                    <div class="pomo-subitem"><span>✅</span><span>1. 核对 BM25 与向量分数归一化权重</span></div>
+                    <div class="pomo-subitem"><span>⏳</span><span>2. 验证 superseded 记忆向量物理清理</span></div>
+                  </div>
+                  <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <button type="button" class="btn btn-white" id="demoFocusBtn" onclick="toggleDemoFocusTimer()">▶ 演示计时</button>
+                    <button type="button" class="btn btn-white-outline" onclick="openLandingAuth('login')">登录后完整体验</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tab 4: Mini Star Graph -->
+            <div class="preview-pane" id="pane-graph">
+              <div class="mini-graph-wrap">
+                <canvas id="miniGraphCanvas" aria-label="双链记忆星图预览"></canvas>
+                <div class="mini-graph-hud">
+                  <span class="hud-chip">━━ [[wikilinks]] 显式双链 · ┈┈ 语义余弦关联</span>
+                  <span class="hud-chip">点击下方「双链星图」区块可交互探索完整节点</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- 3. Bento Feature Grid -->
+  <section class="section-pad" id="features">
+    <div class="container">
+      <div class="sec-head">
+        <span class="sec-kicker">Core Capabilities</span>
+        <h2 class="sec-title">不止于待办清单，更是会记住你的个人执行引擎</h2>
+        <p class="sec-desc">从极速录入、智能分象限、时间块排期到专注防拖延，每个模块围绕「低摩擦、高可靠、可追溯」打造。</p>
+      </div>
+
+      <div class="bento-grid">
+        <article class="bento-card">
+          <div class="bento-ico" style="background:var(--mc-peach);">🎯</div>
+          <h3>四象限与长期偏好联动</h3>
+          <p>自动评估重要度与紧急度（1–5 级），在临近 48h / 24h 或逾期时动态升级象限；结合长期偏好记忆提权关键事项，手工调整后启用 CAS 乐观锁与防覆盖锁定。</p>
+          <div class="bento-tags"><span class="bento-tag">动态提权</span><span class="bento-tag">AI 负载诊断</span><span class="bento-tag">防拖延顺延</span></div>
+        </article>
+
+        <article class="bento-card">
+          <div class="bento-ico" style="background:var(--mc-sky);">🎙️</div>
+          <h3>语音与截图多模态极速录入</h3>
+          <p>支持点击流式听写或按住说话松手入队，也支持 Ctrl+V 粘贴截图或拍照附件，端侧智能压缩后自动识别票据/白板 OCR 并沉淀为视觉记忆。</p>
+          <div class="bento-tags"><span class="bento-tag">语音转写</span><span class="bento-tag">视觉 OCR</span><span class="bento-tag">异步管线</span></div>
+        </article>
+
+        <article class="bento-card">
+          <div class="bento-ico" style="background:var(--mc-lavender);">📅</div>
+          <h3>时间画布与倒数纪念日</h3>
+          <p>自适应单屏周视图折叠闲置时段，搭配 42 格月度全景与待排期任务池；支持每日/工作日/每周/每月重复，以及带农历识别的倒数纪念日墙。</p>
+          <div class="bento-tags"><span class="bento-tag">时间块拖拽</span><span class="bento-tag">周期重复</span><span class="bento-tag">农历胶囊</span></div>
+        </article>
+
+        <article class="bento-card">
+          <div class="bento-ico" style="background:var(--mc-pink);">🍅</div>
+          <h3>番茄专注中心与沉浸锁屏</h3>
+          <p>支持倒计时番茄与自由正计时双模式；进入全屏锁屏后可一边专注一边勾选 AI 拆解子步骤，并自由调节背景虚化、光晕、粒子密度与环境白噪音。</p>
+          <div class="bento-tags"><span class="bento-tag">专注时间轴</span><span class="bento-tag">粒子光效</span><span class="bento-tag">锁屏清单</span></div>
+        </article>
+
+        <article class="bento-card">
+          <div class="bento-ico" style="background:var(--mc-mint);">📝</div>
+          <h3>图文备忘录与一日一页日记</h3>
+          <p>瀑布流/列表图文备忘，搭配按北京时间组织的一日一页心情日记；支持「✨ AI 今日小结」一键汇总当日完成待办与专注时长，静默提炼长期记忆而不制造噪音待办。</p>
+          <div class="bento-tags"><span class="bento-tag">Markdown 排版</span><span class="bento-tag">心情足迹</span><span class="bento-tag">AI 今日小结</span></div>
+        </article>
+
+        <article class="bento-card">
+          <div class="bento-ico" style="background:var(--mc-butter);">👥</div>
+          <h3>好友监工小队与私有边界</h3>
+          <p>个人任务默认严格隔离；切换到多人任务或开启监督后，可生成可随时撤销的专属分享链接邀请好友查看进度，支持「⚡ 催一催」与「👍 点赞鼓励」。</p>
+          <div class="bento-tags"><span class="bento-tag">独立空间隔离</span><span class="bento-tag">可控分享链接</span><span class="bento-tag">互动鼓励</span></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Three-Layer Truth & Traceable Memory Engine -->
+  <section class="section-pad engine-sec" id="memory-engine">
+    <div class="container">
+      <div class="sec-head">
+        <span class="sec-kicker">Traceable Memory Architecture</span>
+        <h2 class="sec-title">三层真值分离与全链路证据溯源</h2>
+        <p class="sec-desc">拒绝黑盒记忆幻觉：每条 AI 抽取结论都绑定原始笔记修订号与原话引述，支持因果时间栅栏与过期向量物理清理。</p>
+      </div>
+
+      <div class="pipeline-grid">
+        <div class="pipe-step">
+          <div class="pipe-num">1</div>
+          <h3>不可变原始记录 RawNote</h3>
+          <p>所有文字、语音与图片 OCR 原文先进入带修订号（Revision）的真值层；支持噪声水话拦截与原文修改后的级联重算。</p>
+          <div class="pipe-code">RawNote(rev=2) · 因果时间栅栏防旧覆新</div>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-num">2</div>
+          <h3>四类记忆演进与片段遗忘</h3>
+          <p>结构化沉淀为 task / preference / semantic / episodic 四类记忆与不可变 MemoryVersion，支持单片段精准遗忘并同步清零旧向量。</p>
+          <div class="pipe-code">MemoryVersion(v3) · Partial Forget 精准清理</div>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-num">3</div>
+          <h3>RRF 混合检索与 Dream 归纳</h3>
+          <p>联合 FTS5 BM25 与向量余弦相似度（SQLite 内置 / Qdrant）进行 RRF 融合；受预算保护的 Dream 睡眠归纳自动提炼长期规律。</p>
+          <div class="pipe-code">RRF(BM25 + Cosine) · assertion_kind="inferred"</div>
+        </div>
+      </div>
+
+      <div class="qa-audit-card">
+        <div>
+          <span class="sec-kicker" style="margin-bottom:10px;">Grounded Evidence Q&amp;A</span>
+          <h3 style="margin:0 0 10px;font-size:22px;font-weight:800;">双源证据问答与全链路 Trace 审计</h3>
+          <p style="margin:0 0 16px;font-size:14.5px;color:var(--ink-2);line-height:1.7;">
+            无论询问「我现在的技术栈偏好」还是「某项需求为何调整优先级」，TraceTodo 都能同时区分「当前有效状态」与「历史演进轨迹」，并附带可点击核验的原文出处与每次检索耗时、Token 审计。
+          </p>
+          <div class="metric-row">
+            <span class="metric-pill">RRF Score: 0.0328</span>
+            <span class="metric-pill">BM25 Rank: #1</span>
+            <span class="metric-pill">Cosine: 0.84</span>
+            <span class="metric-pill">Latency: 142 ms</span>
+          </div>
+        </div>
+        <div class="qa-bubble">
+          <div style="font-size:13px;font-weight:800;color:var(--brand);">💬 问：为什么数据库重构任务被自动调高到 Q2？</div>
+          <div style="font-size:13.5px;color:var(--ink);line-height:1.6;">
+            因为系统检索到你的长期偏好记忆与最近结算告警记录：你在上午时段专注处理核心架构，且该链路直接关联本周五发布窗口。
+          </div>
+          <div class="qa-cite">
+            <strong>📎 原文引述 (RawNote · rev 1)：</strong>“核心结算表锁冲突必须在本周重构落地，上午精力最好时优先做架构设计。”
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. Dark Signature Showcase: Interactive Star Graph & Real Scene Gallery -->
+  <section class="dark-showcase" id="star-graph">
+    <div class="container">
+      <div class="sec-head">
+        <span class="sec-kicker">Knowledge Graph &amp; Aesthetics</span>
+        <h2 class="sec-title" style="color:#ffffff;">双链星图漫游与沉浸式主题美学</h2>
+        <p class="sec-desc">悬停或点击下方任意节点，实时查看双链引用（[[wikilinks]]）、Dream 归纳来源与跨主题语义关联。</p>
+      </div>
+
+      <div class="graph-split">
+        <div class="graph-canvas-card">
+          <canvas id="landingGraphCanvas" aria-label="交互式双链记忆星图"></canvas>
+          <div class="graph-legend-bar">
+            <div class="graph-legend-pills">
+              <span><i class="legend-dot" style="background:#3b82f6;"></i>任务</span>
+              <span><i class="legend-dot" style="background:#8b5cf6;"></i>事实</span>
+              <span><i class="legend-dot" style="background:#f59e0b;"></i>偏好</span>
+              <span><i class="legend-dot" style="background:#14b8a6;"></i>情景</span>
+              <span><i class="legend-dot" style="background:#ec4899;"></i>归纳</span>
+            </div>
+            <div class="graph-legend-pills">━━ 显式双链 · ┈┈ 语义相似</div>
+          </div>
+        </div>
+
+        <aside class="inspector-glass" id="graphInspectorGlass" aria-live="polite">
+          <div class="insp-label">Node Inspector · 节点溯源检查器</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <span class="tag-pill" id="inspTypeBadge" style="background:rgba(59,130,246,0.22);color:#93c5fd;">📋 任务记忆</span>
+            <span style="font-size:12px;color:#94a3b8;font-family:var(--mono);" id="inspMetaText">v2 · 置信度 0.94</span>
+          </div>
+          <h3 class="insp-title" id="inspTitleText">支付回调幂等重构与压测</h3>
+          <div class="insp-excerpt" id="inspExcerptText">
+            已锁定为 Q1/Q2 重点任务，关联历史线上超时排查记录与上午深度专注偏好；包含 3 条 AI 拆解步骤与截止时间动态提权规则。
+          </div>
+          <div>
+            <div class="insp-label" style="margin-bottom:8px;">关联节点（点击切换焦点）</div>
+            <div class="insp-links" id="inspNeighborLinks"></div>
+          </div>
+        </aside>
+      </div>
+
+      <!-- Immersive Themes & Real Scene Wallpapers -->
+      <div class="themes-wrap" id="themes">
+        <div>
+          <span class="sec-kicker" style="margin-bottom:12px;">10+ Themes &amp; Scene Wallpapers</span>
+          <h3 style="margin:0 0 12px;font-size:28px;font-weight:800;color:#ffffff;">十余套浅色/深色主题与精选实景壁纸</h3>
+          <p style="margin:0;font-size:15px;color:#cbd5e1;line-height:1.7;">
+            从极光夜空、深海星辰到国风汉服、晴日少年与赛博霓虹，全站氛围光与番茄沉浸锁屏共享同一套场景引擎，并跨 Web、macOS 与 iOS 实时同步。
+          </p>
+
+          <div class="scene-thumbs" id="sceneThumbGrid" role="group" aria-label="选择主题场景壁纸">
+            <button type="button" class="scene-thumb-btn active" onclick="selectLandingScene(0, this)">
+              <img src="/scenes/starfield.jpg" alt="星辰宇宙" loading="lazy" /><span>星辰宇宙</span>
+            </button>
+            <button type="button" class="scene-thumb-btn" onclick="selectLandingScene(1, this)">
+              <img src="/scenes/aurora.jpg" alt="极地极光" loading="lazy" /><span>极地极光</span>
+            </button>
+            <button type="button" class="scene-thumb-btn" onclick="selectLandingScene(2, this)">
+              <img src="/scenes/ocean.jpg" alt="蔚蓝深海" loading="lazy" /><span>蔚蓝深海</span>
+            </button>
+            <button type="button" class="scene-thumb-btn" onclick="selectLandingScene(3, this)">
+              <img src="/scenes/nature.jpg" alt="林间晨雾" loading="lazy" /><span>林间晨雾</span>
+            </button>
+            <button type="button" class="scene-thumb-btn" onclick="selectLandingScene(4, this)">
+              <img src="/scenes/portrait_f_hanfu.jpg" alt="国风雅韵" loading="lazy" /><span>国风雅韵</span>
+            </button>
+            <button type="button" class="scene-thumb-btn" onclick="selectLandingScene(5, this)">
+              <img src="/scenes/portrait_m_sunny.jpg" alt="暖阳少年" loading="lazy" /><span>暖阳少年</span>
+            </button>
+            <button type="button" class="scene-thumb-btn" onclick="selectLandingScene(6, this)">
+              <img src="/scenes/portrait_f_cyber.jpg" alt="赛博幻影" loading="lazy" /><span>赛博幻影</span>
+            </button>
+            <button type="button" class="scene-thumb-btn" onclick="selectLandingScene(7, this)">
+              <img src="/scenes/portrait_f_snow.jpg" alt="雪域冬晴" loading="lazy" /><span>雪域冬晴</span>
+            </button>
+          </div>
+
+          <div class="anti-bloat-box">
+            <strong style="color:#ffffff;">🧩 防臃肿模块开关：只保留你真正需要的功能</strong>
+            <span>不喜欢复杂功能？可在「外观/模块」中随时隐藏不需要的入口，打造极简待办视图：</span>
+            <div class="module-pills">
+              <span>📅 日历视图</span><span>🍅 番茄专注</span><span>📝 随记备忘</span><span>📖 每日日记</span><span>⏳ 倒数纪念日</span><span>👥 好友监工</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="scene-stage" id="landingSceneStage">
+          <img id="landingSceneImg" src="/scenes/starfield.jpg" alt="星辰宇宙主题预览" />
+          <div class="scene-scrim"></div>
+          <div class="scene-stage-top">
+            <span class="scene-stage-badge" id="landingSceneBadge">✨ 主题联动：星辰紫夜 (Nebula)</span>
+          </div>
+          <div class="scene-stage-bot">
+            <div style="font-size:12px;color:#cbd5e1;margin-bottom:4px;">全站氛围光 · 番茄锁屏实景</div>
+            <div style="font-size:22px;font-weight:800;color:#ffffff;" id="landingSceneTitle">星辰宇宙 · Starfield</div>
+            <div style="font-size:13.5px;color:#e2e8f0;margin-top:4px;" id="landingSceneDesc">深邃紫夜星云搭配低干扰星空微粒，适合夜间深度编码与静心梳理复盘。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. Ecosystem & Developer Integration -->
+  <section class="section-pad" id="ecosystem">
+    <div class="container">
+      <div class="sec-head">
+        <span class="sec-kicker">Cross-Platform &amp; Open Protocol</span>
+        <h2 class="sec-title">全端同步、Obsidian 互通与 AI Agent 原生接入</h2>
+        <p class="sec-desc">你的数据始终属于你。支持 Web/PWA、macOS/iOS 原生端、标准 MCP 协议与本地 Markdown 双向工作流。</p>
+      </div>
+
+      <div class="eco-grid">
+        <article class="eco-card">
+          <h3>🍎 macOS / iOS 原生 &amp; Web PWA</h3>
+          <p>纯原生 SwiftUI 跨端体验：Mac 顶部状态栏极速录入、iPhone 桌面小组件、系统通知与浏览器离线队列，通过 SSE 毫秒级推送跨端变更。</p>
+          <div class="code-box"># 一键启动局域网全端同步服务
+python3 run_web.py --lan
+# 支持 PWA 添加到手机主屏幕</div>
+        </article>
+
+        <article class="eco-card">
+          <h3>🤖 原生 MCP 协议（Claude / Cursor）</h3>
+          <p>内置 stdio 与远程 Streamable HTTP `/mcp` 端点（带 Bearer Token 鉴权），让 Claude Code 与 Cursor 直接读写你的四象限待办与长期记忆。</p>
+          <pre class="code-box" id="mcpExampleBox">{
+  "mcpServers": {
+    "trace-memory": {
+      "url": "http://127.0.0.1:18090/mcp",
+      "headers": {
+        "Authorization": "Bearer &lt;token&gt;"
+      }
+    }
+  }
+}</pre>
+          <button type="button" class="btn btn-ghost" style="align-self:flex-start;padding:7px 14px;font-size:12.5px;" onclick="copyLandingMcp()">📋 复制 MCP 配置示例</button>
+        </article>
+
+        <article class="eco-card">
+          <h3>📂 Obsidian Markdown &amp; 安全防线</h3>
+          <p>一键导出带 YAML Frontmatter 与 `[[wikilinks]]` 的 Markdown 知识库，外部编辑回流冲突自动生成草稿保护；多租户空间严格隔离，自带限流与配额防线。</p>
+          <div class="code-box">knowledge/
+├── tasks/pay-callback.md
+├── preferences/deep-work.md
+└── .manifest.json  # 安全回流</div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7. Closing CTA Banner -->
+  <section class="container" style="padding-top:12px;">
+    <div class="cta-banner">
+      <h2 id="closingCtaTitle">准备好让待办与记忆彼此赋能了吗？</h2>
+      <p id="closingCtaDesc">注册或登录你的 TraceTodo 专属空间，所有灵感、任务、时间块与知识图谱立即跨端同步。</p>
+      <div class="hero-cta-row">
+        <button type="button" class="btn btn-white btn-lg" id="closingPrimaryBtn" onclick="handleHeroPrimaryAction()">立即开启 TraceTodo →</button>
+        <button type="button" class="btn btn-white-outline btn-lg" id="closingSecondaryBtn" onclick="handleHeroSecondaryAction()">登录已有账号</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <img src="/icon.png" alt="TraceTodo" style="width:26px;height:26px;border-radius:7px;" />
+        <span><strong>TraceTodo</strong> · 可追溯长期记忆与四象限待办引擎</span>
+      </div>
+      <div class="footer-links">
+        <a href="#features">核心能力</a>
+        <a href="#memory-engine">记忆引擎</a>
+        <a href="#star-graph">双链星图</a>
+        <a href="#ecosystem">MCP 接入</a>
+        <a href="/" id="footerWorkspaceLink">进入工作台</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- 8. Built-in Login / Register Modal -->
+  <div class="modal-backdrop" id="landingAuthModal" role="dialog" aria-modal="true" aria-labelledby="landingAuthTitle" onclick="if(event.target===this) closeLandingAuth()">
+    <div class="auth-sheet">
+      <button type="button" class="auth-close" aria-label="关闭登录弹窗" onclick="closeLandingAuth()">✕</button>
+      <div class="auth-hero">
+        <img src="/icon.png" alt="TraceTodo" />
+        <h2 id="landingAuthTitle">欢迎回到 TraceTodo</h2>
+        <p>登录或创建你的专属记忆与四象限待办空间</p>
+      </div>
+
+      <div class="auth-notice" id="landingBootstrapBanner">
+        🌱 首次部署引导：首个注册的账号将自动成为系统管理员，并接管默认空间数据。
+      </div>
+      <div class="auth-notice" id="landingReasonNotice"></div>
+
+      <div class="seg-tabs" id="landingAuthTabs">
+        <button type="button" class="seg-tab active" id="landingTabLogin" onclick="setLandingAuthMode('login')">登录账号</button>
+        <button type="button" class="seg-tab" id="landingTabReg" onclick="setLandingAuthMode('register')">注册新账号</button>
+      </div>
+
+      <form onsubmit="event.preventDefault(); submitLandingAuth();" style="display:grid;gap:11px;">
+        <div class="auth-field">
+          <span aria-hidden="true">👤</span>
+          <input id="lAuthUsername" autocomplete="username" placeholder="用户名（3–32 位字母 / 数字 / 下划线 / 中文）" required />
+        </div>
+        <div class="auth-field" id="lAuthDisplayRow" style="display:none;">
+          <span aria-hidden="true">✨</span>
+          <input id="lAuthDisplayName" placeholder="显示昵称（选填，如 Xander）" />
+        </div>
+        <div class="auth-field">
+          <span aria-hidden="true">🔒</span>
+          <input id="lAuthPassword" type="password" autocomplete="current-password" placeholder="密码（至少 6 位）" required />
+          <button type="button" aria-label="显示或隐藏密码" onclick="const p=document.getElementById('lAuthPassword');p.type=p.type==='password'?'text':'password';this.textContent=p.type==='password'?'👁️':'🙈';" style="border:none;background:transparent;padding:2px 4px;font-size:14px;">👁️</button>
+        </div>
+        <div class="auth-err" id="landingAuthErr"></div>
+        <button type="submit" class="btn btn-primary btn-lg" id="landingAuthSubmitBtn" style="width:100%;">立即登录并进入工作台</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="landing-toast" id="landingToast" role="status" aria-live="polite"></div>
+
+  <script>
+    const TOKEN_KEY = 'tm_auth_token';
+    const GUEST_KEY = 'tm_guest_mode';
+    const landingParams = new URLSearchParams(window.location.search);
+
+    let landingAuthState = {
+      authenticated: false,
+      user: null,
+      auth_required: true,
+      has_users: true,
+      allow_registration: true,
+    };
+    let landingAuthMode = 'login';
+
+    function sanitizeNextPath(raw) {
+      if (!raw || typeof raw !== 'string') return '/';
+      const trimmed = raw.trim();
+      if (!trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.startsWith('/\\')) return '/';
+      if (/^\/(home|welcome|official)(\/|\?|#|$)/i.test(trimmed)) return '/';
+      return trimmed;
+    }
+
+    const safeNextPath = sanitizeNextPath(landingParams.get('next'));
+
+    function showLandingToast(msg) {
+      const el = document.getElementById('landingToast');
+      if (!el) return;
+      el.textContent = msg;
+      el.style.display = 'block';
+      clearTimeout(window._landingToastTimer);
+      window._landingToastTimer = setTimeout(() => { el.style.display = 'none'; }, 3600);
+    }
+
+    function setLandingAuthMode(mode) {
+      const canReg = landingAuthState.allow_registration || !landingAuthState.has_users;
+      landingAuthMode = (mode === 'register' && canReg) ? 'register' : 'login';
+      document.getElementById('landingTabLogin').classList.toggle('active', landingAuthMode === 'login');
+      document.getElementById('landingTabReg').classList.toggle('active', landingAuthMode === 'register');
+      document.getElementById('lAuthDisplayRow').style.display = landingAuthMode === 'register' ? 'flex' : 'none';
+      document.getElementById('lAuthPassword').autocomplete = landingAuthMode === 'register' ? 'new-password' : 'current-password';
+      document.getElementById('landingAuthTitle').textContent = !landingAuthState.has_users
+        ? '初始化 TraceTodo 管理员'
+        : (landingAuthMode === 'register' ? '创建你的 TraceTodo 账号' : '欢迎回到 TraceTodo');
+      document.getElementById('landingAuthSubmitBtn').textContent = landingAuthMode === 'register'
+        ? '注册并进入工作台 →'
+        : '立即登录并进入工作台 →';
+      const errEl = document.getElementById('landingAuthErr');
+      errEl.style.display = 'none';
+    }
+
+    function openLandingAuth(mode = 'login', noticeText = '') {
+      if (landingAuthState.authenticated) {
+        window.location.href = safeNextPath;
+        return;
+      }
+      const canReg = landingAuthState.allow_registration || !landingAuthState.has_users;
+      document.getElementById('landingBootstrapBanner').style.display = landingAuthState.has_users ? 'none' : 'block';
+      document.getElementById('landingTabReg').style.display = canReg ? 'block' : 'none';
+      document.getElementById('landingAuthTabs').style.gridTemplateColumns = canReg ? '1fr 1fr' : '1fr';
+
+      const reasonEl = document.getElementById('landingReasonNotice');
+      if (noticeText) {
+        reasonEl.textContent = noticeText;
+        reasonEl.style.display = 'block';
+      } else {
+        reasonEl.style.display = 'none';
+      }
+
+      setLandingAuthMode(landingAuthState.has_users ? mode : 'register');
+      document.getElementById('landingAuthModal').classList.add('open');
+      setTimeout(() => document.getElementById('lAuthUsername').focus(), 40);
+    }
+
+    function closeLandingAuth() {
+      document.getElementById('landingAuthModal').classList.remove('open');
+    }
+
+    function enterLocalGuestMode() {
+      try { sessionStorage.setItem(GUEST_KEY, '1'); } catch (e) {}
+      window.location.href = safeNextPath;
+    }
+
+    function handleHeroPrimaryAction() {
+      if (landingAuthState.authenticated) {
+        window.location.href = safeNextPath;
+        return;
+      }
+      const canReg = landingAuthState.allow_registration || !landingAuthState.has_users;
+      openLandingAuth(canReg ? 'register' : 'login');
+    }
+
+    function handleHeroSecondaryAction() {
+      if (landingAuthState.authenticated) {
+        document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' });
+        return;
+      }
+      openLandingAuth('login');
+    }
+
+    async function submitLandingAuth() {
+      const btn = document.getElementById('landingAuthSubmitBtn');
+      const errEl = document.getElementById('landingAuthErr');
+      const username = document.getElementById('lAuthUsername').value.trim();
+      const password = document.getElementById('lAuthPassword').value;
+      const displayName = document.getElementById('lAuthDisplayName').value.trim();
+      errEl.style.display = 'none';
+      btn.disabled = true;
+      const prevLabel = btn.textContent;
+      btn.textContent = '⏳ 正在进入工作台...';
+
+      try {
+        const endpoint = landingAuthMode === 'register' ? '/api/auth/register' : '/api/auth/login';
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username,
+            password,
+            display_name: displayName,
+            device_label: 'web',
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.error || !data.token) {
+          errEl.textContent = data.error || data.detail || `认证失败 (HTTP ${res.status})`;
+          errEl.style.display = 'block';
+          return;
+        }
+        localStorage.setItem(TOKEN_KEY, data.token);
+        try { sessionStorage.removeItem(GUEST_KEY); } catch (e) {}
+        window.location.replace(safeNextPath);
+      } catch (e) {
+        errEl.textContent = '无法连接 TraceTodo 服务，请确认服务已启动';
+        errEl.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = prevLabel;
+      }
+    }
+
+    function applyLandingAuthUi() {
+      const isAuthed = Boolean(landingAuthState.authenticated && landingAuthState.user);
+      const canReg = landingAuthState.allow_registration || !landingAuthState.has_users;
+
+      const userPill = document.getElementById('navUserPill');
+      const userName = document.getElementById('navUserName');
+      const navLoginBtn = document.getElementById('navLoginBtn');
+      const navPrimaryBtn = document.getElementById('navPrimaryBtn');
+      const heroPrimary = document.getElementById('heroPrimaryCta');
+      const heroSecondary = document.getElementById('heroSecondaryCta');
+      const heroGuest = document.getElementById('heroGuestBtn');
+      const closingPrimary = document.getElementById('closingPrimaryBtn');
+      const closingSecondary = document.getElementById('closingSecondaryBtn');
+      const footerLink = document.getElementById('footerWorkspaceLink');
+
+      if (isAuthed) {
+        const label = landingAuthState.user.display_name || landingAuthState.user.username || '已登录用户';
+        userPill.hidden = false;
+        userName.textContent = label;
+        navLoginBtn.style.display = 'none';
+        navPrimaryBtn.textContent = '进入工作台 →';
+        navPrimaryBtn.onclick = () => { window.location.href = safeNextPath; };
+
+        heroPrimary.textContent = '进入我的工作台 →';
+        heroSecondary.textContent = '浏览核心能力 ↓';
+        heroGuest.hidden = true;
+
+        closingPrimary.textContent = '进入我的工作台 →';
+        closingSecondary.style.display = 'none';
+        footerLink.textContent = '进入工作台';
+        footerLink.onclick = null;
+      } else {
+        userPill.hidden = true;
+        navLoginBtn.style.display = 'inline-flex';
+        if (canReg) {
+          navPrimaryBtn.textContent = '免费注册';
+          navPrimaryBtn.onclick = () => openLandingAuth('register');
+          heroPrimary.textContent = '立即开启 TraceTodo →';
+          heroSecondary.textContent = '已有账号？立即登录';
+          heroSecondary.style.display = 'inline-flex';
+          closingPrimary.textContent = '免费注册并开启 →';
+          closingSecondary.style.display = 'inline-flex';
+        } else {
+          navPrimaryBtn.textContent = '立即登录';
+          navPrimaryBtn.onclick = () => openLandingAuth('login');
+          heroPrimary.textContent = '登录 TraceTodo 工作台 →';
+          heroSecondary.style.display = 'none';
+          closingPrimary.textContent = '登录我的工作台 →';
+          closingSecondary.style.display = 'none';
+        }
+        heroGuest.hidden = Boolean(landingAuthState.auth_required);
+        footerLink.textContent = '登录 / 工作台';
+        footerLink.onclick = (ev) => {
+          ev.preventDefault();
+          openLandingAuth('login');
+        };
+      }
+    }
+
+    async function hydrateAuthStatus() {
+      const tok = (localStorage.getItem(TOKEN_KEY) || '').trim();
+      const headers = tok ? { Authorization: `Bearer ${tok}` } : {};
+      try {
+        const res = await fetch('/api/auth/status', { headers, cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          landingAuthState = {
+            authenticated: Boolean(data.authenticated && data.user),
+            user: data.user || null,
+            auth_required: Boolean(data.auth_required),
+            has_users: data.has_users !== false,
+            allow_registration: data.allow_registration !== false,
+          };
+          if (!landingAuthState.authenticated && tok) {
+            localStorage.removeItem(TOKEN_KEY);
+          }
+        }
+      } catch (e) {
+        // Keep safe defaults if server check fails transiently
+      }
+      applyLandingAuthUi();
+
+      const authParam = landingParams.get('auth');
+      const reasonParam = landingParams.get('reason');
+      const loggedOutParam = landingParams.get('logged_out');
+      if (loggedOutParam === '1') {
+        showLandingToast('已安全退出登录');
+        try {
+          const clean = new URL(window.location.href);
+          clean.searchParams.delete('logged_out');
+          history.replaceState(null, '', clean.pathname + clean.search + clean.hash);
+        } catch (e) {}
+      }
+      if (!landingAuthState.authenticated) {
+        if (reasonParam === 'expired') {
+          openLandingAuth('login', '登录会话已过期或失效，请重新登录。');
+        } else if (authParam === 'register') {
+          openLandingAuth('register');
+        } else if (authParam === 'login') {
+          openLandingAuth('login');
+        }
+      }
+    }
+
+    /* Interactive Demo Controls */
+    const DEMO_SAMPLES = [
+      {
+        text: '明天下午 3 点前修复微信支付回调超时',
+        badges: '<span class="tag-pill tag-q1">Q1 重要且紧急</span><span class="tag-pill tag-mem">关联记忆：线上结算链路</span><span style="color:var(--ink-2);font-weight:600;">自动提权：24h 内截止 · 已生成 3 步 AI 拆解子任务</span>',
+        ref: 'RawNote #rev1 → Task Memory v1'
+      },
+      {
+        text: '我习惯上午处理核心架构设计',
+        badges: '<span class="tag-pill tag-mem">偏好记忆 (preference)</span><span class="tag-pill tag-q2">自动校准 Q2 重要度</span><span style="color:var(--ink-2);font-weight:600;">未生成噪音待办 · 已关联日程上午黄金专注时段</span>',
+        ref: 'RawNote #rev1 → Preference Memory v1'
+      },
+      {
+        text: '下周五纪念日提醒订餐厅',
+        badges: '<span class="tag-pill tag-q3">Q3 提醒排期</span><span class="tag-pill tag-ok">⏳ 倒数纪念日同步</span><span style="color:var(--ink-2);font-weight:600;">已识别具体时间与日期 · 写入时间画布与准点通知</span>',
+        ref: 'RawNote #rev1 → Calendar & Countdown'
+      }
+    ];
+
+    function selectDemoSample(idx, btn) {
+      const sample = DEMO_SAMPLES[idx] || DEMO_SAMPLES[0];
+      document.querySelectorAll('.demo-chip').forEach(c => c.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      document.getElementById('demoCaptureText').textContent = sample.text;
+      const outEl = document.getElementById('demoAiOutput');
+      outEl.innerHTML = `<div class="demo-out-badges">${sample.badges}</div><span style="font-size:12px;color:var(--muted);font-family:var(--mono);">${sample.ref}</span>`;
+    }
+
+    function toggleDemoTask(btn) {
+      const card = btn.closest('.q-card');
+      if (card) card.classList.toggle('done');
+    }
+
+    function switchPreviewPane(name, btn) {
+      document.querySelectorAll('.preview-tab-btn').forEach(b => {
+        const active = b === btn;
+        b.classList.toggle('active', active);
+        b.setAttribute('aria-selected', String(active));
+      });
+      document.querySelectorAll('.preview-pane').forEach(p => p.classList.remove('active'));
+      const target = document.getElementById(`pane-${name}`);
+      if (target) target.classList.add('active');
+      if (name === 'graph') drawGraphCanvas('miniGraphCanvas', false);
+    }
+
+    /* Demo Pomodoro Timer */
+    let _demoFocusTimer = null;
+    let _demoFocusSeconds = 18 * 60 + 45;
+    function toggleDemoFocusTimer() {
+      const btn = document.getElementById('demoFocusBtn');
+      const clock = document.getElementById('demoFocusClock');
+      const arc = document.getElementById('demoFocusArc');
+      if (_demoFocusTimer) {
+        clearInterval(_demoFocusTimer);
+        _demoFocusTimer = null;
+        btn.textContent = '▶ 继续演示';
+        return;
+      }
+      btn.textContent = '⏸ 暂停演示';
+      _demoFocusTimer = setInterval(() => {
+        _demoFocusSeconds = _demoFocusSeconds > 1 ? _demoFocusSeconds - 1 : 25 * 60;
+        const m = String(Math.floor(_demoFocusSeconds / 60)).padStart(2, '0');
+        const s = String(_demoFocusSeconds % 60).padStart(2, '0');
+        clock.textContent = `${m}:${s}`;
+        const pct = _demoFocusSeconds / (25 * 60);
+        arc.setAttribute('stroke-dasharray', `${Math.round(528 * pct)} 528`);
+      }, 1000);
+    }
+
+    /* Interactive Star Graph */
+    const GRAPH_NODES = [
+      {
+        id: 'pay', label: '支付回调幂等重构', type: 'task', badge: '📋 任务记忆',
+        badgeStyle: 'background:rgba(59,130,246,0.22);color:#93c5fd;',
+        meta: 'v2 · 置信度 0.94 · Q1/Q2',
+        excerpt: '已锁定核心排查与压测步骤，关联历史支付超时故障记录与上午深度工作偏好。',
+        x: 0.48, y: 0.44, r: 19, color: '#3b82f6'
+      },
+      {
+        id: 'pref', label: '上午深度思考偏好', type: 'preference', badge: '💛 偏好记忆',
+        badgeStyle: 'background:rgba(245,158,11,0.22);color:#fcd34d;',
+        meta: 'v3 · 跨任务提权依据',
+        excerpt: '原文：我习惯在上午精力最充沛时做系统架构设计与复杂 Bug 根因定位。',
+        x: 0.25, y: 0.28, r: 16, color: '#f59e0b'
+      },
+      {
+        id: 'fact', label: '微信支付网关超时 5s', type: 'semantic', badge: '🧠 语义事实',
+        badgeStyle: 'background:rgba(139,92,246,0.22);color:#c4b5fd;',
+        meta: 'v1 · 事实真值',
+        excerpt: '回调同步处理账务锁会导致 5 秒重试风暴，需拆分异步队列与幂等键校验。',
+        x: 0.74, y: 0.28, r: 16, color: '#8b5cf6'
+      },
+      {
+        id: 'epi', label: '周二上线复盘情景', type: 'episodic', badge: '📅 情景经历',
+        badgeStyle: 'background:rgba(20,184,166,0.22);color:#5eead4;',
+        meta: 'v1 · 时间线记录',
+        excerpt: '上月发布夜因回调积压触发告警，随后补齐监控看板并建立 24h 临期提权规则。',
+        x: 0.72, y: 0.72, r: 15, color: '#14b8a6'
+      },
+      {
+        id: 'dream', label: '稳定性优先规律', type: 'dream', badge: '🌙 Dream 归纳',
+        badgeStyle: 'background:rgba(236,72,153,0.22);color:#f9a8d4;',
+        meta: 'inferred · 夜间睡眠归纳',
+        excerpt: '聚合多条复盘归纳：涉及资金与账务的变更均需提前 48h 安排上午黄金时段压测。',
+        x: 0.26, y: 0.73, r: 17, color: '#ec4899'
+      },
+      {
+        id: 'sla', label: '季度 SLA 巡检', type: 'task', badge: '📋 任务记忆',
+        badgeStyle: 'background:rgba(59,130,246,0.22);color:#93c5fd;',
+        meta: 'v1 · 开启好友监工',
+        excerpt: '汇总支付回调耗时、异步队列积压与异常告警恢复时间，交付至监工小队协同验收。',
+        x: 0.50, y: 0.80, r: 14, color: '#3b82f6'
+      }
+    ];
+
+    const GRAPH_EDGES = [
+      { from: 'pay', to: 'fact', kind: 'wikilink' },
+      { from: 'pay', to: 'pref', kind: 'semantic' },
+      { from: 'pay', to: 'epi', kind: 'wikilink' },
+      { from: 'dream', to: 'pref', kind: 'wikilink' },
+      { from: 'dream', to: 'epi', kind: 'semantic' },
+      { from: 'dream', to: 'pay', kind: 'semantic' },
+      { from: 'sla', to: 'epi', kind: 'wikilink' },
+      { from: 'sla', to: 'pay', kind: 'semantic' }
+    ];
+
+    let selectedGraphNodeId = 'pay';
+    let hoveredGraphNodeId = null;
+
+    function updateGraphInspector(nodeId) {
+      const node = GRAPH_NODES.find(n => n.id === nodeId) || GRAPH_NODES[0];
+      selectedGraphNodeId = node.id;
+      const badge = document.getElementById('inspTypeBadge');
+      badge.textContent = node.badge;
+      badge.setAttribute('style', node.badgeStyle);
+      document.getElementById('inspMetaText').textContent = node.meta;
+      document.getElementById('inspTitleText').textContent = node.label;
+      document.getElementById('inspExcerptText').textContent = node.excerpt;
+
+      const linksBox = document.getElementById('inspNeighborLinks');
+      const neighborIds = new Set();
+      GRAPH_EDGES.forEach(e => {
+        if (e.from === node.id) neighborIds.add(e.to);
+        if (e.to === node.id) neighborIds.add(e.from);
+      });
+      linksBox.innerHTML = '';
+      neighborIds.forEach(nid => {
+        const target = GRAPH_NODES.find(n => n.id === nid);
+        if (!target) return;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'insp-link-chip';
+        btn.textContent = `[[${target.label}]]`;
+        btn.onclick = () => {
+          updateGraphInspector(target.id);
+          drawGraphCanvas('landingGraphCanvas', true);
+        };
+        linksBox.appendChild(btn);
+      });
+    }
+
+    function drawGraphCanvas(canvasId, interactive) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, rect.width, rect.height);
+
+      const focusId = interactive ? (hoveredGraphNodeId || selectedGraphNodeId) : 'pay';
+      const nodesById = Object.fromEntries(GRAPH_NODES.map(n => [n.id, {
+        ...n,
+        px: n.x * rect.width,
+        py: n.y * rect.height,
+      }]));
+
+      // Edges
+      GRAPH_EDGES.forEach(e => {
+        const a = nodesById[e.from];
+        const b = nodesById[e.to];
+        const connected = e.from === focusId || e.to === focusId;
+        ctx.save();
+        ctx.beginPath();
+        if (e.kind === 'semantic') ctx.setLineDash([5, 5]);
+        ctx.moveTo(a.px, a.py);
+        ctx.lineTo(b.px, b.py);
+        ctx.lineWidth = connected ? 2.2 : 1.1;
+        ctx.strokeStyle = connected
+          ? (e.kind === 'wikilink' ? 'rgba(165, 180, 252, 0.92)' : 'rgba(56, 189, 248, 0.85)')
+          : 'rgba(148, 163, 184, 0.25)';
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      // Nodes
+      Object.values(nodesById).forEach(n => {
+        const isFocus = n.id === focusId;
+        const isNeighbor = GRAPH_EDGES.some(
+          e => (e.from === focusId && e.to === n.id) || (e.to === focusId && e.from === n.id)
+        );
+        ctx.save();
+        if (isFocus) {
+          ctx.beginPath();
+          ctx.arc(n.px, n.py, n.r + 9, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(129, 140, 248, 0.26)';
+          ctx.fill();
+        }
+        ctx.beginPath();
+        ctx.arc(n.px, n.py, n.r, 0, Math.PI * 2);
+        ctx.fillStyle = n.color;
+        ctx.globalAlpha = (!interactive || isFocus || isNeighbor) ? 1 : 0.45;
+        ctx.fill();
+        ctx.lineWidth = isFocus ? 3 : 1.5;
+        ctx.strokeStyle = isFocus ? '#ffffff' : 'rgba(255,255,255,0.45)';
+        ctx.stroke();
+
+        ctx.font = `${isFocus ? '700' : '600'} 12px "PingFang SC", -apple-system, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = isFocus ? '#ffffff' : '#e2e8f0';
+        ctx.fillText(n.label, n.px, n.py + n.r + 17);
+        ctx.restore();
+      });
+    }
+
+    function bindInteractiveGraph() {
+      const canvas = document.getElementById('landingGraphCanvas');
+      if (!canvas) return;
+      function hitNode(ev) {
+        const rect = canvas.getBoundingClientRect();
+        const x = ev.clientX - rect.left;
+        const y = ev.clientY - rect.top;
+        return GRAPH_NODES.find(n => {
+          const dx = x - n.x * rect.width;
+          const dy = y - n.y * rect.height;
+          return Math.hypot(dx, dy) <= n.r + 10;
+        });
+      }
+      canvas.addEventListener('mousemove', ev => {
+        const hit = hitNode(ev);
+        const nextHover = hit ? hit.id : null;
+        if (nextHover !== hoveredGraphNodeId) {
+          hoveredGraphNodeId = nextHover;
+          canvas.style.cursor = hit ? 'pointer' : 'default';
+          drawGraphCanvas('landingGraphCanvas', true);
+        }
+      });
+      canvas.addEventListener('mouseleave', () => {
+        if (hoveredGraphNodeId !== null) {
+          hoveredGraphNodeId = null;
+          drawGraphCanvas('landingGraphCanvas', true);
+        }
+      });
+      canvas.addEventListener('click', ev => {
+        const hit = hitNode(ev);
+        if (hit) {
+          updateGraphInspector(hit.id);
+          drawGraphCanvas('landingGraphCanvas', true);
+        }
+      });
+    }
+
+    /* Scene Gallery */
+    const LANDING_SCENES = [
+      { file: 'starfield.jpg', title: '星辰宇宙 · Starfield', badge: '✨ 主题联动：星辰紫夜 (Nebula)', desc: '深邃紫夜星云搭配低干扰星空微粒，适合夜间深度编码与静心梳理复盘。', acc: '#818cf8' },
+      { file: 'aurora.jpg', title: '极地极光 · Aurora', badge: '🌌 主题联动：极光冷翠 (Polar)', desc: '北欧夜空下流动的青翠极光，营造冷静沉稳的架构规划与高优攻关氛围。', acc: '#2dd4bf' },
+      { file: 'ocean.jpg', title: '蔚蓝深海 · Ocean', badge: '🌊 主题联动：潮汐晴蓝 (Tide Blue)', desc: '清澈海浪与微光折射，让日常任务清零与时间画布保持通透节奏。', acc: '#38bdf8' },
+      { file: 'nature.jpg', title: '林间晨雾 · Forest', badge: '🌲 主题联动：森系深林 (Deep Forest)', desc: '雨后林海与呼吸感光晕，配合森林白噪音进入长时心流。', acc: '#34d399' },
+      { file: 'portrait_f_hanfu.jpg', title: '国风雅韵 · Celadon', badge: '🪷 主题联动：青瓷烟雨 (Celadon Mist)', desc: '温润雅致的东方色彩体系，适合读书笔记、备忘整理与每日日记。', acc: '#22d3ee' },
+      { file: 'portrait_m_sunny.jpg', title: '暖阳少年 · Warm Ivory', badge: '☀️ 主题联动：暖白象牙 (Warm Ivory)', desc: '明快通透的日光暖色调，带来轻盈舒展的晨间待办启动感。', acc: '#fbbf24' },
+      { file: 'portrait_f_cyber.jpg', title: '赛博幻影 · Cyber', badge: '⚡ 主题联动：赛博霓虹 (Cyber)', desc: '高对比霓虹蓝紫光效，唤醒深夜冲刺与高频专注状态。', acc: '#06b6d4' },
+      { file: 'portrait_f_snow.jpg', title: '雪域冬晴 · Snow Peak', badge: '❄️ 主题联动：雪山晴空 (Snow Peak)', desc: '澄澈冷冽的雪域微光，降低视觉干扰并突出关键待办卡片。', acc: '#60a5fa' },
+    ];
+
+    function selectLandingScene(idx, btn) {
+      const item = LANDING_SCENES[idx] || LANDING_SCENES[0];
+      document.querySelectorAll('.scene-thumb-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      const img = document.getElementById('landingSceneImg');
+      img.src = `/scenes/${item.file}`;
+      img.alt = item.title;
+      document.getElementById('landingSceneBadge').textContent = item.badge;
+      document.getElementById('landingSceneTitle').textContent = item.title;
+      document.getElementById('landingSceneDesc').textContent = item.desc;
+      document.documentElement.style.setProperty('--scene-acc', item.acc);
+    }
+
+    function copyLandingMcp() {
+      const snippet = JSON.stringify({
+        mcpServers: {
+          'trace-memory': {
+            url: `${window.location.origin}/mcp`,
+            headers: { Authorization: 'Bearer <在工作台账号弹窗中复制 Token>' }
+          }
+        }
+      }, null, 2);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(snippet).then(() => {
+          showLandingToast('✅ 已复制 MCP 配置示例，登录后可在账号中一键复制带 Token 的配置');
+        }).catch(() => showLandingToast('请手动复制示例配置'));
+      } else {
+        showLandingToast('请手动复制示例配置');
+      }
+    }
+
+    document.addEventListener('keydown', ev => {
+      if (ev.key === 'Escape') closeLandingAuth();
+    });
+    window.addEventListener('resize', () => {
+      drawGraphCanvas('landingGraphCanvas', true);
+      if (document.getElementById('pane-graph')?.classList.contains('active')) {
+        drawGraphCanvas('miniGraphCanvas', false);
+      }
+    });
+
+    const mcpBoxEl = document.getElementById('mcpExampleBox');
+    if (mcpBoxEl && window.location && window.location.origin && window.location.origin !== 'null') {
+      mcpBoxEl.textContent = JSON.stringify({
+        mcpServers: {
+          'trace-memory': {
+            url: `${window.location.origin}/mcp`,
+            headers: { Authorization: 'Bearer <token>' }
+          }
+        }
+      }, null, 2);
+    }
+
+    updateGraphInspector('pay');
+    bindInteractiveGraph();
+    drawGraphCanvas('landingGraphCanvas', true);
+    hydrateAuthStatus();
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
