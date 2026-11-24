@@ -14,5 +14,7 @@
     <string name="sc_ask_long">💬 随手问记忆大脑</string>
     <string name="sc_auth_short">账号登录</string>
     <string name="sc_auth_long">🔐 登录或切换云端账号</string>
+    <string name="widget_label">TraceTodo 四象限待办</string>
+    <string name="widget_desc">在手机桌面实时展示今日四象限优先待办，支持一键刷新与新建</string>
     <color name="ic_launcher_background">#0F172A</color>
 </resources>

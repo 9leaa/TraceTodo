@@ -58,6 +58,7 @@ public class MainActivity extends Activity {
     private static final String KEY_SERVER_URL = "server_url";
     private static final String KEY_USER_CUSTOMIZED = "server_user_customized";
     private static final String KEY_LAST_THEME_BG = "last_theme_bg";
+    private static final String KEY_AUTH_TOKEN = "auth_token";
 
     private static final int REQ_FILE_CHOOSER = 1001;
     private static final int REQ_WEB_PERMISSIONS = 1002;
@@ -359,7 +360,7 @@ public class MainActivity extends Activity {
         ws.setCacheMode(WebSettings.LOAD_DEFAULT);
         ws.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         String origUa = ws.getUserAgentString();
-        ws.setUserAgentString((origUa != null ? origUa : "") + " TraceTodoAndroid/1.4.2");
+        ws.setUserAgentString((origUa != null ? origUa : "") + " TraceTodoAndroid/1.4.3");
 
         webView.addJavascriptInterface(new NativeBridge(), "TraceTodoNative");
 
@@ -522,8 +523,19 @@ public class MainActivity extends Activity {
                 + "    }"
                 + "  }catch(e){}"
                 + "}"
+                + "function syncAuthForWidget(){"
+                + "  try{"
+                + "    var tok=localStorage.getItem('tm_auth_token')||'';"
+                + "    if(window.TraceTodoNative&&window.TraceTodoNative.onAuthTokenSynced){"
+                + "      window.TraceTodoNative.onAuthTokenSynced(tok);"
+                + "    }"
+                + "  }catch(e){}"
+                + "}"
                 + "syncBar();"
+                + "syncAuthForWidget();"
                 + "setTimeout(syncBar,180);"
+                + "setTimeout(syncAuthForWidget,900);"
+                + "setInterval(syncAuthForWidget,5000);"
                 + "new MutationObserver(function(){setTimeout(syncBar,40);})"
                 + ".observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});"
                 + "var fo=document.getElementById('focusOverlay');"
@@ -662,6 +674,22 @@ public class MainActivity extends Activity {
                     try {
                         startActivity(Intent.createChooser(send, "导出 / 分享知识库 Markdown"));
                     } catch (Throwable ignored) {
+                    }
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void onAuthTokenSynced(final String token) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    String clean = token == null ? "" : token.trim();
+                    SharedPreferences sp = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+                    String prev = sp.getString(KEY_AUTH_TOKEN, "");
+                    if (!clean.equals(prev)) {
+                        sp.edit().putString(KEY_AUTH_TOKEN, clean).apply();
+                        TodoWidgetProvider.requestImmediateRefresh(MainActivity.this);
                     }
                 }
             });
@@ -933,6 +961,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         if (webView != null) webView.onPause();
+        TodoWidgetProvider.requestImmediateRefresh(this);
         super.onPause();
     }
 

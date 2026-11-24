@@ -1,6 +1,6 @@
 import Foundation
 import SwiftUI
-#if os(iOS)
+#if canImport(WidgetKit)
 import WidgetKit
 #endif
 
@@ -298,7 +298,7 @@ final class TodoStore: ObservableObject {
             self.isOnline = true
             self.lastConnectionError = nil
             saveMatrixCache(fresh)
-            #if os(iOS)
+            #if canImport(WidgetKit)
             WidgetCenter.shared.reloadAllTimelines()
             #endif
             NotificationManager.shared.syncReminders(for: fresh.sortedTasks)
@@ -380,7 +380,7 @@ final class TodoStore: ObservableObject {
             self.engineBadge = "在线 · \(llm)"
             saveMatrixCache(fresh)
             syncSharedWidgetConfig()
-            #if os(iOS)
+            #if canImport(WidgetKit)
             WidgetCenter.shared.reloadAllTimelines()
             #endif
             NotificationManager.shared.syncReminders(for: fresh.sortedTasks)
