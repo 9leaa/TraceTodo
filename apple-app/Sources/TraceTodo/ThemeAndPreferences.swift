@@ -111,33 +111,41 @@ enum AppThemeKind: String, CaseIterable, Codable, Identifiable {
 
     var canvasBackground: Color {
         switch self {
-        case .classic: return Color(red: 0.96, green: 0.97, blue: 0.99)
-        case .westlake: return Color(red: 0.93, green: 0.97, blue: 0.96)
-        case .autumn: return Color(red: 0.99, green: 0.96, blue: 0.94)
-        case .goldenGate: return Color(red: 1.00, green: 0.96, blue: 0.96)
-        case .snowPeak: return Color(red: 0.93, green: 0.96, blue: 1.00)
-        case .sakura: return Color(red: 0.99, green: 0.95, blue: 0.97)
-        case .warmIvory: return Color(red: 0.98, green: 0.96, blue: 0.93)
-        case .celadonMist: return Color(red: 0.95, green: 0.97, blue: 0.96)
-        case .tideBlue: return Color(red: 0.94, green: 0.97, blue: 0.99)
-        case .deepForest: return Color(red: 0.04, green: 0.08, blue: 0.07)
-        case .nebula: return Color(red: 0.05, green: 0.04, blue: 0.12)
-        case .cyber: return Color(red: 0.02, green: 0.06, blue: 0.10)
-        case .polar: return Color(red: 0.03, green: 0.07, blue: 0.09)
-        case .velvetNoir: return Color(red: 0.08, green: 0.04, blue: 0.09)
-        case .obsidianGold: return Color(red: 0.04, green: 0.04, blue: 0.06)
+        case .classic: return Color(red: 0.95, green: 0.97, blue: 1.00)
+        case .westlake: return Color(red: 0.88, green: 0.96, blue: 0.94)
+        case .autumn: return Color(red: 0.99, green: 0.93, blue: 0.87)
+        case .goldenGate: return Color(red: 1.00, green: 0.92, blue: 0.92)
+        case .snowPeak: return Color(red: 0.88, green: 0.94, blue: 1.00)
+        case .sakura: return Color(red: 0.99, green: 0.90, blue: 0.95)
+        case .warmIvory: return Color(red: 0.98, green: 0.94, blue: 0.86)
+        case .celadonMist: return Color(red: 0.89, green: 0.95, blue: 0.93)
+        case .tideBlue: return Color(red: 0.88, green: 0.95, blue: 0.99)
+        case .deepForest: return Color(red: 0.04, green: 0.09, blue: 0.07)
+        case .nebula: return Color(red: 0.06, green: 0.04, blue: 0.14)
+        case .cyber: return Color(red: 0.02, green: 0.07, blue: 0.11)
+        case .polar: return Color(red: 0.03, green: 0.08, blue: 0.10)
+        case .velvetNoir: return Color(red: 0.10, green: 0.04, blue: 0.12)
+        case .obsidianGold: return Color(red: 0.05, green: 0.05, blue: 0.07)
         }
     }
 
     var surfaceBackground: Color {
         switch self {
-        case .deepForest: return Color(red: 0.08, green: 0.14, blue: 0.12)
-        case .nebula: return Color(red: 0.09, green: 0.08, blue: 0.20)
-        case .cyber: return Color(red: 0.05, green: 0.11, blue: 0.15)
-        case .polar: return Color(red: 0.05, green: 0.13, blue: 0.15)
-        case .velvetNoir: return Color(red: 0.13, green: 0.07, blue: 0.15)
-        case .obsidianGold: return Color(red: 0.08, green: 0.09, blue: 0.11)
-        default: return Color.white
+        case .classic: return Color.white
+        case .westlake: return Color(red: 0.96, green: 1.00, blue: 0.99)
+        case .autumn: return Color(red: 1.00, green: 0.98, blue: 0.95)
+        case .goldenGate: return Color(red: 1.00, green: 0.97, blue: 0.97)
+        case .snowPeak: return Color(red: 0.96, green: 0.99, blue: 1.00)
+        case .sakura: return Color(red: 1.00, green: 0.97, blue: 0.99)
+        case .warmIvory: return Color(red: 1.00, green: 0.99, blue: 0.95)
+        case .celadonMist: return Color(red: 0.96, green: 0.99, blue: 0.98)
+        case .tideBlue: return Color(red: 0.96, green: 0.99, blue: 1.00)
+        case .deepForest: return Color(red: 0.08, green: 0.15, blue: 0.13)
+        case .nebula: return Color(red: 0.10, green: 0.08, blue: 0.22)
+        case .cyber: return Color(red: 0.05, green: 0.12, blue: 0.17)
+        case .polar: return Color(red: 0.05, green: 0.14, blue: 0.17)
+        case .velvetNoir: return Color(red: 0.15, green: 0.08, blue: 0.18)
+        case .obsidianGold: return Color(red: 0.09, green: 0.10, blue: 0.13)
         }
     }
 
@@ -194,6 +202,25 @@ struct AmbientSceneItem: Identifiable, Equatable {
 
     var isPortrait: Bool {
         category == .male || category == .female
+    }
+
+    /// Normalized `(x, y)` focal coordinates (`0...1`) pointing directly at the subject's face/center so portrait framing stays centered on narrow mobile screens.
+    var focalPoint: CGPoint {
+        switch id {
+        case "portrait_m_sunny": return CGPoint(x: 0.54, y: 0.24)
+        case "portrait_m_ancient": return CGPoint(x: 0.50, y: 0.22)
+        case "portrait_m_sport": return CGPoint(x: 0.61, y: 0.22)
+        case "portrait_m": return CGPoint(x: 0.50, y: 0.22)
+        case "portrait_f_cool": return CGPoint(x: 0.48, y: 0.24)
+        case "portrait_f_hanfu": return CGPoint(x: 0.57, y: 0.24)
+        case "portrait_f_vitality": return CGPoint(x: 0.62, y: 0.27)
+        case "portrait_f": return CGPoint(x: 0.55, y: 0.25)
+        case "portrait_f_campus": return CGPoint(x: 0.50, y: 0.27)
+        case "portrait_f_snow": return CGPoint(x: 0.49, y: 0.24)
+        case "portrait_f_lolita": return CGPoint(x: 0.47, y: 0.26)
+        case "portrait_f_cyber": return CGPoint(x: 0.52, y: 0.28)
+        default: return CGPoint(x: 0.50, y: 0.42)
+        }
     }
 
     static let catalog: [AmbientSceneItem] = [
@@ -280,30 +307,54 @@ final class SceneWallpaperCache: ObservableObject {
 struct RemoteSceneWallpaperImage: View {
     let sceneId: String
     let serverURL: String
+    var verticalTargetRatio: CGFloat = 0.32
     @ObservedObject private var cache = SceneWallpaperCache.shared
 
     var body: some View {
+        let item = AmbientSceneItem.byId(sceneId)
+        let focal = item.focalPoint
         GeometryReader { geo in
+            let w = max(1, geo.size.width)
+            let h = max(1, geo.size.height)
             if let data = cache.imageData(for: sceneId, serverURL: serverURL) {
                 #if os(macOS)
                 if let nsImg = NSImage(data: data) {
-                    Image(nsImage: nsImg)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: geo.size.width, height: geo.size.height, alignment: Alignment(horizontal: .trailing, vertical: .top))
-                        .clipped()
+                    let iw = max(1, nsImg.size.width)
+                    let ih = max(1, nsImg.size.height)
+                    let scale = max(w / iw, h / ih)
+                    let dw = iw * scale
+                    let dh = ih * scale
+                    let ox = min(0, max(w - dw, w * 0.5 - dw * focal.x))
+                    let oy = min(0, max(h - dh, h * verticalTargetRatio - dh * focal.y))
+                    ZStack(alignment: .topLeading) {
+                        Image(nsImage: nsImg)
+                            .resizable()
+                            .frame(width: dw, height: dh)
+                            .offset(x: ox, y: oy)
+                    }
+                    .frame(width: w, height: h, alignment: .topLeading)
+                    .clipped()
                 }
                 #else
                 if let uiImg = UIImage(data: data) {
-                    Image(uiImage: uiImg)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: geo.size.width, height: geo.size.height, alignment: Alignment(horizontal: .trailing, vertical: .top))
-                        .clipped()
+                    let iw = max(1, uiImg.size.width)
+                    let ih = max(1, uiImg.size.height)
+                    let scale = max(w / iw, h / ih)
+                    let dw = iw * scale
+                    let dh = ih * scale
+                    let ox = min(0, max(w - dw, w * 0.5 - dw * focal.x))
+                    let oy = min(0, max(h - dh, h * verticalTargetRatio - dh * focal.y))
+                    ZStack(alignment: .topLeading) {
+                        Image(uiImage: uiImg)
+                            .resizable()
+                            .frame(width: dw, height: dh)
+                            .offset(x: ox, y: oy)
+                    }
+                    .frame(width: w, height: h, alignment: .topLeading)
+                    .clipped()
                 }
                 #endif
             } else {
-                let item = AmbientSceneItem.byId(sceneId)
                 LinearGradient(
                     colors: [item.accentColor.opacity(0.28), Color.black.opacity(0.18)],
                     startPoint: .topTrailing,
@@ -318,26 +369,37 @@ struct RemoteSceneWallpaperImage: View {
 struct AmbientSceneBackgroundView: View {
     @EnvironmentObject var store: TodoStore
 
-    private static let intensityOpacities: [Double] = [0.0, 0.26, 0.48, 0.72]
+    private static let intensityOpacities: [Double] = [0.0, 0.34, 0.56, 0.80]
 
     var body: some View {
         ZStack {
             store.activeTheme.canvasBackground
+
+            // Rich theme atmospheric wash so switching pure color themes is immediately unmistakable on mobile & desktop
+            LinearGradient(
+                colors: [
+                    store.activeTheme.primaryColor.opacity(store.activeTheme.isDark ? 0.26 : 0.18),
+                    store.activeTheme.accentColor.opacity(store.activeTheme.isDark ? 0.15 : 0.09),
+                    store.activeTheme.canvasBackground,
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
 
             if store.hasActiveScene {
                 let sc = store.activeSceneItem
                 let idx = min(3, max(0, store.sceneIntensity))
                 let imgOpacity = Self.intensityOpacities[idx]
 
-                RemoteSceneWallpaperImage(sceneId: sc.id, serverURL: store.serverURL)
+                RemoteSceneWallpaperImage(sceneId: sc.id, serverURL: store.serverURL, verticalTargetRatio: 0.30)
                     .opacity(imgOpacity)
                     .animation(.easeInOut(duration: 0.45), value: sc.id)
 
                 LinearGradient(
                     colors: [
-                        store.activeTheme.canvasBackground.opacity(0.36),
-                        store.activeTheme.canvasBackground.opacity(0.58),
-                        store.activeTheme.canvasBackground.opacity(0.76),
+                        store.activeTheme.canvasBackground.opacity(0.24),
+                        store.activeTheme.canvasBackground.opacity(0.46),
+                        store.activeTheme.canvasBackground.opacity(0.68),
                     ],
                     startPoint: .top,
                     endPoint: .bottom
@@ -345,7 +407,7 @@ struct AmbientSceneBackgroundView: View {
 
                 if store.sceneMotion {
                     AmbientParticleCanvasView(accent: sc.accentColor, primary: store.activeTheme.primaryColor)
-                        .opacity(0.65)
+                        .opacity(0.68)
                 }
             }
         }

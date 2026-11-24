@@ -90,29 +90,30 @@ STRXML
 echo "🤖 [1/5] Compiling Android resources with aapt2 ($APP_STEM)..."
 "$AAPT2" compile --dir "$WORK_DIR/res_stage" -o "$WORK_DIR/compiled_res/resources.zip"
 
-echo "🔗 [2/5] Linking resources & AndroidManifest (targetSdk 34, version 1.4.1)..."
+echo "🔗 [2/5] Linking resources & AndroidManifest (targetSdk 34, version 1.4.2)..."
 "$AAPT2" link \
   -I "$ANDROID_JAR" \
   --manifest "$SCRIPT_DIR/app/src/main/AndroidManifest.xml" \
   --rename-manifest-package "$PKG_ID" \
-  --min-sdk-version 26 \
+  --min-sdk-version 24 \
   --target-sdk-version 34 \
-  --version-code 5 \
-  --version-name "1.4.1" \
+  --version-code 6 \
+  --version-name "1.4.2" \
   --java "$WORK_DIR/gen" \
   -o "$WORK_DIR/unaligned.apk" \
   "$WORK_DIR/compiled_res/resources.zip"
 
-echo "☕ [3/5] Compiling Java sources against Android API 34..."
+echo "☕ [3/5] Compiling Java 8 sources directly against Android API 34 bootclasspath..."
 javac \
-  --release 11 \
+  -source 1.8 \
+  -target 1.8 \
+  -bootclasspath "$ANDROID_JAR" \
   -encoding UTF-8 \
-  -classpath "$ANDROID_JAR" \
   -d "$WORK_DIR/classes" \
   "$WORK_DIR/gen/com/tracememory/tracetodo/R.java" \
   "$SCRIPT_DIR/app/src/main/java/com/tracememory/tracetodo/MainActivity.java"
 
-echo "⚡ [4/5] Converting bytecode to optimized Release DEX with d8..."
+echo "⚡ [4/5] Converting bytecode to universal DEX 035/037 with d8..."
 CLASS_FILES=()
 while IFS= read -r -d '' cf; do
   CLASS_FILES+=("$cf")
@@ -120,17 +121,18 @@ done < <(find "$WORK_DIR/classes" -name "*.class" -print0)
 
 "$D8" \
   --release \
-  --min-api 26 \
+  --min-api 24 \
   --lib "$ANDROID_JAR" \
   --output "$WORK_DIR/dex" \
   "${CLASS_FILES[@]}"
 
-(cd "$WORK_DIR/dex" && zip -qj "$WORK_DIR/unaligned.apk" classes.dex)
+(cd "$WORK_DIR/dex" && zip -0 -qj "$WORK_DIR/unaligned.apk" classes.dex)
 
 echo "🔐 [5/5] Aligning & signing Release APK (V1 + V2 + V3 signatures)..."
 "$ZIPALIGN" -f -p 4 "$WORK_DIR/unaligned.apk" "$WORK_DIR/aligned.apk"
 
-KEYSTORE_PATH="/tmp/tracetodo_release_signing.jks"
+mkdir -p "$SCRIPT_DIR/.keystore"
+KEYSTORE_PATH="$SCRIPT_DIR/.keystore/tracetodo-release.jks"
 if [ ! -f "$KEYSTORE_PATH" ]; then
   keytool -genkeypair \
     -v \
