@@ -3,6 +3,7 @@ import SwiftUI
 struct DashboardOverviewView: View {
     @EnvironmentObject var store: TodoStore
     @State private var showMatrixBelow: Bool = true
+    @State private var showInsights: Bool = false
 
     private var counts: MatrixSummaryCounts {
         store.matrix?.summaryCounts ?? MatrixSummaryCounts(
@@ -28,31 +29,46 @@ struct DashboardOverviewView: View {
                 #endif
 
                 if let banner = store.statusBanner {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 10) {
                         Image(systemName: "sparkles")
-                            .foregroundStyle(.purple)
+                            .foregroundStyle(store.activeTheme.primaryColor)
                         Text(banner)
                             .font(.footnote.weight(.medium))
-                            .foregroundStyle(Color(red: 0.12, green: 0.16, blue: 0.24))
+                            .foregroundStyle(.primary)
                         Spacer()
+                        if let undoLbl = store.statusBannerUndoLabel {
+                            Button(undoLbl) {
+                                store.triggerBannerUndo()
+                            }
+                            .font(.caption.bold())
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(store.activeTheme.primaryFillColor)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                            .buttonStyle(.plain)
+                        }
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
-                    .background(Color.white)
+                    .background(store.cardSurfaceBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .shadow(color: Color.black.opacity(0.04), radius: 8, y: 3)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(store.activeTheme.primaryColor.opacity(0.25), lineWidth: 1)
+                    )
                 }
 
                 // SUMMARY Header
                 HStack(alignment: .center) {
-                    Text("SUMMARY")
-                        .font(.system(size: 16, weight: .medium, design: .rounded))
-                        .tracking(2.2)
-                        .foregroundStyle(Color(red: 0.35, green: 0.40, blue: 0.49))
+                    Text("SUMMARY · 待办概览")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .tracking(1.4)
+                        .foregroundStyle(.secondary)
 
                     Spacer()
 
-                    HStack(spacing: 14) {
+                    HStack(spacing: 12) {
                         filterLink("待办中", isSelected: !store.includeDone) {
                             store.includeDone = false
                             Task { await store.refresh() }
@@ -60,6 +76,11 @@ struct DashboardOverviewView: View {
                         filterLink("含已完成", isSelected: store.includeDone) {
                             store.includeDone = true
                             Task { await store.refresh() }
+                        }
+                        filterLink(showInsights ? "▾ 收起洞察" : "▸ 展开洞察", isSelected: showInsights) {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showInsights.toggle()
+                            }
                         }
                         filterLink(showMatrixBelow ? "收起四象限" : "展开四象限", isSelected: showMatrixBelow) {
                             withAnimation(.easeInOut(duration: 0.2)) {
@@ -112,20 +133,22 @@ struct DashboardOverviewView: View {
                     )
                 }
 
-                // Middle Row: TOP FOCUS + TASK INSIGHTS Donut Chart
-                #if os(iOS)
-                VStack(spacing: 16) {
-                    TopFocusCardView(tasks: Array((store.matrix?.sortedTasks ?? []).filter { !$0.payload.isDone }.prefix(4)))
-                    TaskInsightsDonutView(counts: counts)
+                // Collapsible Middle Row: TOP FOCUS + TASK INSIGHTS Donut Chart (matches Web `#todoInsightsFoldWrap`)
+                if showInsights {
+                    #if os(iOS)
+                    VStack(spacing: 16) {
+                        TopFocusCardView(tasks: Array(store.filteredSortedTasks.filter { !$0.payload.isDone }.prefix(4)))
+                        TaskInsightsDonutView(counts: counts)
+                    }
+                    #else
+                    HStack(alignment: .top, spacing: 16) {
+                        TopFocusCardView(tasks: Array(store.filteredSortedTasks.filter { !$0.payload.isDone }.prefix(4)))
+                            .frame(maxWidth: .infinity)
+                        TaskInsightsDonutView(counts: counts)
+                            .frame(maxWidth: .infinity)
+                    }
+                    #endif
                 }
-                #else
-                HStack(alignment: .top, spacing: 16) {
-                    TopFocusCardView(tasks: Array((store.matrix?.sortedTasks ?? []).filter { !$0.payload.isDone }.prefix(4)))
-                        .frame(maxWidth: .infinity)
-                    TaskInsightsDonutView(counts: counts)
-                        .frame(maxWidth: .infinity)
-                }
-                #endif
 
                 // Eisenhower 2x2 Interactive Quadrant Matrix
                 if showMatrixBelow {
@@ -134,7 +157,7 @@ struct DashboardOverviewView: View {
                             Text("EISENHOWER MATRIX · 四象限工作台")
                                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                                 .tracking(1.5)
-                                .foregroundStyle(Color(red: 0.35, green: 0.40, blue: 0.49))
+                                .foregroundStyle(.secondary)
                             Spacer()
                             Button {
                                 store.isPresentingNewTaskSheet = true
@@ -157,7 +180,7 @@ struct DashboardOverviewView: View {
             }
             .padding(22)
         }
-        .background(Color(red: 0.96, green: 0.97, blue: 0.99))
+        .background(Color.clear)
         .iosScrollDismissesKeyboard()
         .refreshable {
             await store.refresh()
@@ -175,8 +198,8 @@ struct DashboardOverviewView: View {
     private func filterLink(_ label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 12.5, weight: isSelected ? .bold : .medium))
-                .foregroundStyle(isSelected ? Color(red: 0.14, green: 0.39, blue: 0.92) : Color(red: 0.55, green: 0.60, blue: 0.68))
+                .font(.system(size: 12, weight: isSelected ? .bold : .medium))
+                .foregroundStyle(isSelected ? store.activeTheme.primaryColor : .secondary)
                 .padding(.vertical, 4)
                 .padding(.horizontal, 4)
                 .contentShape(Rectangle())
@@ -244,17 +267,17 @@ struct TopFocusCardView: View {
                 Text("TOP FOCUS · 优先聚焦")
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
                     .tracking(1.4)
-                    .foregroundStyle(Color(red: 0.42, green: 0.47, blue: 0.56))
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Text("Top \(tasks.count)")
                     .font(.caption2.bold())
-                    .foregroundStyle(Color(red: 0.55, green: 0.60, blue: 0.68))
+                    .foregroundStyle(.secondary)
             }
 
             if tasks.isEmpty {
                 Text("当前无高优待办，点击右上角「+ 新建任务」开启今日计划。")
                     .font(.caption)
-                    .foregroundStyle(Color(red: 0.55, green: 0.60, blue: 0.68))
+                    .foregroundStyle(.secondary)
                     .padding(.vertical, 28)
                     .frame(maxWidth: .infinity, alignment: .center)
             } else {
@@ -271,7 +294,7 @@ struct TopFocusCardView: View {
                         HStack(spacing: 12) {
                             Text("\(idx + 1). \(task.title)")
                                 .font(.system(size: 13.5, weight: .medium))
-                                .foregroundStyle(Color(red: 0.22, green: 0.27, blue: 0.36))
+                                .foregroundStyle(.primary)
                                 .lineLimit(1)
 
                             Spacer()
@@ -279,7 +302,7 @@ struct TopFocusCardView: View {
                             if !subs.isEmpty {
                                 Text("\(subs.filter(\.done).count)/\(subs.count)")
                                     .font(.caption2.bold())
-                                    .foregroundStyle(Color(red: 0.52, green: 0.56, blue: 0.65))
+                                    .foregroundStyle(.secondary)
                             }
 
                             Button {
@@ -305,9 +328,12 @@ struct TopFocusCardView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, minHeight: 228, alignment: .topLeading)
-        .background(Color.white)
+        .background(store.cardSurfaceBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: Color.black.opacity(0.05), radius: 14, x: 0, y: 6)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(store.activeTheme.primaryColor.opacity(0.18), lineWidth: 1)
+        )
     }
 }
 
@@ -331,6 +357,7 @@ private struct SegmentedRadialRing: View {
 }
 
 struct TaskInsightsDonutView: View {
+    @EnvironmentObject var store: TodoStore
     let counts: MatrixSummaryCounts
 
     private var totalAll: Int {
@@ -351,12 +378,12 @@ struct TaskInsightsDonutView: View {
             Text("TASK INSIGHTS · 分布洞察")
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .tracking(1.4)
-                .foregroundStyle(Color(red: 0.42, green: 0.47, blue: 0.56))
+                .foregroundStyle(.secondary)
 
             HStack(spacing: 22) {
                 ZStack {
                     Circle()
-                        .stroke(Color(red: 0.92, green: 0.94, blue: 0.97), lineWidth: 13)
+                        .stroke(Color.primary.opacity(0.09), lineWidth: 13)
 
                     ForEach(Array(arcSlices().enumerated()), id: \.offset) { _, slice in
                         Circle()
@@ -368,10 +395,10 @@ struct TaskInsightsDonutView: View {
                     VStack(spacing: 2) {
                         Text("\(totalAll)")
                             .font(.system(size: 26, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color(red: 0.14, green: 0.18, blue: 0.26))
+                            .foregroundStyle(.primary)
                         Text("总记录事项")
                             .font(.system(size: 10.5))
-                            .foregroundStyle(Color(red: 0.55, green: 0.60, blue: 0.68))
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .frame(width: 132, height: 132)
@@ -385,10 +412,10 @@ struct TaskInsightsDonutView: View {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(seg.label)
                                     .font(.system(size: 12))
-                                    .foregroundStyle(Color(red: 0.45, green: 0.50, blue: 0.58))
+                                    .foregroundStyle(.secondary)
                                 Text("\(seg.value)")
                                     .font(.system(size: 16, weight: .bold, design: .rounded))
-                                    .foregroundStyle(Color(red: 0.14, green: 0.18, blue: 0.26))
+                                    .foregroundStyle(.primary)
                             }
                         }
                     }
@@ -399,9 +426,12 @@ struct TaskInsightsDonutView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, minHeight: 228, alignment: .topLeading)
-        .background(Color.white)
+        .background(store.cardSurfaceBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: Color.black.opacity(0.05), radius: 14, x: 0, y: 6)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(store.activeTheme.primaryColor.opacity(0.18), lineWidth: 1)
+        )
     }
 
     private func arcSlices() -> [(start: CGFloat, end: CGFloat, color: Color)] {
@@ -420,6 +450,7 @@ struct TaskInsightsDonutView: View {
 }
 
 private struct DashboardQuadrantBox: View {
+    @EnvironmentObject var store: TodoStore
     let quadrant: QuadrantKind
     let tasks: [TaskItemModel]
 
@@ -431,10 +462,10 @@ private struct DashboardQuadrantBox: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(quadrant.title)
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(Color(red: 0.12, green: 0.16, blue: 0.24))
+                        .foregroundStyle(.primary)
                     Text(quadrant.subtitle)
                         .font(.system(size: 11))
-                        .foregroundStyle(Color(red: 0.45, green: 0.50, blue: 0.58))
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text("\(tasks.filter { !$0.payload.isDone }.count)")
@@ -449,7 +480,7 @@ private struct DashboardQuadrantBox: View {
             if tasks.isEmpty {
                 Text("当前象限暂无待办")
                     .font(.caption)
-                    .foregroundStyle(Color(red: 0.55, green: 0.60, blue: 0.68))
+                    .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 68, alignment: .center)
             } else {
                 VStack(spacing: 8) {
@@ -461,13 +492,12 @@ private struct DashboardQuadrantBox: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 160, alignment: .topLeading)
-        .background(Color.white)
+        .background(store.cardSurfaceBackground)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(quadrant.tintColor.opacity(0.24), lineWidth: 1)
+                .stroke(quadrant.tintColor.opacity(0.30), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.03), radius: 8, y: 3)
     }
 }
 
@@ -476,17 +506,17 @@ struct RightTimelineRailView: View {
     @State private var feedTab: Int = 0 // 0: 待办, 1: 监督, 2: 已完成
 
     private var todoTasks: [TaskItemModel] {
-        (store.matrix?.sortedTasks ?? []).filter { !$0.payload.isDone }
+        store.filteredSortedTasks.filter { !$0.payload.isDone }
     }
 
     private var supervisedTasks: [TaskItemModel] {
-        (store.matrix?.sortedTasks ?? []).filter {
+        store.filteredSortedTasks.filter {
             !$0.payload.isDone && (($0.payload.supervisionEnabled ?? false) || $0.payload.taskMode == "multiplayer")
         }
     }
 
     private var doneTasks: [TaskItemModel] {
-        (store.matrix?.sortedTasks ?? []).filter { $0.payload.isDone }
+        store.filteredSortedTasks.filter { $0.payload.isDone }
     }
 
     private var displayedTasks: [TaskItemModel] {
@@ -499,7 +529,7 @@ struct RightTimelineRailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Royal Blue Header matching ORDERS panel in reference image
+            // Theme-Aware Gradient Header matching Web `--tl-header-grad`
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Text("TASKS · 待办流")
@@ -518,7 +548,7 @@ struct RightTimelineRailView: View {
                 }
 
                 HStack(spacing: 16) {
-                    railTab("待办 (\(store.totalTodoCount))", index: 0)
+                    railTab("待办 (\(todoTasks.count))", index: 0)
                     railTab("监督 (\(supervisedTasks.count))", index: 1)
                     railTab("已完 (\(store.matrix?.summaryCounts.totalDone ?? 0))", index: 2)
                 }
@@ -528,7 +558,7 @@ struct RightTimelineRailView: View {
             .padding(.bottom, 12)
             .background(
                 LinearGradient(
-                    colors: [Color(red: 0.29, green: 0.56, blue: 0.96), Color(red: 0.16, green: 0.45, blue: 0.90)],
+                    colors: [store.activeTheme.primaryFillColor, store.activeTheme.accentColor],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
@@ -540,10 +570,10 @@ struct RightTimelineRailView: View {
                     VStack(spacing: 8) {
                         Image(systemName: "checkmark.seal")
                             .font(.title2)
-                            .foregroundStyle(Color(red: 0.55, green: 0.60, blue: 0.68))
+                            .foregroundStyle(.secondary)
                         Text(feedTab == 2 ? "在看板开启「含已完成」后展示已完结记录" : "暂无该分组任务")
                             .font(.caption)
-                            .foregroundStyle(Color(red: 0.55, green: 0.60, blue: 0.68))
+                            .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                     }
                     .padding(32)
@@ -557,12 +587,12 @@ struct RightTimelineRailView: View {
                     .padding(16)
                 }
             }
-            .background(Color(red: 0.96, green: 0.97, blue: 0.99))
+            .background(store.cardSurfaceBackground.opacity(0.55))
         }
         .frame(width: 295)
         .overlay(
             Rectangle()
-                .fill(Color.black.opacity(0.06))
+                .fill(Color.primary.opacity(0.08))
                 .frame(width: 1),
             alignment: .leading
         )
@@ -597,7 +627,7 @@ struct RightTimelineRailView: View {
             HStack(spacing: 8) {
                 Circle()
                     .stroke(p.quadrantKind.tintColor, lineWidth: 2)
-                    .background(Circle().fill(Color.white))
+                    .background(Circle().fill(store.cardSurfaceBackground))
                     .frame(width: 12, height: 12)
 
                 Text(p.quadrantKind.shortCode)
@@ -608,13 +638,13 @@ struct RightTimelineRailView: View {
 
                 Text(timelineTimeLabel(task))
                     .font(.system(size: 11))
-                    .foregroundStyle(p.isOverdue == true ? .red : Color(red: 0.55, green: 0.60, blue: 0.68))
+                    .foregroundStyle(p.isOverdue == true ? .red : .secondary)
             }
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(task.title)
                     .font(.system(size: 13.5, weight: .semibold))
-                    .foregroundStyle(Color(red: 0.14, green: 0.18, blue: 0.26))
+                    .foregroundStyle(.primary)
                     .strikethrough(p.isDone)
                     .onTapGesture { store.editingTaskTarget = task }
 
@@ -623,14 +653,14 @@ struct RightTimelineRailView: View {
                         ForEach(p.subtaskList.prefix(3)) { s in
                             Text("\(s.done ? "✓" : "•") \(s.title)")
                                 .font(.system(size: 11.5))
-                                .foregroundStyle(Color(red: 0.42, green: 0.47, blue: 0.56))
+                                .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
                     }
                 } else if let reason = p.priorityReason, !reason.isEmpty {
                     Text(reason)
                         .font(.system(size: 11.5))
-                        .foregroundStyle(Color(red: 0.45, green: 0.50, blue: 0.58))
+                        .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
 
@@ -639,14 +669,14 @@ struct RightTimelineRailView: View {
                 HStack {
                     Text("重要度 \(p.importance)★")
                         .font(.system(size: 11))
-                        .foregroundStyle(Color(red: 0.50, green: 0.55, blue: 0.64))
+                        .foregroundStyle(.secondary)
                     Spacer()
                     Text("\(Int(p.priorityScore)) 分")
                         .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color(red: 0.14, green: 0.18, blue: 0.26))
+                        .foregroundStyle(.primary)
                 }
 
-                // Bottom 3-button action strip matching ORDERS card actions in reference image
+                // Bottom 3-button action strip
                 HStack(spacing: 8) {
                     if !p.isDone {
                         Button {
@@ -656,7 +686,7 @@ struct RightTimelineRailView: View {
                                 .font(.system(size: 12, weight: .bold))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 6)
-                                .background(Color(red: 0.20, green: 0.54, blue: 0.96))
+                                .background(store.activeTheme.primaryFillColor)
                                 .foregroundStyle(.white)
                                 .clipShape(RoundedRectangle(cornerRadius: 6))
                         }
@@ -669,9 +699,9 @@ struct RightTimelineRailView: View {
                                 .font(.system(size: 11, weight: .semibold))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 6)
-                                .background(Color.white)
-                                .foregroundStyle(Color(red: 0.42, green: 0.47, blue: 0.56))
-                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.black.opacity(0.12), lineWidth: 1))
+                                .background(Color.primary.opacity(0.06))
+                                .foregroundStyle(.secondary)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
                         }
                         .buttonStyle(.plain)
 
@@ -682,9 +712,9 @@ struct RightTimelineRailView: View {
                                 .font(.system(size: 12, weight: .semibold))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 6)
-                                .background(Color.white)
-                                .foregroundStyle(Color.purple)
-                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.black.opacity(0.12), lineWidth: 1))
+                                .background(Color.primary.opacity(0.06))
+                                .foregroundStyle(store.activeTheme.accentColor)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
                         }
                         .buttonStyle(.plain)
                     } else {
@@ -695,7 +725,7 @@ struct RightTimelineRailView: View {
                                 .font(.system(size: 11.5, weight: .semibold))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 6)
-                                .background(Color.primary.opacity(0.05))
+                                .background(Color.primary.opacity(0.06))
                                 .clipShape(RoundedRectangle(cornerRadius: 6))
                         }
                         .buttonStyle(.plain)
@@ -703,9 +733,12 @@ struct RightTimelineRailView: View {
                 }
             }
             .padding(13)
-            .background(Color.white)
+            .background(store.cardSurfaceBackground)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .shadow(color: Color.black.opacity(0.05), radius: 8, y: 3)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            )
             .padding(.leading, 14)
         }
     }

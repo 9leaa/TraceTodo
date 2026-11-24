@@ -63,6 +63,9 @@ rm -rf "$WORK_DIR" "$OUT_APK"
 mkdir -p "$WORK_DIR/compiled_res" "$WORK_DIR/gen" "$WORK_DIR/classes" "$WORK_DIR/dex" "$WORK_DIR/res_stage" "$DIST_DIR"
 
 cp -R "$SCRIPT_DIR/app/src/main/res/"* "$WORK_DIR/res_stage/"
+if [ "$IS_TEST" = "1" ] && [ -f "$WORK_DIR/res_stage/xml/shortcuts.xml" ]; then
+  sed -i '' "s/com\.tracememory\.tracetodo/${PKG_ID}/g" "$WORK_DIR/res_stage/xml/shortcuts.xml"
+fi
 cat > "$WORK_DIR/res_stage/values/strings.xml" <<STRXML
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
@@ -70,6 +73,14 @@ cat > "$WORK_DIR/res_stage/values/strings.xml" <<STRXML
     <string name="default_server_url">${DEFAULT_URL}</string>
     <string name="fallback_server_url">http://43.228.79.133:18090</string>
     <string name="test_server_url">http://43.228.79.133:18091</string>
+    <string name="sc_capture_short">极速录入</string>
+    <string name="sc_capture_long">➕ 一句话极速记待办</string>
+    <string name="sc_focus_short">番茄专注</string>
+    <string name="sc_focus_long">🍅 开启番茄专注钟</string>
+    <string name="sc_calendar_short">日历排期</string>
+    <string name="sc_calendar_long">📅 查看周视图时间轴</string>
+    <string name="sc_ask_short">问记忆</string>
+    <string name="sc_ask_long">💬 随手问记忆大脑</string>
     <color name="ic_launcher_background">#0F172A</color>
 </resources>
 STRXML
@@ -77,15 +88,15 @@ STRXML
 echo "🤖 [1/5] Compiling Android resources with aapt2 ($APP_STEM)..."
 "$AAPT2" compile --dir "$WORK_DIR/res_stage" -o "$WORK_DIR/compiled_res/resources.zip"
 
-echo "🔗 [2/5] Linking resources & AndroidManifest (targetSdk 34, version 1.3.0)..."
+echo "🔗 [2/5] Linking resources & AndroidManifest (targetSdk 34, version 1.4.0)..."
 "$AAPT2" link \
   -I "$ANDROID_JAR" \
   --manifest "$SCRIPT_DIR/app/src/main/AndroidManifest.xml" \
   --rename-manifest-package "$PKG_ID" \
   --min-sdk-version 26 \
   --target-sdk-version 34 \
-  --version-code 3 \
-  --version-name "1.3.0" \
+  --version-code 4 \
+  --version-name "1.4.0" \
   --java "$WORK_DIR/gen" \
   -o "$WORK_DIR/unaligned.apk" \
   "$WORK_DIR/compiled_res/resources.zip"

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="quick_capture"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher_round"
+        android:shortcutShortLabel="@string/sc_capture_short"
+        android:shortcutLongLabel="@string/sc_capture_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.tracememory.tracetodo"
+            android:targetClass="com.tracememory.tracetodo.MainActivity"
+            android:data="tracetodo://capture" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="open_focus"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher_round"
+        android:shortcutShortLabel="@string/sc_focus_short"
+        android:shortcutLongLabel="@string/sc_focus_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.tracememory.tracetodo"
+            android:targetClass="com.tracememory.tracetodo.MainActivity"
+            android:data="tracetodo://focus" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="open_calendar"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher_round"
+        android:shortcutShortLabel="@string/sc_calendar_short"
+        android:shortcutLongLabel="@string/sc_calendar_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.tracememory.tracetodo"
+            android:targetClass="com.tracememory.tracetodo.MainActivity"
+            android:data="tracetodo://calendar" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="open_ask"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher_round"
+        android:shortcutShortLabel="@string/sc_ask_short"
+        android:shortcutLongLabel="@string/sc_ask_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.tracememory.tracetodo"
+            android:targetClass="com.tracememory.tracetodo.MainActivity"
+            android:data="tracetodo://ask" />
+    </shortcut>
+</shortcuts>

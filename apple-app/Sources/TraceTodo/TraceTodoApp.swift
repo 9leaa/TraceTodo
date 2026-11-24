@@ -46,7 +46,9 @@ struct MainContentView: View {
     }
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottomTrailing) {
+            AmbientSceneBackgroundView()
+
             #if os(iOS)
             TabView(selection: $selectedSection) {
                 NavigationStack {
@@ -133,9 +135,23 @@ struct MainContentView: View {
             }
             #else
             VStack(spacing: 0) {
-                // Top Header Bar with Theme Vector Micro-Illustration
+                // Top Header Bar with Theme Vector Micro-Illustration or Scene Header Art
                 ZStack(alignment: .trailing) {
-                    ThemeHeaderArtworkView(theme: store.activeTheme)
+                    if store.hasActiveScene {
+                        RemoteSceneWallpaperImage(sceneId: store.activeSceneId, serverURL: store.serverURL)
+                            .frame(width: 380, height: 58)
+                            .opacity(0.45)
+                            .mask(
+                                LinearGradient(
+                                    colors: [.clear, .black.opacity(0.65), .black],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .allowsHitTesting(false)
+                    } else {
+                        ThemeHeaderArtworkView(theme: store.activeTheme)
+                    }
 
                     HStack(spacing: 14) {
                         if let appIconImg = NSApp.applicationIconImage {
@@ -206,7 +222,7 @@ struct MainContentView: View {
                                 .font(.system(size: 12.5, weight: .semibold))
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 7)
-                                .background(store.activeTheme.primaryColor)
+                                .background(store.activeTheme.primaryFillColor)
                                 .foregroundStyle(.white)
                                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
@@ -296,7 +312,7 @@ struct MainContentView: View {
                     .padding(.horizontal, 18)
                 }
                 .frame(height: 58)
-                .background(store.activeTheme.surfaceBackground)
+                .background(store.cardSurfaceBackground)
                 .overlay(Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1), alignment: .bottom)
 
                 // Main 3-Column Body: Converged 5-Tab Left Rail + Center Canvas + Right Timeline
@@ -323,7 +339,7 @@ struct MainContentView: View {
 
                     RightTimelineRailView()
                 }
-                .background(store.activeTheme.canvasBackground)
+                .background(Color.clear)
             }
             .preferredColorScheme(store.activeTheme.isDark ? .dark : .light)
             .frame(minWidth: 1120, minHeight: 700)
@@ -349,6 +365,50 @@ struct MainContentView: View {
                 Task { await store.refresh() }
             }
             #endif
+
+            // Global Floating "💬 问记忆" Copilot Button (matches Web `#askFabBtn` + ⌘K shortcut)
+            if !store.needsLoginGate && store.activeFocusLaunch == nil && store.activeFocusTask == nil {
+                Button {
+                    store.isPresentingFloatingAsk = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "bubble.left.and.bubble.right.fill")
+                            .font(.system(size: 13.5, weight: .bold))
+                        Text("问记忆")
+                            .font(.system(size: 13, weight: .bold))
+                        #if os(macOS)
+                        Text("⌘K")
+                            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(Color.white.opacity(0.20))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                        #endif
+                    }
+                    .padding(.horizontal, 15)
+                    .padding(.vertical, 10)
+                    .background(
+                        LinearGradient(
+                            colors: [store.activeTheme.primaryFillColor, store.activeTheme.accentColor],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .foregroundStyle(.white)
+                    .clipShape(Capsule())
+                    .shadow(color: Color.black.opacity(0.22), radius: 12, x: 0, y: 5)
+                }
+                .buttonStyle(.plain)
+                #if os(macOS)
+                .keyboardShortcut("k", modifiers: .command)
+                .padding(.trailing, 24)
+                .padding(.bottom, 20)
+                #else
+                .padding(.trailing, 18)
+                .padding(.bottom, 64)
+                #endif
+                .zIndex(60)
+            }
 
             if let launch = store.activeFocusLaunch {
                 FocusLockView(launch: launch)
@@ -405,6 +465,23 @@ struct MainContentView: View {
             .frame(minWidth: 620, minHeight: 580)
             #endif
         }
+        .sheet(isPresented: $store.isPresentingFloatingAsk) {
+            NavigationStack {
+                AskMemoryView()
+                    .environmentObject(store)
+                    .navigationTitle("💬 随手问记忆（证据溯源）")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("关闭") { store.isPresentingFloatingAsk = false }
+                        }
+                    }
+            }
+            #if os(iOS)
+            .presentationDetents([.medium, .large])
+            #else
+            .frame(minWidth: 660, minHeight: 540)
+            #endif
+        }
         .sheet(isPresented: Binding(
             get: { store.isPresentingAuthSheet || store.needsLoginGate },
             set: { newVal in
@@ -431,7 +508,7 @@ struct MainContentView: View {
                         ZStack {
                             if isSel {
                                 Circle()
-                                    .fill(store.activeTheme.primaryColor)
+                                    .fill(store.activeTheme.primaryFillColor)
                                     .frame(width: 34, height: 34)
                             }
                             Image(systemName: sec.icon)
@@ -454,46 +531,16 @@ struct MainContentView: View {
             }
 
             Spacer(minLength: 8)
-
-            VStack(spacing: 6) {
-                Text("TIP")
-                    .font(.system(size: 10, weight: .bold))
-                    .tracking(1.2)
-                    .foregroundStyle(.secondary)
-
-                Image(systemName: "lightbulb.max.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(Color(red: 0.95, green: 0.76, blue: 0.20))
-
-                Text(railTipText)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(5)
-                    .padding(8)
-                    .frame(maxWidth: .infinity)
-                    .background(Color.primary.opacity(0.05))
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            }
-            .padding(.horizontal, 6)
-            .padding(.bottom, 10)
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 6)
-        .frame(width: 102)
-        .background(store.activeTheme.surfaceBackground)
+        .frame(width: 96)
+        .background(store.cardSurfaceBackground)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .shadow(color: Color.black.opacity(0.06), radius: 14, x: 0, y: 6)
-    }
-
-    private var railTipText: String {
-        if let first = store.matrix?.diagnostics.first {
-            return first
-                .replacingOccurrences(of: "🎯 ", with: "")
-                .replacingOccurrences(of: "🔥 ", with: "")
-                .replacingOccurrences(of: "⚠️ ", with: "")
-        }
-        return "记录日常想法，AI 自动归类四象限与长期记忆"
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
     }
 
     private func submitTopCapture() {
