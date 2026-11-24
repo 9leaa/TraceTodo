@@ -88,8 +88,46 @@ class TestFrontendPerfAndFloatingAsk(unittest.TestCase):
             self.assertEqual(code_authed, 200)
             self.assertTrue(boot_authed["auth"]["authenticated"])
             self.assertEqual(boot_authed["auth"]["user"]["username"], "alice_boot")
-            self.assertEqual(boot_authed["preferences"]["theme_id"], "deep_forest")
+            self.assertEqual( boot_authed["preferences"]["theme_id"], "deep_forest")
             self.assertIsNotNone(boot_authed["sync_state"])
+
+            # 3. Second user (role='user', custom space_id != 'default') gets 200 (never 403)
+            # even if a stale client passes ?space_id=default to /api/bootstrap, while data endpoints still 403.
+            c_reg2, reg2 = api.dispatch(
+                "POST",
+                "/api/auth/register",
+                body={"username": "bob_member", "password": "Password123!", "display_name": "Bob"},
+            )
+            self.assertEqual(c_reg2, 200)
+            self.assertEqual(reg2["user"]["role"], "user")
+            bob_tok = reg2["token"]
+            bob_space = reg2["user"]["space_id"]
+            self.assertNotEqual(bob_space, "default")
+            api.dispatch(
+                "POST",
+                "/api/preferences",
+                body={"theme_id": "velvet_noir", "extra": {"scene_id": "portrait_f_cool", "scene_intensity": 3}},
+                headers={"Authorization": f"Bearer {bob_tok}"},
+            )
+            c_bob_boot, bob_boot = api.dispatch(
+                "GET",
+                "/api/bootstrap",
+                {"space_id": ["default"]},
+                headers={"Authorization": f"Bearer {bob_tok}"},
+            )
+            self.assertEqual(c_bob_boot, 200)
+            self.assertEqual(bob_boot["preferences"]["space_id"], bob_space)
+            self.assertEqual(bob_boot["preferences"]["theme_id"], "velvet_noir")
+            self.assertEqual(bob_boot["preferences"]["extra"]["scene_id"], "portrait_f_cool")
+
+            # Data endpoint still strictly rejects cross-space access for non-admin
+            c_bob_forbid, _ = api.dispatch(
+                "GET",
+                "/api/tasks/matrix",
+                {"space_id": ["default"]},
+                headers={"Authorization": f"Bearer {bob_tok}"},
+            )
+            self.assertEqual(c_bob_forbid, 403)
         finally:
             container.close()
 
@@ -213,6 +251,8 @@ class TestFrontendPerfAndFloatingAsk(unittest.TestCase):
 
         self.assertNotIn("if (!confirm(", html)
         self.assertNotIn('<div class="rail-tip-box">', html)
+        self.assertNotIn("/api/bootstrap?space_id=${encodeURIComponent(space())}", html)
+        self.assertIn("fetchOpts.keepalive = true", html)
 
 
 if __name__ == "__main__":
