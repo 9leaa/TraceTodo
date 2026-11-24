@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sqlite3
+import time
 from typing import Any
 import uuid
 
@@ -20,6 +21,11 @@ from trace_memory.domain.proposals import (
     PermissionDeniedError,
     UnauthorizedError,
     ValidationError,
+)
+from trace_memory.services.captcha_generator import (
+    generate_captcha_code,
+    render_captcha_png_data_url,
+    render_captcha_svg_data_url,
 )
 from trace_memory.services.guard_service import (
     RateLimitAndQuotaService,
@@ -104,7 +110,88 @@ class AuthService:
         self.config = config
         self.settings = settings
         self.guard = guard
+        self._ensure_captcha_table()
         self.ensure_bootstrap_admin()
+
+    def _ensure_captcha_table(self) -> None:
+        with self.db.transaction() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS auth_captchas (
+                    captcha_id TEXT PRIMARY KEY,
+                    code_hash TEXT NOT NULL,
+                    client_ip TEXT NOT NULL DEFAULT '',
+                    expires_at REAL NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+
+    def issue_captcha(self, client_ip: str = "127.0.0.1") -> dict[str, Any]:
+        self.guard.check_rate_limit(
+            f"captcha:{client_ip}", limit=30, window_seconds=60, action_label="获取图形验证码"
+        )
+        now_ts = time.time()
+        code = generate_captcha_code(4)
+        captcha_id = new_id("cap")
+        expires_in = 300
+        with self.db.transaction() as conn:
+            conn.execute("DELETE FROM auth_captchas WHERE expires_at < ?", (now_ts,))
+            conn.execute(
+                """
+                INSERT INTO auth_captchas (captcha_id, code_hash, client_ip, expires_at, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    captcha_id,
+                    _sha256_hex(code.upper()),
+                    client_ip[:64],
+                    now_ts + expires_in,
+                    utc_now_iso(),
+                ),
+            )
+        return {
+            "captcha_id": captcha_id,
+            "image_svg": render_captcha_svg_data_url(code),
+            "image_png": render_captcha_png_data_url(code),
+            "expires_in": expires_in,
+        }
+
+    def verify_and_consume_captcha(
+        self,
+        captcha_id: str,
+        captcha_code: str,
+        *,
+        client_ip: str = "127.0.0.1",
+    ) -> None:
+        cid = captcha_id.strip()
+        raw_code = captcha_code.strip().upper()
+        if not cid or not raw_code:
+            raise ValidationError("请输入图形验证码")
+        now_ts = time.time()
+        with self.db.transaction() as conn:
+            row = conn.execute(
+                "SELECT code_hash, expires_at FROM auth_captchas WHERE captcha_id = ?",
+                (cid,),
+            ).fetchone()
+            if row is not None:
+                conn.execute("DELETE FROM auth_captchas WHERE captcha_id = ?", (cid,))
+        if row is None or float(row["expires_at"]) < now_ts:
+            self.guard.log_security_event(
+                action="auth_register_captcha",
+                status="failed",
+                detail={"reason": "expired_or_missing"},
+                client_ip=client_ip,
+            )
+            raise ValidationError("验证码已过期或失效，请点击验证码图片刷新重试")
+        if not hmac.compare_digest(str(row["code_hash"]), _sha256_hex(raw_code)):
+            self.guard.log_security_event(
+                action="auth_register_captcha",
+                status="failed",
+                detail={"reason": "mismatch"},
+                client_ip=client_ip,
+            )
+            raise ValidationError("图形验证码不正确，请重新输入")
 
     @staticmethod
     def _row_to_user(row: Any) -> UserAccount:
@@ -223,10 +310,18 @@ class AuthService:
         display_name: str = "",
         device_label: str = "web",
         client_ip: str = "127.0.0.1",
+        captcha_id: str = "",
+        captcha_code: str = "",
     ) -> dict[str, Any]:
         self.guard.check_rate_limit(
             f"register:{client_ip}", limit=12, window_seconds=60, action_label="注册请求"
         )
+        if self.config.register_captcha_required or captcha_id.strip() or captcha_code.strip():
+            self.verify_and_consume_captcha(
+                captcha_id,
+                captcha_code,
+                client_ip=client_ip,
+            )
         uname = self._validate_credentials(username, password)
         cfg = self.settings.get_all()
         now = utc_now_iso()

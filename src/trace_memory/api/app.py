@@ -308,6 +308,7 @@ class ApiDispatcher:
         {
             "/api/health",
             "/api/auth/status",
+            "/api/auth/captcha",
             "/api/auth/login",
             "/api/auth/register",
             "/api/bootstrap",
@@ -471,6 +472,7 @@ class ApiDispatcher:
             "vision_model": self.container.config.vision_model,
             "auth_required": bool(self.container.config.auth_required),
             "allow_registration": bool(cfg_settings["allow_registration"]),
+            "register_captcha_required": bool(self.container.config.register_captcha_required),
             "has_users": self.container.auth_service.has_users(),
             "noise_filter_enabled": bool(cfg_settings["noise_filter_enabled"]),
             "timezone": "Asia/Shanghai (UTC+8)",
@@ -493,6 +495,7 @@ class ApiDispatcher:
         return {
             "auth_required": bool(self.container.config.auth_required),
             "allow_registration": bool(cfg_settings["allow_registration"]),
+            "register_captcha_required": bool(self.container.config.register_captcha_required),
             "has_users": self.container.auth_service.has_users(),
             "authenticated": user is not None,
             "user": user.to_dict() if user is not None else None,
@@ -567,6 +570,9 @@ class ApiDispatcher:
             if method == "GET" and path == "/api/auth/status":
                 return 200, self._build_auth_status_payload(user)
 
+            if method == "GET" and path == "/api/auth/captcha":
+                return 200, self.container.auth_service.issue_captcha(client_ip=client_ip)
+
             if method == "POST" and path == "/api/auth/register":
                 out = self.container.auth_service.register(
                     username=str(payload.get("username", "")),
@@ -574,6 +580,8 @@ class ApiDispatcher:
                     display_name=str(payload.get("display_name", "")),
                     device_label=str(payload.get("device_label", "web")),
                     client_ip=client_ip,
+                    captcha_id=str(payload.get("captcha_id", "")),
+                    captcha_code=str(payload.get("captcha_code", "")),
                 )
                 return 200, out
 

@@ -4350,6 +4350,15 @@
             <input id="authPassword" type="password" autocomplete="current-password" placeholder="密码（至少 6 位）" onkeydown="if(event.key==='Enter') submitAuthForm()" />
             <button type="button" onclick="const p=document.getElementById('authPassword');p.type=p.type==='password'?'text':'password';this.textContent=p.type==='password'?'👁️':'🙈';" style="border:none;background:transparent;padding:2px 4px;font-size:14px;cursor:pointer;">👁️</button>
           </div>
+          <div id="authCaptchaRow" style="display:none;align-items:center;gap:8px;">
+            <div class="auth-field" style="flex:1;margin:0;">
+              <span style="font-size:15px;opacity:0.65;">🛡️</span>
+              <input id="authCaptchaCode" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="6" placeholder="输入右侧 4 位验证码" onkeydown="if(event.key==='Enter') submitAuthForm()" style="text-transform:uppercase;letter-spacing:1.5px;font-weight:700;" />
+            </div>
+            <button type="button" onclick="refreshAuthCaptcha()" title="看不清？点击换一张" aria-label="刷新图形验证码" style="border:1px solid rgba(99,102,241,0.24);background:#eef2ff;border-radius:12px;padding:0;height:44px;width:136px;overflow:hidden;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+              <img id="authCaptchaImg" alt="点击刷新验证码" style="width:136px;height:44px;display:block;object-fit:cover;" />
+            </button>
+          </div>
         </div>
 
         <div id="authErrBox" style="display:none;color:#dc2626;font-size:12.5px;background:#fef2f2;padding:9px 12px;border-radius:10px;"></div>
@@ -8632,11 +8641,34 @@
       document.getElementById('detailModal').classList.remove('open');
     }
 
+    let authCaptchaId = '';
+
+    async function refreshAuthCaptcha() {
+      const imgEl = document.getElementById('authCaptchaImg');
+      const inputEl = document.getElementById('authCaptchaCode');
+      if (inputEl) inputEl.value = '';
+      try {
+        const res = await fetch('/api/auth/captcha', { cache: 'no-store' });
+        const data = await parseApiResponse(res);
+        if (data && data.captcha_id) {
+          authCaptchaId = data.captcha_id;
+          if (imgEl && data.image_svg) imgEl.src = data.image_svg;
+        }
+      } catch (e) {
+        // Silent fallback; user can tap image to retry
+      }
+    }
+
     function setAuthMode(mode) {
       authMode = mode;
       document.getElementById('authModeLoginBtn').classList.toggle('active', mode === 'login');
       document.getElementById('authModeRegBtn').classList.toggle('active', mode === 'register');
       document.getElementById('authDisplayRow').style.display = mode === 'register' ? 'flex' : 'none';
+      const capRow = document.getElementById('authCaptchaRow');
+      if (capRow) capRow.style.display = mode === 'register' ? 'flex' : 'none';
+      if (mode === 'register') {
+        refreshAuthCaptcha();
+      }
       document.getElementById('authModalTitle').textContent = !hasUsersFlag
         ? '初始化 TraceTodo 管理员'
         : (mode === 'register' ? '创建你的 TraceTodo 账号' : '欢迎回到 TraceTodo');
@@ -8743,8 +8775,16 @@
       const username = document.getElementById('authUsername').value.trim();
       const password = document.getElementById('authPassword').value;
       const displayName = document.getElementById('authDisplayName').value.trim();
+      const captchaCode = (document.getElementById('authCaptchaCode')?.value || '').trim();
       const errEl = document.getElementById('authErrBox');
       errEl.style.display = 'none';
+
+      if (authMode === 'register' && !captchaCode) {
+        errEl.textContent = '请输入图形验证码';
+        errEl.style.display = 'block';
+        if (!authCaptchaId) refreshAuthCaptcha();
+        return;
+      }
 
       const endpoint = authMode === 'register' ? '/api/auth/register' : '/api/auth/login';
       await withBtnBusy(btn || document.getElementById('authSubmitBtn'), '⏳ 提交中...', async () => {
@@ -8756,12 +8796,14 @@
             password,
             display_name: displayName,
             device_label: 'web',
+            ...(authMode === 'register' ? { captcha_id: authCaptchaId, captcha_code: captchaCode } : {}),
           }),
         });
         const data = await parseApiResponse(res);
         if (data.error || !data.token) {
           errEl.textContent = data.error || '认证失败';
           errEl.style.display = 'block';
+          if (authMode === 'register') refreshAuthCaptcha();
           return;
         }
         authToken = data.token;
@@ -8769,8 +8811,11 @@
         currentUser = data.user;
         currentQuota = data.quota || null;
         authLockOpen = false;
+        authCaptchaId = '';
         document.getElementById('authModal').classList.remove('open');
         document.getElementById('authPassword').value = '';
+        const capInput = document.getElementById('authCaptchaCode');
+        if (capInput) capInput.value = '';
         updateAccountUi();
         showToast(`✅ 欢迎回来，${currentUser.display_name || currentUser.username}`);
         reloadAll();
