@@ -3,6 +3,10 @@ import SwiftUI
 import PhotosUI
 import ImageIO
 import UniformTypeIdentifiers
+#if os(iOS)
+import UIKit
+import AVFoundation
+#endif
 
 struct MediaAttachmentModel: Codable, Identifiable, Hashable {
     let mediaId: String
@@ -103,14 +107,128 @@ enum ImageClientCompressor {
     }
 }
 
-/// PhotosPicker button that compresses selected images on-device before uploading to `/api/media/upload`.
+#if os(iOS)
+struct CameraPhotoCapturePicker: UIViewControllerRepresentable {
+    var onCaptured: (Data) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.mediaTypes = [UTType.image.identifier]
+        picker.cameraCaptureMode = .photo
+        picker.allowsEditing = false
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
+        let parent: CameraPhotoCapturePicker
+
+        init(parent: CameraPhotoCapturePicker) {
+            self.parent = parent
+        }
+
+        func imagePickerController(
+            _ picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+        ) {
+            if let img = (info[.editedImage] ?? info[.originalImage]) as? UIImage,
+               let data = img.jpegData(compressionQuality: 0.92) {
+                parent.onCaptured(data)
+            }
+            parent.dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
+        }
+    }
+}
+#endif
+
+/// Image attachment control supporting both Camera Photo Capture (on iOS) and Photo Library Picker (iOS + macOS).
 struct ImageAttachPickerButton: View {
     @EnvironmentObject var store: TodoStore
     @Binding var pendingMedia: [MediaAttachmentModel]
+    var compact: Bool = false
+
     @State private var selectedItems: [PhotosPickerItem] = []
     @State private var isUploading: Bool = false
+    #if os(iOS)
+    @State private var isPresentingCamera: Bool = false
+    #endif
 
     var body: some View {
+        #if os(iOS)
+        HStack(spacing: 6) {
+            Button {
+                openCameraWithPermissionCheck()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: compact ? 13 : 13.5, weight: .semibold))
+                    if !compact {
+                        Text("拍照")
+                            .font(.caption.bold())
+                    }
+                }
+                .padding(.horizontal, compact ? 8 : 10)
+                .padding(.vertical, 5)
+                .background(store.activeTheme.primaryColor.opacity(0.11))
+                .foregroundStyle(store.activeTheme.primaryColor)
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(isUploading)
+
+            PhotosPicker(
+                selection: $selectedItems,
+                maxSelectionCount: 6,
+                matching: .images
+            ) {
+                HStack(spacing: 4) {
+                    if isUploading {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "photo.on.rectangle.angled")
+                            .font(.system(size: compact ? 13 : 13.5, weight: .semibold))
+                    }
+                    if !compact {
+                        Text(isUploading ? "上传中" : "相册")
+                            .font(.caption.bold())
+                    }
+                }
+                .padding(.horizontal, compact ? 8 : 10)
+                .padding(.vertical, 5)
+                .background(Color.primary.opacity(0.06))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(isUploading)
+        }
+        .onChange(of: selectedItems) { _, newItems in
+            guard !newItems.isEmpty else { return }
+            Task {
+                await uploadPickedItems(newItems)
+                selectedItems = []
+            }
+        }
+        .fullScreenCover(isPresented: $isPresentingCamera) {
+            CameraPhotoCapturePicker { rawData in
+                Task {
+                    await uploadRawData(rawData)
+                }
+            }
+            .ignoresSafeArea()
+        }
+        #else
         PhotosPicker(
             selection: $selectedItems,
             maxSelectionCount: 6,
@@ -121,17 +239,20 @@ struct ImageAttachPickerButton: View {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: "photo.badge.plus")
-                        .font(.system(size: 13.5, weight: .semibold))
+                        .font(.system(size: compact ? 13 : 13.5, weight: .semibold))
                 }
-                Text(isUploading ? "压缩中" : "附图")
-                    .font(.caption.bold())
+                if !compact {
+                    Text(isUploading ? "压缩中" : "附图")
+                        .font(.caption.bold())
+                }
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, compact ? 8 : 10)
             .padding(.vertical, 5)
             .background(Color.primary.opacity(0.06))
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+        .disabled(isUploading)
         .onChange(of: selectedItems) { _, newItems in
             guard !newItems.isEmpty else { return }
             Task {
@@ -139,27 +260,67 @@ struct ImageAttachPickerButton: View {
                 selectedItems = []
             }
         }
+        #endif
     }
+
+    #if os(iOS)
+    private func openCameraWithPermissionCheck() {
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            store.showBanner("📷 当前设备不支持相机拍摄，请点击「相册」选择图片")
+            return
+        }
+        let status = AVCaptureDevice.authorizationStatus(for: .video)
+        switch status {
+        case .authorized:
+            isPresentingCamera = true
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                Task { @MainActor in
+                    if granted {
+                        isPresentingCamera = true
+                    } else {
+                        store.showBanner("⚠️ 未授予相机权限，请在系统设置中开启相机访问")
+                    }
+                }
+            }
+        default:
+            store.showBanner("⚠️ 相机权限已关闭，请前往系统「设置 > TraceTodo」开启相机权限")
+        }
+    }
+    #endif
 
     private func uploadPickedItems(_ items: [PhotosPickerItem]) async {
         isUploading = true
         defer { isUploading = false }
         for item in items {
-            guard let rawData = try? await item.loadTransferable(type: Data.self),
-                  let compressed = ImageClientCompressor.compress(rawData: rawData) else {
+            guard let rawData = try? await item.loadTransferable(type: Data.self) else {
                 continue
             }
-            do {
-                let uploaded = try await store.client.uploadMedia(
-                    imageBase64: compressed.mainBase64,
-                    thumbBase64: compressed.thumbBase64,
-                    width: compressed.width,
-                    height: compressed.height
-                )
-                pendingMedia.append(uploaded.media)
-            } catch {
-                store.showBanner("图片上传失败：\(error.localizedDescription)")
-            }
+            await uploadSingleRawData(rawData)
+        }
+    }
+
+    private func uploadRawData(_ rawData: Data) async {
+        isUploading = true
+        defer { isUploading = false }
+        await uploadSingleRawData(rawData)
+    }
+
+    private func uploadSingleRawData(_ rawData: Data) async {
+        guard let compressed = ImageClientCompressor.compress(rawData: rawData) else {
+            store.showBanner("图片压缩解析失败")
+            return
+        }
+        do {
+            let uploaded = try await store.client.uploadMedia(
+                imageBase64: compressed.mainBase64,
+                thumbBase64: compressed.thumbBase64,
+                width: compressed.width,
+                height: compressed.height
+            )
+            pendingMedia.append(uploaded.media)
+        } catch {
+            store.showBanner("图片上传失败：\(error.localizedDescription)")
         }
     }
 }

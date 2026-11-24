@@ -16,6 +16,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.text.InputType;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -47,6 +48,7 @@ import android.widget.Toast;
 
 import org.json.JSONObject;
 
+import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.ArrayList;
@@ -63,6 +65,8 @@ public class MainActivity extends Activity {
     private static final int REQ_FILE_CHOOSER = 1001;
     private static final int REQ_WEB_PERMISSIONS = 1002;
     private static final int REQ_POST_NOTIF = 1003;
+    private static final int REQ_CAMERA_CAPTURE = 1004;
+    private static final int REQ_CAMERA_CAPTURE_PERM = 1005;
 
     private FrameLayout rootLayout;
     private WebView webView;
@@ -72,6 +76,8 @@ public class MainActivity extends Activity {
 
     private ValueCallback<Uri[]> fileUploadCallback;
     private PermissionRequest pendingWebPermissionRequest;
+    private File pendingCameraFile = null;
+    private Uri pendingCameraUri = null;
 
     private String currentBaseUrl = "https://todo.531party.cn";
     private boolean triedFallbackOnColdLoad = false;
@@ -360,7 +366,7 @@ public class MainActivity extends Activity {
         ws.setCacheMode(WebSettings.LOAD_DEFAULT);
         ws.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         String origUa = ws.getUserAgentString();
-        ws.setUserAgentString((origUa != null ? origUa : "") + " TraceTodoAndroid/1.4.3");
+        ws.setUserAgentString((origUa != null ? origUa : "") + " TraceTodoAndroid/1.4.4");
 
         webView.addJavascriptInterface(new NativeBridge(), "TraceTodoNative");
 
@@ -459,6 +465,16 @@ public class MainActivity extends Activity {
                     fileUploadCallback.onReceiveValue(null);
                 }
                 fileUploadCallback = filePathCallback;
+
+                boolean captureRequested = fileChooserParams != null && fileChooserParams.isCaptureEnabled();
+                if (captureRequested) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                            && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                        requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_CAMERA_CAPTURE_PERM);
+                        return true;
+                    }
+                    return launchNativeCameraCapture();
+                }
 
                 Intent contentIntent = new Intent(Intent.ACTION_GET_CONTENT);
                 contentIntent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -858,9 +874,48 @@ public class MainActivity extends Activity {
         }
     }
 
+    private boolean launchNativeCameraCapture() {
+        try {
+            pendingCameraFile = CameraFileProvider.prepareCaptureFile(this);
+            pendingCameraUri = CameraFileProvider.getUriForFile(this, pendingCameraFile);
+            Intent captureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+            captureIntent.putExtra(MediaStore.EXTRA_OUTPUT, pendingCameraUri);
+            captureIntent.setClipData(ClipData.newRawUri("", pendingCameraUri));
+            captureIntent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivityForResult(captureIntent, REQ_CAMERA_CAPTURE);
+            return true;
+        } catch (Throwable e) {
+            Toast.makeText(this, "无法打开系统相机，请从相册选择图片", Toast.LENGTH_SHORT).show();
+            if (fileUploadCallback != null) {
+                fileUploadCallback.onReceiveValue(null);
+                fileUploadCallback = null;
+            }
+            pendingCameraFile = null;
+            pendingCameraUri = null;
+            return false;
+        }
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_CAMERA_CAPTURE) {
+            if (fileUploadCallback != null) {
+                Uri[] results = null;
+                if (resultCode == Activity.RESULT_OK) {
+                    if (pendingCameraFile != null && pendingCameraFile.exists() && pendingCameraFile.length() > 0 && pendingCameraUri != null) {
+                        results = new Uri[]{pendingCameraUri};
+                    } else if (data != null && data.getData() != null) {
+                        results = new Uri[]{data.getData()};
+                    }
+                }
+                fileUploadCallback.onReceiveValue(results);
+                fileUploadCallback = null;
+            }
+            pendingCameraFile = null;
+            pendingCameraUri = null;
+            return;
+        }
         if (requestCode == REQ_FILE_CHOOSER) {
             if (fileUploadCallback == null) return;
             Uri[] results = null;
@@ -883,6 +938,21 @@ public class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_CAMERA_CAPTURE_PERM) {
+            boolean granted = grantResults != null
+                    && grantResults.length > 0
+                    && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            if (granted && fileUploadCallback != null) {
+                launchNativeCameraCapture();
+            } else {
+                Toast.makeText(this, "未授予相机权限，无法直接拍摄照片", Toast.LENGTH_SHORT).show();
+                if (fileUploadCallback != null) {
+                    fileUploadCallback.onReceiveValue(null);
+                    fileUploadCallback = null;
+                }
+            }
+            return;
+        }
         if (requestCode == REQ_WEB_PERMISSIONS && pendingWebPermissionRequest != null) {
             boolean allGranted = grantResults != null && grantResults.length > 0;
             if (grantResults != null) {
@@ -920,7 +990,7 @@ public class MainActivity extends Activity {
         String closeModalJs = "(function(){"
                 + "var fo=document.getElementById('focusOverlay');"
                 + "if(fo&&fo.open){if(typeof exitImmersiveLock==='function')exitImmersiveLock();else fo.close();return 'closed';}"
-                + "var ids=['confirmDialogModal','mediaLightboxModal','noteDetailModal','detailModal','prefsModal','calSlotModal','countdownEditorModal','askFloatPanel'];"
+                + "var ids=['mobileImageSourceModal','confirmDialogModal','mediaLightboxModal','noteDetailModal','detailModal','prefsModal','calSlotModal','countdownEditorModal','askFloatPanel'];"
                 + "for(var i=0;i<ids.length;i++){"
                 + "  var el=document.getElementById(ids[i]);"
                 + "  if(el&&el.classList.contains('open')){el.classList.remove('open');return 'closed';}"

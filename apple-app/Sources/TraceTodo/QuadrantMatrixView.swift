@@ -3,63 +3,80 @@ import SwiftUI
 struct QuickCaptureBar: View {
     @EnvironmentObject var store: TodoStore
     @State private var inputText: String = ""
+    @State private var pendingMedia: [MediaAttachmentModel] = []
 
     var body: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "sparkles")
-                    .foregroundStyle(Color.purple)
-                TextField("一句话极速录入（如：周五前把支付告警修好 / 我已买好婚庆用品）...", text: $inputText)
-                    .textFieldStyle(.plain)
-                    .onSubmit { submit() }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(store.activeTheme.primaryColor)
+                    TextField("一句话极速录入（支持拍照/附图与语音）...", text: $inputText)
+                        .textFieldStyle(.plain)
+                        .onSubmit { submit() }
 
-                VoiceMicButton(text: $inputText, compact: true)
+                    ImageAttachPickerButton(pendingMedia: $pendingMedia, compact: true)
+                    VoiceMicButton(text: $inputText, compact: true)
 
-                if store.isBusy {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Button("AI 录入") { submit() }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    if store.isBusy {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Button("AI 录入") { submit() }
+                            .buttonStyle(.borderedProminent)
+                            .tint(store.activeTheme.primaryColor)
+                            .disabled(
+                                inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                && pendingMedia.isEmpty
+                            )
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.background)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(store.activeTheme.primaryColor.opacity(0.32), lineWidth: 1.2)
+                )
+
+                Button {
+                    store.isPresentingNewTaskSheet = true
+                } label: {
+                    Label("新建", systemImage: "plus")
+                        .font(.subheadline.bold())
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 10)
+                        .background(
+                            LinearGradient(
+                                colors: [store.activeTheme.primaryFillColor, store.activeTheme.accentColor],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .foregroundStyle(.white)
+                        .clipShape(Capsule())
+                        .shadow(color: store.activeTheme.primaryColor.opacity(0.22), radius: 5, y: 2)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if !pendingMedia.isEmpty {
+                MediaThumbnailGridView(media: pendingMedia) { item in
+                    pendingMedia.removeAll { $0.mediaId == item.mediaId }
+                    Task { try? await store.client.deleteMedia(mediaId: item.mediaId) }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.background)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.purple.opacity(0.32), lineWidth: 1.2)
-            )
-
-            Button {
-                store.isPresentingNewTaskSheet = true
-            } label: {
-                Label("新建任务", systemImage: "plus")
-                    .font(.subheadline.bold())
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(
-                        LinearGradient(
-                            colors: [Color(red: 0.66, green: 0.33, blue: 0.97), Color(red: 0.49, green: 0.23, blue: 0.93)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .foregroundStyle(.white)
-                    .clipShape(Capsule())
-                    .shadow(color: Color.purple.opacity(0.22), radius: 5, y: 2)
-            }
-            .buttonStyle(.plain)
         }
     }
 
     private func submit() {
         let text = inputText
+        let mediaIds = pendingMedia.map(\.mediaId)
         inputText = ""
+        pendingMedia = []
         dismissAppKeyboard()
-        Task { await store.submitQuickNote(text) }
+        Task { await store.submitQuickNote(text, mediaIds: mediaIds) }
     }
 }
 
