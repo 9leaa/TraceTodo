@@ -880,6 +880,16 @@ class ApiDispatcher:
                 )
                 return 200, out_sched
 
+            if method == "GET" and path == "/api/calendar/holidays/status":
+                return 200, self.container.holiday_manager.get_status()
+
+            if method == "POST" and path == "/api/calendar/holidays/sync":
+                self._check_rate_limit(user=user, space_id=space_id, client_ip=client_ip)
+                sync_report = self.container.holiday_manager.sync_remote_years(force=True)
+                if sync_report.get("updated"):
+                    self.container.sync_tracker.bump(space_id, reason="holiday_sync")
+                return 200, sync_report
+
             if method == "GET" and path == "/api/countdowns/list":
                 return 200, self.container.countdown_service.list_countdowns(space_id=space_id)
 
