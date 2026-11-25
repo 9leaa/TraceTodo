@@ -11,6 +11,15 @@ class TraceMemoryError(Exception):
     """Base domain error."""
 
 
+class StructuredOutputError(TraceMemoryError):
+    """The provider returned a response that does not satisfy the JSON contract."""
+
+    def __init__(self, reason: str, message: str, tokens_used: int) -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.tokens_used = tokens_used
+
+
 class ValidationError(TraceMemoryError, ValueError):
     """Raised when schema, field, or domain protocol validation fails.
 

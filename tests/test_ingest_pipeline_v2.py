@@ -12,6 +12,7 @@ import unittest
 
 from trace_memory.config import TraceMemoryConfig
 from trace_memory.container import AppContainer
+from trace_memory.domain.exceptions import StructuredOutputError
 from trace_memory.domain.proposals import ChangeProposal, TraceMemoryError
 from trace_memory.llm.mock_provider import DeterministicLLMProvider
 from trace_memory.llm.protocol import ExtractedCandidate, ExtractionBatch
@@ -134,6 +135,34 @@ class _PipelineBase(unittest.TestCase):
 
 
 class PipelineV2Test(_PipelineBase):
+    def test_json_format_failure_retries_the_same_note(self) -> None:
+        def extract(_window):
+            if len(self.llm.calls) == 1:
+                raise StructuredOutputError("non_object", "Expected a JSON object", 8)
+            return [_task("整理季度复盘")]
+
+        self.llm.script["整理季度复盘"] = extract
+        self.start(ingest_max_retries=2)
+        queued = self.send("整理季度复盘")
+        self.idle()
+
+        job = self.app.job_repo.get_job(queued.job_id)
+        self.assertEqual(job["attempts"], 2)
+        self.assertEqual(job["note_id"], queued.note.note_id)
+        self.assertEqual(job["result"]["extraction_status"], "completed")
+        self.assertEqual(len(_tasks(self.app)), 1)
+        count = self.app.db.query_one("SELECT count(*) AS n FROM raw_notes WHERE space_id='v2'")
+        self.assertEqual(count["n"], 1)
+        errors = [
+            run for run in self.app.trace_repo.list_traces("v2")
+            if run["operation"] == "ingest_format_error"
+        ]
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0]["details"], {
+            "note_id": queued.note.note_id, "reason": "non_object", "will_retry": True,
+        })
+        self.assertEqual(errors[0]["tokens_used"], 8)
+
     def test_update_while_first_still_extracting_yields_one_card(self) -> None:
         self._script_meeting()
         gate = threading.Event()

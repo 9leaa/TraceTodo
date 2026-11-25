@@ -10,6 +10,7 @@ import re
 import time
 from typing import Any, Callable
 
+from trace_memory.domain.exceptions import TraceMemoryError
 from trace_memory.domain.memories import MemoryItem
 from trace_memory.domain.notes import RawNote
 from trace_memory.domain.proposals import ValidationError
@@ -194,6 +195,34 @@ class AskReAct:
         if parsed is None:
             if stop_reason != "unexpected_tool_call":
                 stop_reason = "invalid_answer"
+            round_event["status"] = stop_reason
+            retry_event: dict[str, Any] = {"round": calls + 1, "purpose": "answer_format_retry"}
+            rounds.append(retry_event)
+            retry_messages = [*messages, {
+                "role": "user",
+                "content": (
+                    "上一轮输出格式无效。请基于原问题和已有证据重新作答。"
+                    "只输出一个包含 answer、cited_memory_ids、cited_note_ids、"
+                    "has_sufficient_evidence 的合法 JSON 对象。"
+                    "请正确转义答案文本中的双引号，不要调用工具。"
+                ),
+            }]
+            started = time.perf_counter()
+            calls += 1
+            try:
+                retry = self.model.ask_turn(retry_messages, [], allow_tools=False)
+                tokens += retry.tokens_used
+                retry_event["tokens_used"] = retry.tokens_used
+                if not retry.message.get("tool_calls"):
+                    parsed = _parse_ask_answer(retry.message.get("content"))
+                retry_event["status"] = "recovered" if parsed is not None else "invalid_answer"
+            except (TraceMemoryError, OSError, RuntimeError, ValueError) as exc:
+                retry_event.update(status="error", error_type=type(exc).__name__)
+            retry_event["duration_ms"] = round((time.perf_counter() - started) * 1000, 2)
+            if parsed is not None:
+                stop_reason = f"{stop_reason}_recovered"
+
+        if parsed is None:
             parsed = {
                 "answer": "本次未能生成可验证的答案。",
                 "cited_memory_ids": [],

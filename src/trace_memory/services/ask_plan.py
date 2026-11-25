@@ -21,6 +21,7 @@ class AskPlan:
     questions: tuple[str, ...]
     tools: tuple[PlannedTool, ...] = ()
     mode: str = "direct"
+    format_error: str | None = None
 
     @classmethod
     def parse(cls, data: dict[str, Any], available_tools: set[str]) -> AskPlan:
@@ -53,6 +54,7 @@ class AskPlan:
     def to_trace(self) -> dict[str, Any]:
         return {
             "status": self.mode,
+            **({"format_error": self.format_error} if self.format_error else {}),
             "questions": [
                 {"question_id": f"q{i}", "query": q}
                 for i, q in enumerate(self.questions, 1)

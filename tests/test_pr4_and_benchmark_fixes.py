@@ -160,9 +160,11 @@ class TestPR4AndBenchmarkFixes(unittest.TestCase):
                     ],
                     "usage": {"total_tokens": 13},
                 }
-            # Recovery turn must omit `tools` (non-tool pure JSON mode) and include tool_note in user prompt
+            # Recovery uses pure JSON mode and keeps the original tool observation.
             self.assertNotIn("tools", payload)
-            self.assertIn("note_from_tool", payload["messages"][1]["content"])
+            tool_messages = [m for m in payload["messages"] if m["role"] == "tool"]
+            self.assertEqual(len(tool_messages), 1)
+            self.assertIn("note_from_tool", tool_messages[0]["content"])
             return {
                 "choices": [
                     {

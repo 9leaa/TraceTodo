@@ -67,7 +67,7 @@ class TestAskReAct(unittest.TestCase):
         self.addCleanup(self.app.close)
         self.api = ApiDispatcher(self.app)
 
-    def ask(self, question, *turns):
+    def ask(self, question, *turns, planner_content=None):
         payloads = []
 
         def reply(_url, _api_key, payload, **_options):
@@ -75,7 +75,7 @@ class TestAskReAct(unittest.TestCase):
             if len(payloads) == 1:
                 self.assertNotIn("tools", payload)
                 return {
-                    "choices": [{"message": {"content": json.dumps({
+                    "choices": [{"message": {"content": planner_content or json.dumps({
                         "questions": [question], "tool_calls": [],
                     })}}],
                     "usage": {"total_tokens": 10},
@@ -91,6 +91,48 @@ class TestAskReAct(unittest.TestCase):
         self.assertEqual(trace["llm_calls"], len(payloads))
         self.assertEqual(trace["tokens_used"], len(payloads) * 10)
         return result, payloads[1:], trace["details"]
+
+    def test_non_object_planner_falls_back_without_another_planner_call(self):
+        question = "我在哪里拍了那张照片？"
+        result, _, trace = self.ask(
+            question, _response(), planner_content=json.dumps([
+                {"role": "user", "content": question},
+            ]),
+        )
+        self.assertEqual(result["answer"], "42")
+        pipeline = trace["pipeline"]
+        self.assertEqual(pipeline["planning"]["status"], "fallback")
+        self.assertEqual(pipeline["planning"]["format_error"], "non_object")
+        self.assertEqual(pipeline["retrievals"][0]["query"], question)
+        self.assertEqual(pipeline["initial_tools"], [])
+
+    def test_answer_with_unescaped_quotes_retries_only_generation(self):
+        malformed = _response()
+        malformed["choices"][0]["message"]["content"] = (
+            '{"answer":"主墙上挂的是"湘江夜语"","has_sufficient_evidence":true}'
+        )
+        result, payloads, trace = self.ask(
+            "测试数值是什么", _response(calls=[_tool_call("call_1")]), malformed,
+            _response(answer="73841", notes=["note_test"]),
+        )
+        self.assertEqual(result["answer"], "73841")
+        self.assertEqual(self.executions, [("qa", {})])
+        self.assertNotIn("tools", payloads[-1])
+        self.assertEqual(payloads[-1]["messages"][:-1], payloads[-2]["messages"])
+        self.assertEqual(trace["stop_reason"], "invalid_answer_recovered")
+        self.assertEqual(trace["pipeline"]["react"]["rounds"][-1]["status"], "recovered")
+
+    def test_tool_calls_in_content_are_never_executed(self):
+        malformed = _response()
+        malformed["choices"][0]["message"]["content"] = json.dumps([_tool_call("call_1")])
+        result, payloads, trace = self.ask(
+            "测试数值是什么", malformed, _response(calls=[_tool_call("call_2")]),
+        )
+        self.assertFalse(result["has_sufficient_evidence"])
+        self.assertEqual(result["answer"], "本次未能生成可验证的答案。")
+        self.assertEqual(self.executions, [])
+        self.assertNotIn("tools", payloads[-1])
+        self.assertEqual(trace["stop_reason"], "invalid_answer")
 
     def test_direct_answer_with_tools_is_one_react_call(self):
         initial = RawNote(note_id="note_initial", space_id="qa", content="测试数值是 42")

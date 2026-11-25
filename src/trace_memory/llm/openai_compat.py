@@ -21,6 +21,7 @@ import urllib.error
 from urllib.parse import urlsplit
 import urllib.request
 
+from trace_memory.domain.exceptions import StructuredOutputError
 from trace_memory.domain.memories import MemoryItem, parse_iso_datetime
 from trace_memory.domain.notes import (
     RawNote,
@@ -475,18 +476,30 @@ class OpenAICompatLLMProvider:
             {"role": "user", "content": user_prompt},
         ])
         raw_content = turn.message.get("content")
-        if raw_content is None:
-            raise TraceMemoryError("LLM API returned empty message content")
-        content = str(raw_content).strip()
+        if isinstance(raw_content, dict):
+            return raw_content, turn.tokens_used
+        if raw_content is None or isinstance(raw_content, str) and not raw_content.strip():
+            raise StructuredOutputError(
+                "empty_content", "LLM API returned empty message content", turn.tokens_used
+            )
+        if not isinstance(raw_content, str):
+            raise StructuredOutputError(
+                "non_object", "LLM API returned non-object structured JSON", turn.tokens_used
+            )
+        content = raw_content.strip()
         # Strip optional markdown code fences if returned by compatible providers
         if content.startswith("```"):
             content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.DOTALL).strip()
         try:
             parsed = json.loads(content)
         except json.JSONDecodeError as exc:
-            raise TraceMemoryError(f"LLM API returned invalid JSON content: {exc}") from exc
+            raise StructuredOutputError(
+                "invalid_json", f"LLM API returned invalid JSON content: {exc}", turn.tokens_used
+            ) from exc
         if not isinstance(parsed, dict):
-            raise TraceMemoryError("LLM API returned non-object structured JSON")
+            raise StructuredOutputError(
+                "non_object", "LLM API returned non-object structured JSON", turn.tokens_used
+            )
         return parsed, turn.tokens_used
 
     def ask_turn(
@@ -496,6 +509,8 @@ class OpenAICompatLLMProvider:
         *,
         allow_tools: bool,
     ) -> AskTurn:
+        if not tools:
+            return self._chat_turn(messages)
         return self._chat_turn(
             messages, tools=tools, tool_choice="auto" if allow_tools else "none"
         )
