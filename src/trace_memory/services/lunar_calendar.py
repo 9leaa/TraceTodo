@@ -863,6 +863,7 @@ def describe_calendar_day(
 
     hol_mgr = holiday_mgr if holiday_mgr is not None else HolidayScheduleManager()
     hol_status, hol_name = hol_mgr.get_holiday_info(solar)
+    is_off_day = hol_status == "rest" or (solar.weekday() >= 5 and hol_status != "work")
 
     return {
         "lunar_month_cn": lu.month_cn,
@@ -875,4 +876,5 @@ def describe_calendar_day(
         "calendar_sub_kind": sub_kind,
         "holiday_status": hol_status,
         "holiday_name": hol_name,
+        "is_off_day": is_off_day,
     }
