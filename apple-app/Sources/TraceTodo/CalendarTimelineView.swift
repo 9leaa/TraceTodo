@@ -126,8 +126,51 @@ struct CalendarDayBucket: Codable, Identifiable, Hashable {
     let busyMinutes: Int
     let awakeFreeMinutes: Int
     let focusMinutes: Int
+    let lunarMonthCn: String?
+    let lunarDayCn: String?
+    let lunarShort: String?
+    let lunarFull: String?
+    let solarTerm: String?
+    let festivals: [String]?
+    let calendarSubLabel: String?
+    let calendarSubKind: String?
+    let holidayStatus: String?
+    let holidayName: String?
+    let isOffDay: Bool?
 
     var id: String { date }
+
+    var effectiveIsOffDay: Bool {
+        if let v = isOffDay { return v }
+        if holidayStatus == "rest" { return true }
+        if holidayStatus == "work" { return false }
+        return isWeekend
+    }
+
+    var tooltipSummary: String {
+        var parts: [String] = [date]
+        if let lf = lunarFull, !lf.isEmpty {
+            parts.append(lf)
+        } else if let ls = lunarShort, !ls.isEmpty {
+            parts.append("农历\(ls)")
+        }
+        if let st = solarTerm, !st.isEmpty {
+            parts.append("节气：\(st)")
+        }
+        if let fests = festivals, !fests.isEmpty {
+            parts.append("节日：\(fests.joined(separator: "、"))")
+        }
+        if holidayStatus == "rest" {
+            let name = (holidayName ?? "").isEmpty ? "休息日" : (holidayName ?? "休息日")
+            parts.append("法定休假：\(name)")
+        } else if holidayStatus == "work" {
+            let name = (holidayName ?? "").isEmpty ? "调休" : (holidayName ?? "调休")
+            parts.append("调休补班：\(name)")
+        } else if isWeekend {
+            parts.append("周末休息日")
+        }
+        return parts.joined(separator: " · ")
+    }
 
     enum CodingKeys: String, CodingKey {
         case date, year, month, day, weekday
@@ -143,6 +186,17 @@ struct CalendarDayBucket: Codable, Identifiable, Hashable {
         case busyMinutes = "busy_minutes"
         case awakeFreeMinutes = "awake_free_minutes"
         case focusMinutes = "focus_minutes"
+        case lunarMonthCn = "lunar_month_cn"
+        case lunarDayCn = "lunar_day_cn"
+        case lunarShort = "lunar_short"
+        case lunarFull = "lunar_full"
+        case solarTerm = "solar_term"
+        case festivals
+        case calendarSubLabel = "calendar_sub_label"
+        case calendarSubKind = "calendar_sub_kind"
+        case holidayStatus = "holiday_status"
+        case holidayName = "holiday_name"
+        case isOffDay = "is_off_day"
     }
 }
 
@@ -203,6 +257,7 @@ struct CalendarOverviewResponse: Codable {
     let days: [CalendarDayBucket]
     let unscheduledTasks: [CalendarUnscheduledTask]
     let summary: CalendarSummaryStats
+    let todayLunarFull: String?
 
     enum CodingKeys: String, CodingKey {
         case spaceId = "space_id"
@@ -216,6 +271,7 @@ struct CalendarOverviewResponse: Codable {
         case days
         case unscheduledTasks = "unscheduled_tasks"
         case summary
+        case todayLunarFull = "today_lunar_full"
     }
 }
 
@@ -508,11 +564,74 @@ struct CalendarTimelineView: View {
         }
     }
 
+    private var offDayRedColor: Color {
+        store.activeTheme.isDark
+            ? Color(red: 0.98, green: 0.44, blue: 0.52)
+            : Color(red: 0.88, green: 0.11, blue: 0.28)
+    }
+
+    private var solarTermTealColor: Color {
+        store.activeTheme.isDark
+            ? Color(red: 0.18, green: 0.83, blue: 0.75)
+            : Color(red: 0.05, green: 0.58, blue: 0.53)
+    }
+
+    @ViewBuilder
+    private func holidayMicroBadge(_ status: String?) -> some View {
+        if status == "rest" {
+            Text("休")
+                .font(.system(size: 8.5, weight: .bold))
+                .padding(.horizontal, 3.5)
+                .padding(.vertical, 0.5)
+                .background(offDayRedColor.opacity(0.15))
+                .foregroundStyle(offDayRedColor)
+                .clipShape(RoundedRectangle(cornerRadius: 3.5, style: .continuous))
+        } else if status == "work" {
+            Text("班")
+                .font(.system(size: 8.5, weight: .bold))
+                .padding(.horizontal, 3.5)
+                .padding(.vertical, 0.5)
+                .background(Color.orange.opacity(0.18))
+                .foregroundStyle(store.activeTheme.isDark ? Color(red: 0.99, green: 0.75, blue: 0.25) : Color(red: 0.76, green: 0.36, blue: 0.04))
+                .clipShape(RoundedRectangle(cornerRadius: 3.5, style: .continuous))
+        }
+    }
+
+    @ViewBuilder
+    private func calendarSubLabelText(_ d: CalendarDayBucket, size: CGFloat = 9.5) -> some View {
+        let sub = (d.calendarSubLabel ?? "").isEmpty ? (d.lunarDayCn ?? "") : (d.calendarSubLabel ?? "")
+        if !sub.isEmpty {
+            let kind = d.calendarSubKind ?? "lunar_day"
+            let fg: Color = {
+                switch kind {
+                case "festival":
+                    return offDayRedColor
+                case "solar_term":
+                    return solarTermTealColor
+                case "festival_minor":
+                    return store.activeTheme.primaryColor
+                case "lunar_month":
+                    return .primary.opacity(0.82)
+                default:
+                    return .secondary
+                }
+            }()
+            Text(sub)
+                .font(.system(size: size, weight: (kind == "festival" || kind == "solar_term" || kind == "lunar_month") ? .bold : .medium))
+                .underline(kind == "lunar_month")
+                .foregroundStyle(fg)
+                .lineLimit(1)
+        }
+    }
+
     @ViewBuilder
     private var statsStrip: some View {
         if let s = overview?.summary {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
+                    if let lunarFull = overview?.todayLunarFull, !lunarFull.isEmpty {
+                        statChip("🏮 \(lunarFull)")
+                    }
                     statChip("📌 已排期 \(s.totalScheduledTasks) 项 (\(String(format: "%.1f", s.totalBusyHours))h)")
                     statChip("🍅 专注轨迹 \(s.totalFocusSessions) 次 (\(s.totalFocusMinutes)m)")
                     statChip("📥 待排期池 \(s.unscheduledCount) 项")
@@ -577,12 +696,20 @@ struct CalendarTimelineView: View {
     private func weekDayHeaderCell(_ d: CalendarDayBucket) -> some View {
         let busyH = Double(d.busyMinutes) / 60.0
         let freeH = Double(d.awakeFreeMinutes) / 60.0
+        let offDay = d.effectiveIsOffDay
         return VStack(spacing: 2) {
-            Text("\(d.weekdayLabel)\(d.isToday ? "·今" : "")")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(d.isToday ? store.activeTheme.primaryColor : .secondary)
-            Text("\(d.month)/\(d.day)")
-                .font(.system(size: 14, weight: .heavy, design: .rounded))
+            HStack(spacing: 3) {
+                Text("\(d.weekdayLabel)\(d.isToday ? "·今" : "")")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(d.isToday ? store.activeTheme.primaryColor : (offDay ? offDayRedColor : .secondary))
+                holidayMicroBadge(d.holidayStatus)
+            }
+            HStack(spacing: 4) {
+                Text("\(d.month)/\(d.day)")
+                    .font(.system(size: 14, weight: .heavy, design: .rounded))
+                    .foregroundStyle(offDay ? offDayRedColor : (d.isToday ? store.activeTheme.primaryColor : .primary))
+                calendarSubLabelText(d, size: 9.5)
+            }
             Text("忙\(String(format: "%.1f", busyH))h 闲\(String(format: "%.0f", freeH))h")
                 .font(.system(size: 9.5))
                 .foregroundStyle(.secondary)
@@ -595,7 +722,7 @@ struct CalendarTimelineView: View {
         }
         .frame(width: 106)
         .padding(.vertical, 6)
-        .background(d.isToday ? store.activeTheme.primaryColor.opacity(0.10) : Color.clear)
+        .background(d.isToday ? store.activeTheme.primaryColor.opacity(0.10) : (d.holidayStatus == "rest" ? offDayRedColor.opacity(0.05) : Color.clear))
         .overlay(alignment: .bottom) {
             if d.date == selectedDate {
                 Rectangle()
@@ -603,6 +730,7 @@ struct CalendarTimelineView: View {
                     .frame(height: 2.5)
             }
         }
+        .help(d.tooltipSummary)
         .contentShape(Rectangle())
         .onTapGesture {
             selectedDate = d.date
@@ -849,21 +977,32 @@ struct CalendarTimelineView: View {
 
         VStack(alignment: .leading, spacing: 8) {
             LazyVGrid(columns: cols, spacing: 6) {
-                ForEach(weekdays, id: \.self) { wd in
+                ForEach(Array(weekdays.enumerated()), id: \.offset) { idx, wd in
                     Text(wd)
                         .font(.caption2.bold())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(idx >= 5 ? offDayRedColor : .secondary)
                         .frame(maxWidth: .infinity)
                 }
 
                 ForEach(days) { d in
                     let count = d.allDayTasks.count + d.timedBlocks.count
                     let isSel = d.date == selectedDate
-                    VStack(alignment: .leading, spacing: 3) {
+                    let offDay = d.effectiveIsOffDay
+                    VStack(alignment: .leading, spacing: 2.5) {
                         HStack(spacing: 3) {
                             Text("\(d.day)")
-                                .font(.system(size: 12, weight: d.isToday ? .heavy : .semibold))
-                                .foregroundStyle(d.isToday ? store.activeTheme.primaryColor : .primary)
+                                .font(.system(size: 13, weight: (d.isToday || offDay) ? .heavy : .semibold, design: .rounded))
+                                .foregroundStyle(offDay ? offDayRedColor : (d.isToday ? store.activeTheme.primaryColor : .primary))
+                            holidayMicroBadge(d.holidayStatus)
+                            if d.isToday {
+                                Text("今")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .padding(.horizontal, 3.5)
+                                    .padding(.vertical, 0.5)
+                                    .background(store.activeTheme.primaryColor)
+                                    .foregroundStyle(.white)
+                                    .clipShape(RoundedRectangle(cornerRadius: 3.5, style: .continuous))
+                            }
                             Spacer(minLength: 0)
                             if d.focusMinutes > 0 {
                                 Text("🍅").font(.system(size: 9))
@@ -877,6 +1016,8 @@ struct CalendarTimelineView: View {
                                     .foregroundStyle(store.activeTheme.primaryColor)
                             }
                         }
+
+                        calendarSubLabelText(d, size: 9.5)
 
                         if let cd = d.countdowns.first {
                             Text("\(cd.icon)\(cd.title)")
@@ -926,14 +1067,19 @@ struct CalendarTimelineView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(6)
-                    .frame(minHeight: 68, alignment: .topLeading)
-                    .background(d.isToday ? store.activeTheme.primaryColor.opacity(0.08) : Color.primary.opacity(0.02))
+                    .frame(minHeight: 76, alignment: .topLeading)
+                    .background(
+                        d.isToday
+                            ? store.activeTheme.primaryColor.opacity(0.09)
+                            : (d.holidayStatus == "rest" ? offDayRedColor.opacity(0.045) : Color.primary.opacity(0.02))
+                    )
                     .opacity(d.isCurrentMonth ? 1.0 : 0.42)
                     .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .stroke(isSel ? store.activeTheme.primaryColor : Color.primary.opacity(0.07), lineWidth: isSel ? 2 : 1)
+                            .stroke(isSel ? store.activeTheme.primaryColor : (d.isToday ? store.activeTheme.primaryColor.opacity(0.6) : Color.primary.opacity(0.07)), lineWidth: isSel ? 2 : 1)
                     )
+                    .help(d.tooltipSummary)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         selectedDate = d.date
@@ -1026,12 +1172,43 @@ struct CalendarTimelineView: View {
     private var selectedDayAndUnscheduledSection: some View {
         let dayItems = buildSelectedDayAgendaItems()
         let unscheduled = overview?.unscheduledTasks ?? []
+        let selectedBucket = (overview?.days ?? []).first(where: { $0.date == selectedDate })
 
         return VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("📅 \(selectedDate) 排期详情 (\(dayItems.count) 项 · 轻点看详情 / 原地修改)")
+                HStack(spacing: 6) {
+                    Text("📅 \(selectedDate) 排期详情 (\(dayItems.count) 项)")
                         .font(.subheadline.bold())
+                    if let sb = selectedBucket {
+                        if let ls = sb.lunarShort, !ls.isEmpty {
+                            Text("农历\(ls)")
+                                .font(.caption2.bold())
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.primary.opacity(0.07))
+                                .foregroundStyle(.secondary)
+                                .clipShape(Capsule())
+                        }
+                        if let st = sb.solarTerm, !st.isEmpty {
+                            Text("🌱 \(st)")
+                                .font(.caption2.bold())
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(solarTermTealColor.opacity(0.14))
+                                .foregroundStyle(solarTermTealColor)
+                                .clipShape(Capsule())
+                        }
+                        if let fests = sb.festivals, let firstFest = fests.first, !firstFest.isEmpty {
+                            Text("🎊 \(firstFest)")
+                                .font(.caption2.bold())
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(offDayRedColor.opacity(0.14))
+                                .foregroundStyle(offDayRedColor)
+                                .clipShape(Capsule())
+                        }
+                        holidayMicroBadge(sb.holidayStatus)
+                    }
                     Spacer()
                     Button("+ 添加时段") {
                         slotTarget = CalendarSlotTarget(date: selectedDate, hour: 10, isAllDay: false)
