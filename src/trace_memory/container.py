@@ -27,6 +27,7 @@ from trace_memory.services.guard_service import (
 from trace_memory.services.ingest_pipeline import IngestPipelineV2
 from trace_memory.services.ingest_queue import IngestJobRepository, IngestWorkerPool
 from trace_memory.services.ingest_service import IngestService
+from trace_memory.services.lunar_calendar import HolidayScheduleManager
 from trace_memory.services.markdown_sync import MarkdownSyncService
 from trace_memory.services.media_service import MediaAttachmentService
 from trace_memory.services.memo_journal_service import MemoAndJournalService
@@ -89,6 +90,7 @@ class AppContainer:
     focus_service: FocusService
     voice_service: VoiceTranscriptionService
     media_service: MediaAttachmentService
+    holiday_manager: HolidayScheduleManager
     calendar_service: CalendarService
     countdown_service: CountdownService
     memo_journal_service: MemoAndJournalService
@@ -263,10 +265,12 @@ class AppContainer:
             retrieval_service=retrieval_service,
             trace_repo=trace_repo,
         )
+        holiday_manager = HolidayScheduleManager(data_dir=cfg.data_dir)
         daily_scheduler = DailyTaskMaintenanceScheduler(
             db=db,
             task_matrix_service=task_matrix_service,
             sync_tracker=sync_tracker,
+            holiday_manager=holiday_manager,
         )
         focus_service = FocusService(
             db=db,
@@ -280,6 +284,7 @@ class AppContainer:
             memory_repo=memory_repo,
             task_matrix_service=task_matrix_service,
             countdown_provider=countdown_service.project_range,
+            holiday_manager=holiday_manager,
         )
         voice_service = VoiceTranscriptionService(config=cfg)
         if ask_tools is None:
@@ -365,6 +370,7 @@ class AppContainer:
             focus_service=focus_service,
             voice_service=voice_service,
             media_service=media_service,
+            holiday_manager=holiday_manager,
             calendar_service=calendar_service,
             countdown_service=countdown_service,
             memo_journal_service=memo_journal_service,

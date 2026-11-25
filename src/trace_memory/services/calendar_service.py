@@ -13,6 +13,11 @@ from typing import Any, Callable
 
 from trace_memory.domain.notes import BEIJING_TZ, beijing_now, beijing_today_date, to_beijing
 from trace_memory.domain.proposals import ValidationError
+from trace_memory.services.lunar_calendar import (
+    HolidayScheduleManager,
+    describe_calendar_day,
+    solar_to_lunar,
+)
 from trace_memory.services.task_matrix_service import (
     COLOR_THEMES,
     QUADRANT_LABELS,
@@ -128,11 +133,13 @@ class CalendarService:
         memory_repo: MemoryRepository,
         task_matrix_service: TaskMatrixService,
         countdown_provider: Callable[[str, date, date], dict[str, list[dict[str, Any]]]] | None = None,
+        holiday_manager: HolidayScheduleManager | None = None,
     ) -> None:
         self.db = db
         self.memory_repo = memory_repo
         self.task_matrix_service = task_matrix_service
         self.countdown_provider = countdown_provider
+        self.holiday_manager = holiday_manager or HolidayScheduleManager()
 
     def set_countdown_provider(
         self,
@@ -179,6 +186,7 @@ class CalendarService:
             cur_d = range_start + timedelta(days=offset)
             ymd = cur_d.isoformat()
             ordered_ymds.append(ymd)
+            cal_meta = describe_calendar_day(cur_d, self.holiday_manager)
             days_by_ymd[ymd] = {
                 "date": ymd,
                 "year": cur_d.year,
@@ -189,6 +197,7 @@ class CalendarService:
                 "is_today": cur_d == today_d,
                 "is_current_month": cur_d.month == anchor.month and cur_d.year == anchor.year,
                 "is_weekend": cur_d.weekday() >= 5,
+                **cal_meta,
                 "all_day_tasks": [],
                 "timed_blocks": [],
                 "focus_blocks": [],
@@ -439,6 +448,8 @@ class CalendarService:
             "view": clean_view,
             "anchor_date": anchor.isoformat(),
             "today_date": today_d.isoformat(),
+            "today_lunar_full": solar_to_lunar(today_d).full_label,
+            "holiday_sync": self.holiday_manager.get_status(),
             "now_minute": now_minute,
             "period_label": period_label,
             "range_start": start_ymd,

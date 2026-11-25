@@ -103,11 +103,13 @@ class DailyTaskMaintenanceScheduler:
         task_matrix_service: Any,
         sync_tracker: SpaceSyncTracker,
         check_interval_seconds: float = 3600.0,
+        holiday_manager: Any = None,
     ) -> None:
         self.db = db
         self.task_matrix_service = task_matrix_service
         self.sync_tracker = sync_tracker
         self.check_interval_seconds = max(60.0, float(check_interval_seconds))
+        self.holiday_manager = holiday_manager
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -147,8 +149,10 @@ class DailyTaskMaintenanceScheduler:
         self,
         now: datetime | None = None,
         space_id: str | None = None,
+        *,
+        include_holiday_sync: bool = False,
     ) -> dict[str, Any]:
-        """Run rollover + due-date escalation check across all active spaces (or one space)."""
+        """Run rollover, due-date escalation, and monthly holiday schedule sync."""
         ref_now = to_beijing(now) if now is not None else beijing_now()
         if space_id:
             spaces = [space_id]
@@ -176,7 +180,20 @@ class DailyTaskMaintenanceScheduler:
                 touched_spaces.append(sp)
                 self.sync_tracker.bump(sp, reason="daily_due_check")
 
-        report = {
+        holiday_sync_report: dict[str, Any] | None = None
+        if self.holiday_manager is not None and (self._running or include_holiday_sync):
+            try:
+                holiday_sync_report = self.holiday_manager.maybe_monthly_sync(now=ref_now)
+                if holiday_sync_report.get("updated"):
+                    sync_rows = self.db.query_all("SELECT DISTINCT space_id FROM space_sync_state")
+                    notify_spaces = set(spaces) | {str(r["space_id"]) for r in sync_rows} | {"default"}
+                    for n_sp in sorted(notify_spaces):
+                        if n_sp:
+                            self.sync_tracker.bump(n_sp, reason="monthly_holiday_sync")
+            except Exception as exc:
+                holiday_sync_report = {"skipped": False, "updated": False, "error": str(exc)[:120]}
+
+        report: dict[str, Any] = {
             "checked_spaces": len(spaces),
             "touched_spaces": touched_spaces,
             "failed_spaces": failed_spaces,
@@ -185,6 +202,8 @@ class DailyTaskMaintenanceScheduler:
             "beijing_date": beijing_today_date(ref_now),
             "server_time": ref_now.replace(microsecond=0).isoformat(),
         }
+        if holiday_sync_report is not None:
+            report["holiday_sync"] = holiday_sync_report
         self.last_run_report = report
         return report
 

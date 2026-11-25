@@ -8,6 +8,7 @@
     android:padding="12dp">
 
     <LinearLayout
+        android:id="@+id/cal_widget_left_panel"
         android:layout_width="104dp"
         android:layout_height="match_parent"
         android:background="@drawable/widget_calendar_grad"
@@ -68,6 +69,7 @@
             android:orientation="horizontal">
 
             <TextView
+                android:id="@+id/cal_widget_right_title"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"

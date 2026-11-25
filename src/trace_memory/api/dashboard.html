@@ -2046,6 +2046,12 @@
       color: var(--muted);
       padding: 4px 0;
     }
+    .cal-weekday-hdr.is-weekend {
+      color: #e11d48;
+    }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .cal-weekday-hdr.is-weekend {
+      color: #fb7185;
+    }
     .cal-day-cell {
       min-height: 76px;
       border-radius: 10px;
@@ -2060,8 +2066,90 @@
     }
     .cal-day-cell:hover { border-color: var(--primary); }
     .cal-day-cell.is-other { opacity: 0.42; }
+    .cal-day-cell.is-rest-day:not(.is-today) {
+      background: linear-gradient(180deg, rgba(225, 29, 72, 0.045), var(--surface) 46%);
+    }
+    .cal-day-cell.is-work-day:not(.is-today) {
+      background: linear-gradient(180deg, rgba(245, 158, 11, 0.055), var(--surface) 46%);
+    }
     .cal-day-cell.is-today { border-color: var(--primary); background: var(--primary-soft); }
     .cal-day-cell.is-selected { box-shadow: 0 0 0 2px var(--primary); }
+    .cal-day-num {
+      color: var(--heading);
+      font-weight: 800;
+    }
+    .cal-day-num.is-offday {
+      color: #dc2626;
+    }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .cal-day-num.is-offday {
+      color: #f87185;
+    }
+    .cal-sub-lbl {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+      line-height: 1.2;
+    }
+    .cal-sub-lbl.is-festival {
+      color: #e11d48;
+      font-weight: 750;
+    }
+    .cal-sub-lbl.is-solar-term {
+      color: #0d9488;
+      font-weight: 700;
+    }
+    .cal-sub-lbl.is-festival-minor {
+      color: var(--primary);
+      font-weight: 650;
+    }
+    .cal-sub-lbl.is-lunar-month {
+      color: var(--heading);
+      font-weight: 750;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .cal-sub-lbl.is-festival {
+      color: #fb7185;
+    }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .cal-sub-lbl.is-solar-term {
+      color: #2dd4bf;
+    }
+    .cal-hol-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9.5px;
+      font-weight: 800;
+      line-height: 1.25;
+      padding: 1px 4px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .cal-hol-badge.is-rest {
+      background: rgba(225, 29, 72, 0.13);
+      color: #e11d48;
+    }
+    .cal-hol-badge.is-work {
+      background: rgba(245, 158, 11, 0.18);
+      color: #b45309;
+    }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .cal-hol-badge.is-rest {
+      background: rgba(251, 113, 133, 0.22);
+      color: #fb7185;
+    }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .cal-hol-badge.is-work {
+      background: rgba(245, 158, 11, 0.24);
+      color: #fbbf24;
+    }
+    @media (max-width: 680px) {
+      .cal-day-cell { padding: 4px 3.5px; min-height: 66px; }
+      .cal-sub-lbl { font-size: 9px; }
+      .cal-hol-badge { font-size: 8.5px; padding: 0 3px; }
+    }
     .cal-task-dot {
       font-size: 10.5px;
       padding: 2px 5px;
@@ -10973,11 +11061,62 @@
       paintCalendarOverview(res);
     }
 
+    function _calSubClass(kind) {
+      if (kind === 'festival') return 'is-festival';
+      if (kind === 'solar_term') return 'is-solar-term';
+      if (kind === 'festival_minor') return 'is-festival-minor';
+      if (kind === 'lunar_month') return 'is-lunar-month';
+      return '';
+    }
+
+    function renderCalSubLabelHtml(d) {
+      const lbl = (d?.calendar_sub_label || d?.lunar_day_cn || '').trim();
+      if (!lbl) return '';
+      return `<span class="cal-sub-lbl ${_calSubClass(d?.calendar_sub_kind)}" title="${esc(fmtCalDayTooltip(d))}">${esc(lbl)}</span>`;
+    }
+
+    function renderCalHolidayBadgeHtml(d) {
+      const st = d?.holiday_status || '';
+      if (st === 'rest') {
+        const title = d.holiday_name ? `${d.holiday_name}（法定休假）` : '法定休假';
+        return `<span class="cal-hol-badge is-rest" title="${esc(title)}">休</span>`;
+      }
+      if (st === 'work') {
+        const title = d.holiday_name ? `${d.holiday_name}（调休补班）` : '调休上班';
+        return `<span class="cal-hol-badge is-work" title="${esc(title)}">班</span>`;
+      }
+      return '';
+    }
+
+    function fmtCalDayTooltip(d) {
+      if (!d) return '';
+      const parts = [d.date];
+      if (d.lunar_full) parts.push(d.lunar_full);
+      if (d.solar_term) parts.push(`节气：${d.solar_term}`);
+      if (Array.isArray(d.festivals) && d.festivals.length) parts.push(`节日：${d.festivals.join('、')}`);
+      if (d.holiday_status === 'rest') parts.push(`${d.holiday_name || '节假日'}（法定休假）`);
+      else if (d.holiday_status === 'work') parts.push(`${d.holiday_name || '调休'}（调休补班）`);
+      return parts.join(' · ');
+    }
+
     function paintCalendarOverview(data) {
       const summary = data.summary || {};
       const days = data.days || [];
       document.getElementById('calPeriodHeading').textContent = `${data.period_label || ''} · ${_calSubView === 'week' ? '周时间轴' : '月全景'}`;
-      document.getElementById('calSelectedDateLabel').textContent = `选中：${_calSelectedDate}`;
+      const selDayObj = days.find(d => d.date === _calSelectedDate);
+      const selEl = document.getElementById('calSelectedDateLabel');
+      if (selEl) {
+        if (selDayObj) {
+          const lunarShort = selDayObj.lunar_short ? ` · 农历${selDayObj.lunar_short}` : '';
+          const festExtra = (selDayObj.festivals && selDayObj.festivals.length)
+            ? ` · ${selDayObj.festivals.slice(0, 2).join('·')}`
+            : (selDayObj.solar_term ? ` · ${selDayObj.solar_term}` : '');
+          selEl.innerHTML = `选中：${esc(_calSelectedDate)}${esc(lunarShort)}${esc(festExtra)} ${renderCalHolidayBadgeHtml(selDayObj)}`;
+          selEl.title = fmtCalDayTooltip(selDayObj);
+        } else {
+          selEl.textContent = `选中：${_calSelectedDate}`;
+        }
+      }
       const statsEl = document.getElementById('calSummaryStatsBar');
       if (statsEl) {
         statsEl.innerHTML = `
@@ -10994,7 +11133,6 @@
       }
 
       // Selected day agenda (merge calendar day bucket items + loaded task objects, with inline quick edit)
-      const selDayObj = days.find(d => d.date === _calSelectedDate);
       const agendaItems = [];
       const seenAgendaIds = new Set();
       if (selDayObj) {
@@ -11049,7 +11187,16 @@
         });
       }
       const focusExtra = selDayObj && selDayObj.focus_minutes > 0 ? ` · 🍅 专注 ${selDayObj.focus_minutes}m` : '';
-      document.getElementById('calDayAgendaTitle').textContent = `📅 ${_calSelectedDate} 排期详情 (${agendaItems.length} 项${focusExtra})`;
+      const selLunarExtra = selDayObj?.lunar_short ? ` · 农历${selDayObj.lunar_short}` : '';
+      const selTermFest = selDayObj
+        ? ((selDayObj.festivals && selDayObj.festivals.length)
+          ? ` · ${selDayObj.festivals.slice(0, 2).join('、')}`
+          : (selDayObj.solar_term ? ` · ${selDayObj.solar_term}` : ''))
+        : '';
+      const agendaTitleEl = document.getElementById('calDayAgendaTitle');
+      if (agendaTitleEl) {
+        agendaTitleEl.innerHTML = `📅 ${esc(_calSelectedDate)} 排期详情${esc(selLunarExtra)}${esc(selTermFest)} ${renderCalHolidayBadgeHtml(selDayObj)} (${agendaItems.length} 项${esc(focusExtra)})`;
+      }
       document.getElementById('calDayAgendaList').innerHTML = agendaItems.length
         ? agendaItems.map(it => renderCalendarAgendaOrInlineEditor(it, true)).join('')
         : `<div style="color:var(--muted);font-size:13px;padding:14px 4px;">当日暂无排期事项，点击上方空白小时格或右侧「+ 添加时段事项」即可一键排期。</div>`;
@@ -11181,10 +11328,17 @@
         const busyH = Math.round((d.busy_minutes || 0) / 6) / 10;
         const freeAwakeH = Math.round((d.awake_free_minutes ?? 840) / 6) / 10;
         const cdPills = (d.countdowns || []).slice(0, 1).map(c => `<div style="font-size:9.5px;color:var(--primary);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(c.title)}">${esc(c.icon || '⏳')} ${esc(c.title)}</div>`).join('');
+        const holBadge = renderCalHolidayBadgeHtml(d);
+        const subHtml = renderCalSubLabelHtml(d);
+        const isOffDay = Boolean(d.is_off_day ?? (d.holiday_status === 'rest' || (d.is_weekend && d.holiday_status !== 'work')));
         hdrHtml += `
-          <div class="cal-week-hdr-cell ${d.is_today ? 'is-today' : ''}" style="${isSel ? 'box-shadow:inset 0 -2.5px 0 var(--primary);' : ''}" onclick="selectCalendarDate('${d.date}')">
-            <div style="font-size:11px;color:${d.is_today ? 'var(--primary)' : 'var(--muted)'};font-weight:700;">${esc(d.weekday_label)}${d.is_today ? ' · 今' : ''}</div>
-            <div style="font-size:15px;font-weight:800;margin:1px 0;">${d.month}/${d.day}</div>
+          <div class="cal-week-hdr-cell ${d.is_today ? 'is-today' : ''}" title="${esc(fmtCalDayTooltip(d))}" style="${isSel ? 'box-shadow:inset 0 -2.5px 0 var(--primary);' : ''}" onclick="selectCalendarDate('${d.date}')">
+            <div style="display:flex;align-items:center;justify-content:center;gap:4px;font-size:11px;color:${d.is_today ? 'var(--primary)' : (isOffDay ? '#e11d48' : 'var(--muted)')};font-weight:700;">
+              <span>${esc(d.weekday_label)}${d.is_today ? ' · 今' : ''}</span>${holBadge}
+            </div>
+            <div style="display:flex;align-items:baseline;justify-content:center;gap:4px;margin:1px 0;min-width:0;">
+              <span class="cal-day-num ${isOffDay ? 'is-offday' : ''}" style="font-size:15px;">${d.month}/${d.day}</span>${subHtml}
+            </div>
             <div style="font-size:10px;color:var(--muted);">忙 ${busyH}h · 闲 ${freeAwakeH}h${d.note_count ? ` · 📝${d.note_count}` : ''}</div>
             ${cdPills}
           </div>
@@ -11560,7 +11714,7 @@
       document.getElementById('calMonthTitle').textContent = periodLabel || '日历月视图';
 
       const weekdays = ['一', '二', '三', '四', '五', '六', '日'];
-      let html = weekdays.map(w => `<div class="cal-weekday-hdr">周${w}</div>`).join('');
+      let html = weekdays.map((w, idx) => `<div class="cal-weekday-hdr ${idx >= 5 ? 'is-weekend' : ''}">周${w}</div>`).join('');
 
       for (const d of days) {
         const isSel = d.date === _calSelectedDate;
@@ -11577,13 +11731,20 @@
         }).join('');
         const more = allItems.length > 3 ? `<div style="font-size:10px;color:var(--muted);">+${allItems.length - 3} 项</div>` : '';
         const cdBadges = (d.countdowns || []).slice(0, 1).map(c => `<div style="font-size:10px;color:var(--primary);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(c.title)}">${esc(c.icon || '⏳')} ${esc(c.title)}</div>`).join('');
+        const isOffDay = Boolean(d.is_off_day ?? (d.holiday_status === 'rest' || (d.is_weekend && d.holiday_status !== 'work')));
+        const holClass = isOffDay ? 'is-rest-day' : (d.holiday_status === 'work' ? 'is-work-day' : '');
+        const holBadge = renderCalHolidayBadgeHtml(d);
+        const subHtml = renderCalSubLabelHtml(d);
         html += `
-          <div class="cal-day-cell ${!d.is_current_month ? 'is-other' : ''} ${d.is_today ? 'is-today' : ''} ${isSel ? 'is-selected' : ''}"
+          <div class="cal-day-cell ${!d.is_current_month ? 'is-other' : ''} ${holClass} ${d.is_today ? 'is-today' : ''} ${isSel ? 'is-selected' : ''}"
+               title="${esc(fmtCalDayTooltip(d))}"
                onclick="selectCalendarDate('${d.date}')"
                ondblclick="openSlotScheduleModal('${d.date}', 9, false)">
-            <div style="display:flex;justify-content:space-between;align-items:center;font-size:11.5px;font-weight:700;">
-              <span>${d.day}</span>
-              <span style="display:flex;gap:4px;align-items:center;font-size:10px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:4px;font-size:11.5px;font-weight:700;">
+              <span style="display:inline-flex;align-items:center;gap:3px;min-width:0;flex-wrap:wrap;">
+                <span class="cal-day-num ${isOffDay ? 'is-offday' : ''}">${d.day}</span>${holBadge}${subHtml}
+              </span>
+              <span style="display:flex;gap:3px;align-items:center;font-size:10px;flex-shrink:0;">
                 ${d.focus_minutes ? `<span title="专注 ${d.focus_minutes}m">🍅</span>` : ''}
                 ${d.note_count ? `<span title="随记/日记 ${d.note_count} 条">📝</span>` : ''}
                 ${allItems.length ? `<span style="color:var(--primary);">${allItems.length}</span>` : ''}
