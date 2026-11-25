@@ -52,7 +52,7 @@ class TraceMemoryConfig:
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key: str = ""
     llm_model: str = "gpt-4o-mini"
-    vision_model: str = "qwen-vl-plus"
+    vision_model: str = "qwen3.8-omni-flash"
     asr_model: str = "whisper-1"
     embedding_model: str = "text-embedding-3-small"
     llm_timeout_seconds: float = 30.0
@@ -160,7 +160,7 @@ class TraceMemoryConfig:
             openai_base_url=_get("TRACE_MEMORY_OPENAI_BASE_URL", "https://api.openai.com/v1"),
             openai_api_key=env.get("TRACE_MEMORY_OPENAI_API_KEY", ""),
             llm_model=_get("TRACE_MEMORY_LLM_MODEL", "gpt-4o-mini"),
-            vision_model=_get("TRACE_MEMORY_VISION_MODEL", "qwen-vl-plus"),
+            vision_model=_get("TRACE_MEMORY_VISION_MODEL", "qwen3.8-omni-flash"),
             asr_model=_get("TRACE_MEMORY_ASR_MODEL", "whisper-1"),
             embedding_model=_get("TRACE_MEMORY_EMBEDDING_MODEL", "text-embedding-3-small"),
             vector_only_min_score=float(

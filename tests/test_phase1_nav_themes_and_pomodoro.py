@@ -29,11 +29,11 @@ class TestPhase1NavThemesAndPreferences(unittest.TestCase):
         self.container.close()
         self._tmp.cleanup()
 
-    def test_default_vision_model_is_qwen_vl_plus(self) -> None:
-        self.assertEqual(self.cfg.vision_model, "qwen-vl-plus")
+    def test_default_vision_model_is_qwen3_8_omni_flash(self) -> None:
+        self.assertEqual(self.cfg.vision_model, "qwen3.8-omni-flash")
         code, health = self.api.dispatch("GET", "/api/health")
         self.assertEqual(code, 200)
-        self.assertEqual(health["vision_model"], "qwen-vl-plus")
+        self.assertEqual(health["vision_model"], "qwen3.8-omni-flash")
 
     def test_preferences_theme_and_feature_toggles_lifecycle(self) -> None:
         code, init_prefs = self.api.dispatch("GET", "/api/preferences", {"space_id": ["alice"]})

@@ -4,7 +4,7 @@ Anti-bloat & security guarantees:
 - Binary image files live strictly on disk (`data/uploads/{safe_space_id}/`), NEVER in SQLite.
 - Validates real image magic bytes (JPEG / PNG / WebP / GIF) to prevent polyglot/HTML XSS uploads.
 - Enforces per-file size cap and per-space storage quota (`space_media_quota_mb`).
-- Extracts visual Caption + OCR via `TRACE_MEMORY_VISION_MODEL` (default `qwen-vl-plus`) or
+- Extracts visual Caption + OCR via `TRACE_MEMORY_VISION_MODEL` (default `qwen3.8-omni-flash`) or
   deterministic offline mock fallback, indexing into FTS5 + Vector Store.
 - Physically deletes disk image + thumbnail files when parent `RawNote` or `MemoryItem` is forgotten.
 """
@@ -393,7 +393,7 @@ class MediaAttachmentService:
     def _call_remote_vlm(self, image_bytes: bytes, mime_type: str) -> tuple[str, str, int]:
         b64 = base64.b64encode(image_bytes).decode("ascii")
         base = self.config.openai_base_url.rstrip("/")
-        model = (self.config.vision_model or "qwen-vl-plus").strip()
+        model = (self.config.vision_model or "qwen3.8-omni-flash").strip()
         payload: dict[str, Any] = {
             "model": model,
             "temperature": 0.1,
