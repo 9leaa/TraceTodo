@@ -2046,6 +2046,12 @@
       color: var(--muted);
       padding: 4px 0;
     }
+    .cal-weekday-hdr.is-weekend {
+      color: #e11d48;
+    }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .cal-weekday-hdr.is-weekend {
+      color: #fb7185;
+    }
     .cal-day-cell {
       min-height: 76px;
       border-radius: 10px;
@@ -2061,13 +2067,23 @@
     .cal-day-cell:hover { border-color: var(--primary); }
     .cal-day-cell.is-other { opacity: 0.42; }
     .cal-day-cell.is-rest-day:not(.is-today) {
-      background: linear-gradient(180deg, rgba(16, 185, 129, 0.055), var(--surface) 46%);
+      background: linear-gradient(180deg, rgba(225, 29, 72, 0.045), var(--surface) 46%);
     }
     .cal-day-cell.is-work-day:not(.is-today) {
       background: linear-gradient(180deg, rgba(245, 158, 11, 0.055), var(--surface) 46%);
     }
     .cal-day-cell.is-today { border-color: var(--primary); background: var(--primary-soft); }
     .cal-day-cell.is-selected { box-shadow: 0 0 0 2px var(--primary); }
+    .cal-day-num {
+      color: var(--heading);
+      font-weight: 800;
+    }
+    .cal-day-num.is-offday {
+      color: #dc2626;
+    }
+    :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .cal-day-num.is-offday {
+      color: #f87185;
+    }
     .cal-sub-lbl {
       font-size: 10px;
       font-weight: 600;
@@ -2114,16 +2130,16 @@
       flex-shrink: 0;
     }
     .cal-hol-badge.is-rest {
-      background: rgba(16, 185, 129, 0.16);
-      color: #059669;
+      background: rgba(225, 29, 72, 0.13);
+      color: #e11d48;
     }
     .cal-hol-badge.is-work {
       background: rgba(245, 158, 11, 0.18);
       color: #b45309;
     }
     :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .cal-hol-badge.is-rest {
-      background: rgba(16, 185, 129, 0.24);
-      color: #34d399;
+      background: rgba(251, 113, 133, 0.22);
+      color: #fb7185;
     }
     :is([data-theme="deep_forest"], [data-theme="nebula"], [data-theme="cyber"], [data-theme="polar"], [data-theme="velvet_noir"], [data-theme="obsidian_gold"]) .cal-hol-badge.is-work {
       background: rgba(245, 158, 11, 0.24);
@@ -11314,13 +11330,14 @@
         const cdPills = (d.countdowns || []).slice(0, 1).map(c => `<div style="font-size:9.5px;color:var(--primary);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(c.title)}">${esc(c.icon || '⏳')} ${esc(c.title)}</div>`).join('');
         const holBadge = renderCalHolidayBadgeHtml(d);
         const subHtml = renderCalSubLabelHtml(d);
+        const isOffDay = Boolean(d.is_off_day ?? (d.holiday_status === 'rest' || (d.is_weekend && d.holiday_status !== 'work')));
         hdrHtml += `
           <div class="cal-week-hdr-cell ${d.is_today ? 'is-today' : ''}" title="${esc(fmtCalDayTooltip(d))}" style="${isSel ? 'box-shadow:inset 0 -2.5px 0 var(--primary);' : ''}" onclick="selectCalendarDate('${d.date}')">
-            <div style="display:flex;align-items:center;justify-content:center;gap:4px;font-size:11px;color:${d.is_today ? 'var(--primary)' : 'var(--muted)'};font-weight:700;">
+            <div style="display:flex;align-items:center;justify-content:center;gap:4px;font-size:11px;color:${d.is_today ? 'var(--primary)' : (isOffDay ? '#e11d48' : 'var(--muted)')};font-weight:700;">
               <span>${esc(d.weekday_label)}${d.is_today ? ' · 今' : ''}</span>${holBadge}
             </div>
             <div style="display:flex;align-items:baseline;justify-content:center;gap:4px;margin:1px 0;min-width:0;">
-              <span style="font-size:15px;font-weight:800;">${d.month}/${d.day}</span>${subHtml}
+              <span class="cal-day-num ${isOffDay ? 'is-offday' : ''}" style="font-size:15px;">${d.month}/${d.day}</span>${subHtml}
             </div>
             <div style="font-size:10px;color:var(--muted);">忙 ${busyH}h · 闲 ${freeAwakeH}h${d.note_count ? ` · 📝${d.note_count}` : ''}</div>
             ${cdPills}
@@ -11697,7 +11714,7 @@
       document.getElementById('calMonthTitle').textContent = periodLabel || '日历月视图';
 
       const weekdays = ['一', '二', '三', '四', '五', '六', '日'];
-      let html = weekdays.map(w => `<div class="cal-weekday-hdr">周${w}</div>`).join('');
+      let html = weekdays.map((w, idx) => `<div class="cal-weekday-hdr ${idx >= 5 ? 'is-weekend' : ''}">周${w}</div>`).join('');
 
       for (const d of days) {
         const isSel = d.date === _calSelectedDate;
@@ -11714,7 +11731,8 @@
         }).join('');
         const more = allItems.length > 3 ? `<div style="font-size:10px;color:var(--muted);">+${allItems.length - 3} 项</div>` : '';
         const cdBadges = (d.countdowns || []).slice(0, 1).map(c => `<div style="font-size:10px;color:var(--primary);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(c.title)}">${esc(c.icon || '⏳')} ${esc(c.title)}</div>`).join('');
-        const holClass = d.holiday_status === 'rest' ? 'is-rest-day' : (d.holiday_status === 'work' ? 'is-work-day' : '');
+        const isOffDay = Boolean(d.is_off_day ?? (d.holiday_status === 'rest' || (d.is_weekend && d.holiday_status !== 'work')));
+        const holClass = isOffDay ? 'is-rest-day' : (d.holiday_status === 'work' ? 'is-work-day' : '');
         const holBadge = renderCalHolidayBadgeHtml(d);
         const subHtml = renderCalSubLabelHtml(d);
         html += `
@@ -11724,7 +11742,7 @@
                ondblclick="openSlotScheduleModal('${d.date}', 9, false)">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:4px;font-size:11.5px;font-weight:700;">
               <span style="display:inline-flex;align-items:center;gap:3px;min-width:0;flex-wrap:wrap;">
-                <span>${d.day}</span>${holBadge}${subHtml}
+                <span class="cal-day-num ${isOffDay ? 'is-offday' : ''}">${d.day}</span>${holBadge}${subHtml}
               </span>
               <span style="display:flex;gap:3px;align-items:center;font-size:10px;flex-shrink:0;">
                 ${d.focus_minutes ? `<span title="专注 ${d.focus_minutes}m">🍅</span>` : ''}

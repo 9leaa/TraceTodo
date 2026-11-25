@@ -79,6 +79,12 @@ class LunarSolarTermsFestivalsTest(unittest.TestCase):
         self.assertEqual(val["calendar_sub_label"], "情人节")
         self.assertEqual(val["calendar_sub_kind"], "festival_minor")
         self.assertEqual(val["holiday_status"], "work")  # 2026-02-14 is Spring Festival make-up workday
+        self.assertFalse(val["is_off_day"])  # Weekend make-up workday must NOT be marked off-day/red
+
+        # Normal weekend (2026-11-28 Saturday) & weekday statutory rest day (2026-10-01 Thursday) -> is_off_day=True
+        self.assertTrue(describe_calendar_day(date(2026, 11, 28))["is_off_day"])
+        self.assertTrue(describe_calendar_day(date(2026, 10, 1))["is_off_day"])
+        self.assertFalse(describe_calendar_day(date(2026, 11, 25))["is_off_day"])
 
         xmas = describe_calendar_day(date(2026, 12, 25))
         self.assertIn("圣诞节", xmas["festivals"])
