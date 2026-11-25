@@ -154,8 +154,16 @@ public class CalendarWidgetProvider extends AppWidgetProvider {
         Calendar cal = Calendar.getInstance();
         int monthNum = cal.get(Calendar.MONTH) + 1;
         int dayNum = cal.get(Calendar.DAY_OF_MONTH);
+        int dow = cal.get(Calendar.DAY_OF_WEEK);
         String[] wds = new String[]{"周日", "周一", "周二", "周三", "周四", "周五", "周六"};
-        String wdLabel = wds[Math.max(0, Math.min(6, cal.get(Calendar.DAY_OF_WEEK) - 1))];
+        String wdLabel = wds[Math.max(0, Math.min(6, dow - 1))];
+        boolean isWeekend = (dow == Calendar.SUNDAY || dow == Calendar.SATURDAY);
+        String lunarShort = "";
+        String subLabel = "";
+        String solarTerm = "";
+        String festLabel = "";
+        String holidayStatus = "";
+        boolean isOffDay = isWeekend;
         int totalToday = 0;
         int focusMins = 0;
         String[] rows = new String[3];
@@ -182,6 +190,21 @@ public class CalendarWidgetProvider extends AppWidgetProvider {
                         String w = todayObj.optString("weekday_label", "");
                         if (!w.trim().isEmpty()) wdLabel = w.trim();
                         focusMins = todayObj.optInt("focus_minutes", 0);
+
+                        isWeekend = todayObj.optBoolean("is_weekend", isWeekend);
+                        lunarShort = todayObj.optString("lunar_short", "").trim();
+                        subLabel = todayObj.optString("calendar_sub_label", "").trim();
+                        solarTerm = todayObj.optString("solar_term", "").trim();
+                        holidayStatus = todayObj.optString("holiday_status", "").trim();
+                        JSONArray fests = todayObj.optJSONArray("festivals");
+                        if (fests != null && fests.length() > 0) {
+                            festLabel = fests.optString(0, "").trim();
+                        }
+                        if (todayObj.has("is_off_day") && !todayObj.isNull("is_off_day")) {
+                            isOffDay = todayObj.optBoolean("is_off_day", isOffDay);
+                        } else {
+                            isOffDay = "rest".equals(holidayStatus) || (isWeekend && !"work".equals(holidayStatus));
+                        }
 
                         JSONArray timed = todayObj.optJSONArray("timed_blocks");
                         if (timed != null) {
@@ -218,18 +241,39 @@ public class CalendarWidgetProvider extends AppWidgetProvider {
             }
         }
 
+        String holSuffix = "rest".equals(holidayStatus) ? " · 休" : ("work".equals(holidayStatus) ? " · 班" : "");
+        String lunarLine = "";
+        if (!lunarShort.isEmpty()) {
+            lunarLine = "农历" + lunarShort;
+            String extraTag = !festLabel.isEmpty() ? festLabel : solarTerm;
+            if (!extraTag.isEmpty()) {
+                lunarLine += " · " + extraTag;
+            }
+        } else if (!subLabel.isEmpty()) {
+            lunarLine = subLabel;
+        }
+        String summaryText = !lunarLine.isEmpty()
+                ? lunarLine
+                : (focusMins > 0 ? ("日程 " + totalToday + " · 专注 " + focusMins + "m") : ("今日 " + totalToday + " 项日程"));
+        String rightTitleText = focusMins > 0
+                ? ("今日日程 (" + totalToday + " · 专注" + focusMins + "m)")
+                : ("今日日程 (" + totalToday + " 项)");
+
         for (int i = 0; i < ids.length; i++) {
             RemoteViews rv = new RemoteViews(context.getPackageName(), R.layout.widget_calendar);
             rv.setOnClickPendingIntent(R.id.cal_widget_root, openCalPi);
             rv.setOnClickPendingIntent(R.id.cal_widget_open_btn, openCalPi);
             rv.setOnClickPendingIntent(R.id.cal_widget_refresh_btn, refreshPi);
 
-            rv.setTextViewText(R.id.cal_widget_month_wd, monthNum + "月 · " + wdLabel);
-            rv.setTextViewText(R.id.cal_widget_day_num, String.valueOf(dayNum));
-            rv.setTextViewText(
-                    R.id.cal_widget_summary,
-                    focusMins > 0 ? ("日程 " + totalToday + " · 专注 " + focusMins + "m") : ("今日 " + totalToday + " 项日程")
+            rv.setInt(
+                    R.id.cal_widget_left_panel,
+                    "setBackgroundResource",
+                    isOffDay ? R.drawable.widget_calendar_rest_grad : R.drawable.widget_calendar_grad
             );
+            rv.setTextViewText(R.id.cal_widget_month_wd, monthNum + "月 · " + wdLabel + holSuffix);
+            rv.setTextViewText(R.id.cal_widget_day_num, String.valueOf(dayNum));
+            rv.setTextViewText(R.id.cal_widget_summary, summaryText);
+            rv.setTextViewText(R.id.cal_widget_right_title, rightTitleText);
 
             if (!parsedOk && (needsLogin || !hasToken)) {
                 rv.setTextViewText(R.id.cal_widget_row_1, "🔐 轻点打开 TraceTodo 登录同步日程");

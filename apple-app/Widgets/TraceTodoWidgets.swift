@@ -1716,6 +1716,8 @@ struct WidgetCalendarDayDot: Identifiable, Hashable {
     let shortWeekday: String
     let isToday: Bool
     let hasEvents: Bool
+    let isOffDay: Bool
+    let subLabel: String
 }
 
 struct WidgetScheduleRow: Identifiable, Hashable {
@@ -1756,17 +1758,31 @@ private struct RawWidgetCalDayDTO: Decodable {
     let day: Int
     let weekdayLabel: String?
     let isToday: Bool?
+    let isWeekend: Bool?
     let focusMinutes: Int?
     let allDayTasks: [RawWidgetCalAllDayDTO]?
     let timedBlocks: [RawWidgetCalTimedDTO]?
+    let lunarShort: String?
+    let solarTerm: String?
+    let festivals: [String]?
+    let calendarSubLabel: String?
+    let holidayStatus: String?
+    let isOffDay: Bool?
 
     enum CodingKeys: String, CodingKey {
         case date, month, day
         case weekdayLabel = "weekday_label"
         case isToday = "is_today"
+        case isWeekend = "is_weekend"
         case focusMinutes = "focus_minutes"
         case allDayTasks = "all_day_tasks"
         case timedBlocks = "timed_blocks"
+        case lunarShort = "lunar_short"
+        case solarTerm = "solar_term"
+        case festivals
+        case calendarSubLabel = "calendar_sub_label"
+        case holidayStatus = "holiday_status"
+        case isOffDay = "is_off_day"
     }
 }
 
@@ -1812,6 +1828,9 @@ struct TraceCalendarEntry: TimelineEntry {
     let monthNumber: Int
     let dayNumber: Int
     let weekdayLabel: String
+    let lunarLabel: String
+    let holidayStatus: String
+    let isOffDay: Bool
     let focusMinutes: Int
     let unscheduledCount: Int
     let weekDays: [WidgetCalendarDayDot]
@@ -1825,12 +1844,16 @@ struct TraceCalendarEntry: TimelineEntry {
         let d = cal.component(.day, from: now)
         let wdNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
         let wdIdx = max(0, min(6, cal.component(.weekday, from: now) - 1))
+        let isTodayWknd = wdIdx == 0 || wdIdx == 6
         if needsLogin {
             return TraceCalendarEntry(
                 date: now,
                 monthNumber: m,
                 dayNumber: d,
                 weekdayLabel: wdNames[wdIdx],
+                lunarLabel: "",
+                holidayStatus: "",
+                isOffDay: isTodayWknd,
                 focusMinutes: 0,
                 unscheduledCount: 0,
                 weekDays: [],
@@ -1843,16 +1866,19 @@ struct TraceCalendarEntry: TimelineEntry {
             monthNumber: m,
             dayNumber: d,
             weekdayLabel: wdNames[wdIdx],
+            lunarLabel: "十月十七",
+            holidayStatus: "",
+            isOffDay: isTodayWknd,
             focusMinutes: 50,
             unscheduledCount: 2,
             weekDays: [
-                WidgetCalendarDayDot(id: "w1", dayNumber: max(1, d - 1), shortWeekday: "一", isToday: false, hasEvents: true),
-                WidgetCalendarDayDot(id: "w2", dayNumber: d, shortWeekday: "二", isToday: true, hasEvents: true),
-                WidgetCalendarDayDot(id: "w3", dayNumber: d + 1, shortWeekday: "三", isToday: false, hasEvents: true),
-                WidgetCalendarDayDot(id: "w4", dayNumber: d + 2, shortWeekday: "四", isToday: false, hasEvents: false),
-                WidgetCalendarDayDot(id: "w5", dayNumber: d + 3, shortWeekday: "五", isToday: false, hasEvents: true),
-                WidgetCalendarDayDot(id: "w6", dayNumber: d + 4, shortWeekday: "六", isToday: false, hasEvents: false),
-                WidgetCalendarDayDot(id: "w7", dayNumber: d + 5, shortWeekday: "日", isToday: false, hasEvents: false)
+                WidgetCalendarDayDot(id: "w1", dayNumber: max(1, d - 1), shortWeekday: "一", isToday: false, hasEvents: true, isOffDay: false, subLabel: "十六"),
+                WidgetCalendarDayDot(id: "w2", dayNumber: d, shortWeekday: "二", isToday: true, hasEvents: true, isOffDay: isTodayWknd, subLabel: "十七"),
+                WidgetCalendarDayDot(id: "w3", dayNumber: d + 1, shortWeekday: "三", isToday: false, hasEvents: true, isOffDay: false, subLabel: "十八"),
+                WidgetCalendarDayDot(id: "w4", dayNumber: d + 2, shortWeekday: "四", isToday: false, hasEvents: false, isOffDay: false, subLabel: "十九"),
+                WidgetCalendarDayDot(id: "w5", dayNumber: d + 3, shortWeekday: "五", isToday: false, hasEvents: true, isOffDay: false, subLabel: "二十"),
+                WidgetCalendarDayDot(id: "w6", dayNumber: d + 4, shortWeekday: "六", isToday: false, hasEvents: false, isOffDay: true, subLabel: "廿一"),
+                WidgetCalendarDayDot(id: "w7", dayNumber: d + 5, shortWeekday: "日", isToday: false, hasEvents: false, isOffDay: true, subLabel: "廿二")
             ],
             todaySchedules: [
                 WidgetScheduleRow(id: "s1", timeBadge: "09:30–11:00", title: "核心课题方案评审", isDone: false, isAllDay: false, colorTheme: "sky"),
@@ -1899,12 +1925,17 @@ struct TraceCalendarStaticProvider: TimelineProvider {
             let wdRaw = d.weekdayLabel ?? ""
             let shortWd = String(wdRaw.suffix(1))
             let cnt = (d.timedBlocks?.count ?? 0) + (d.allDayTasks?.count ?? 0)
+            let hol = d.holidayStatus ?? ""
+            let isOff = d.isOffDay ?? (hol == "rest" || ((d.isWeekend ?? false) && hol != "work"))
+            let sub = (d.calendarSubLabel ?? "").isEmpty ? (d.lunarShort ?? "") : (d.calendarSubLabel ?? "")
             return WidgetCalendarDayDot(
                 id: d.date,
                 dayNumber: d.day,
                 shortWeekday: shortWd.isEmpty ? "\(d.day)" : shortWd,
                 isToday: d.isToday ?? false,
-                hasEvents: cnt > 0
+                hasEvents: cnt > 0,
+                isOffDay: isOff,
+                subLabel: sub
             )
         }
 
@@ -1915,6 +1946,22 @@ struct TraceCalendarStaticProvider: TimelineProvider {
         let dayNum = todayBucket?.day ?? cal.component(.day, from: now)
         let wdLabel = todayBucket?.weekdayLabel ?? "今日"
         let focusMins = todayBucket?.focusMinutes ?? 0
+        let todayHol = todayBucket?.holidayStatus ?? ""
+        let wdIdx = max(0, min(6, cal.component(.weekday, from: now) - 1))
+        let localWknd = wdIdx == 0 || wdIdx == 6
+        let todayIsOff = todayBucket?.isOffDay ?? (todayHol == "rest" || ((todayBucket?.isWeekend ?? localWknd) && todayHol != "work"))
+        let lunarShort = todayBucket?.lunarShort ?? ""
+        let subLbl = todayBucket?.calendarSubLabel ?? ""
+        let solarTerm = todayBucket?.solarTerm ?? ""
+        let firstFest = todayBucket?.festivals?.first ?? ""
+        let extra = !firstFest.isEmpty ? firstFest : (!solarTerm.isEmpty ? solarTerm : "")
+        let lunarDisplay: String = {
+            if !lunarShort.isEmpty && !extra.isEmpty {
+                return "\(lunarShort) · \(extra)"
+            }
+            if !lunarShort.isEmpty { return lunarShort }
+            return subLbl
+        }()
 
         var schedules: [WidgetScheduleRow] = []
         if let timed = todayBucket?.timedBlocks {
@@ -1953,6 +2000,9 @@ struct TraceCalendarStaticProvider: TimelineProvider {
             monthNumber: monthNum,
             dayNumber: dayNum,
             weekdayLabel: wdLabel,
+            lunarLabel: lunarDisplay,
+            holidayStatus: todayHol,
+            isOffDay: todayIsOff,
             focusMinutes: focusMins,
             unscheduledCount: dto.unscheduledTasks?.count ?? 0,
             weekDays: weekDots,
@@ -2012,11 +2062,40 @@ struct TraceCalendarWidgetEntryView: View {
     @Environment(\.widgetFamily) private var family
     let entry: TraceCalendarEntry
 
+    private let offDayRed = Color(red: 0.88, green: 0.11, blue: 0.28)
+
     private let tealGradient = LinearGradient(
         colors: [Color(red: 0.05, green: 0.62, blue: 0.53), Color(red: 0.14, green: 0.48, blue: 0.89)],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
+
+    private let restCardGradient = LinearGradient(
+        colors: [Color(red: 0.88, green: 0.11, blue: 0.28), Color(red: 0.96, green: 0.32, blue: 0.44)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
+    @ViewBuilder
+    private func holPill(_ status: String) -> some View {
+        if status == "rest" {
+            Text("休")
+                .font(.system(size: 8.5, weight: .bold))
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(offDayRed.opacity(0.16))
+                .foregroundStyle(offDayRed)
+                .clipShape(RoundedRectangle(cornerRadius: 3.5, style: .continuous))
+        } else if status == "work" {
+            Text("班")
+                .font(.system(size: 8.5, weight: .bold))
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(Color.orange.opacity(0.20))
+                .foregroundStyle(Color(red: 0.80, green: 0.38, blue: 0.04))
+                .clipShape(RoundedRectangle(cornerRadius: 3.5, style: .continuous))
+        }
+    }
 
     var body: some View {
         switch family {
@@ -2040,14 +2119,18 @@ struct TraceCalendarWidgetEntryView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("\(entry.dayNumber)")
                     .font(.system(size: 28, weight: .heavy, design: .rounded))
-                    .foregroundStyle(Color(red: 0.06, green: 0.58, blue: 0.50))
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("\(entry.monthNumber)月 · \(entry.weekdayLabel)")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.secondary)
-                    Text("今日日程 \(entry.todaySchedules.count)")
+                    .foregroundStyle(entry.isOffDay ? offDayRed : Color(red: 0.06, green: 0.58, blue: 0.50))
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 4) {
+                        Text("\(entry.monthNumber)月 · \(entry.weekdayLabel)")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(entry.isOffDay ? offDayRed : .secondary)
+                        holPill(entry.holidayStatus)
+                    }
+                    Text(!entry.lunarLabel.isEmpty ? "农历\(entry.lunarLabel)" : "今日日程 \(entry.todaySchedules.count)")
                         .font(.system(size: 9.5, weight: .semibold))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }
@@ -2095,20 +2178,29 @@ struct TraceCalendarWidgetEntryView: View {
     }
 
     private var mediumCalView: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("\(entry.monthNumber)月 · \(entry.weekdayLabel)")
-                    .font(.system(size: 10.5, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.9))
+        let holSuffix = entry.holidayStatus == "rest" ? " · 休" : (entry.holidayStatus == "work" ? " · 班" : "")
+        return HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(entry.monthNumber)月 · \(entry.weekdayLabel)\(holSuffix)")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .lineLimit(1)
 
                 Text("\(entry.dayNumber)")
-                    .font(.system(size: 34, weight: .heavy, design: .rounded))
+                    .font(.system(size: 32, weight: .heavy, design: .rounded))
                     .foregroundStyle(.white)
+
+                if !entry.lunarLabel.isEmpty {
+                    Text("农历\(entry.lunarLabel)")
+                        .font(.system(size: 9.2, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.92))
+                        .lineLimit(1)
+                }
 
                 Spacer(minLength: 2)
 
                 Text(entry.focusMinutes > 0 ? "🍅 今日专注 \(entry.focusMinutes)m" : "📅 今日 \(entry.todaySchedules.count) 项日程")
-                    .font(.system(size: 9.8, weight: .semibold))
+                    .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.92))
                     .lineLimit(1)
 
@@ -2123,9 +2215,9 @@ struct TraceCalendarWidgetEntryView: View {
                 }
             }
             .padding(11)
-            .frame(width: 110)
+            .frame(width: 112)
             .frame(maxHeight: .infinity, alignment: .leading)
-            .background(tealGradient)
+            .background(entry.isOffDay ? restCardGradient : tealGradient)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
             VStack(alignment: .leading, spacing: 6) {
@@ -2135,17 +2227,17 @@ struct TraceCalendarWidgetEntryView: View {
                             VStack(spacing: 1) {
                                 Text(wd.shortWeekday)
                                     .font(.system(size: 8.5, weight: .semibold))
-                                    .foregroundStyle(wd.isToday ? Color.white : .secondary)
+                                    .foregroundStyle(wd.isToday ? Color.white : (wd.isOffDay ? offDayRed : .secondary))
                                 Text("\(wd.dayNumber)")
                                     .font(.system(size: 10, weight: .bold, design: .rounded))
-                                    .foregroundStyle(wd.isToday ? Color.white : .primary)
+                                    .foregroundStyle(wd.isToday ? Color.white : (wd.isOffDay ? offDayRed : .primary))
                                 Circle()
-                                    .fill(wd.isToday ? Color.white : (wd.hasEvents ? Color(red: 0.06, green: 0.62, blue: 0.53) : Color.clear))
+                                    .fill(wd.isToday ? Color.white : (wd.hasEvents ? (wd.isOffDay ? offDayRed : Color(red: 0.06, green: 0.62, blue: 0.53)) : Color.clear))
                                     .frame(width: 3.5, height: 3.5)
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 3)
-                            .background(wd.isToday ? Color(red: 0.06, green: 0.60, blue: 0.52) : Color.clear)
+                            .background(wd.isToday ? (wd.isOffDay ? offDayRed : Color(red: 0.06, green: 0.60, blue: 0.52)) : Color.clear)
                             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                         }
                     }
@@ -2192,9 +2284,19 @@ struct TraceCalendarWidgetEntryView: View {
     private var largeCalView: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("📅 TraceTodo · \(entry.monthNumber)月\(entry.dayNumber)日 \(entry.weekdayLabel)")
-                        .font(.system(size: 14, weight: .bold))
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 5) {
+                        Text("📅 \(entry.monthNumber)月\(entry.dayNumber)日 \(entry.weekdayLabel)")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(entry.isOffDay ? offDayRed : .primary)
+                        holPill(entry.holidayStatus)
+                        if !entry.lunarLabel.isEmpty {
+                            Text("农历\(entry.lunarLabel)")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
                     Text("今日日程 \(entry.todaySchedules.count) 项 · 待排期池 \(entry.unscheduledCount) 项 · 专注 \(entry.focusMinutes)m")
                         .font(.system(size: 10.5))
                         .foregroundStyle(.secondary)
@@ -2208,27 +2310,37 @@ struct TraceCalendarWidgetEntryView: View {
                 Link(destination: URL(string: "tracetodo://calendar")!) {
                     Image(systemName: "calendar.circle.fill")
                         .font(.title3)
-                        .foregroundStyle(Color(red: 0.06, green: 0.60, blue: 0.52))
+                        .foregroundStyle(entry.isOffDay ? offDayRed : Color(red: 0.06, green: 0.60, blue: 0.52))
                 }
             }
 
             if !entry.weekDays.isEmpty {
                 HStack(spacing: 5) {
                     ForEach(entry.weekDays) { wd in
-                        VStack(spacing: 2) {
+                        VStack(spacing: 1.5) {
                             Text(wd.shortWeekday)
                                 .font(.system(size: 9.5, weight: .semibold))
-                                .foregroundStyle(wd.isToday ? Color.white : .secondary)
+                                .foregroundStyle(wd.isToday ? Color.white : (wd.isOffDay ? offDayRed : .secondary))
                             Text("\(wd.dayNumber)")
                                 .font(.system(size: 12, weight: .bold, design: .rounded))
-                                .foregroundStyle(wd.isToday ? Color.white : .primary)
+                                .foregroundStyle(wd.isToday ? Color.white : (wd.isOffDay ? offDayRed : .primary))
+                            if !wd.subLabel.isEmpty {
+                                Text(wd.subLabel)
+                                    .font(.system(size: 8, weight: .medium))
+                                    .foregroundStyle(wd.isToday ? Color.white.opacity(0.9) : (wd.isOffDay ? offDayRed.opacity(0.85) : .secondary))
+                                    .lineLimit(1)
+                            }
                             Circle()
-                                .fill(wd.isToday ? Color.white : (wd.hasEvents ? Color(red: 0.06, green: 0.62, blue: 0.53) : Color.clear))
+                                .fill(wd.isToday ? Color.white : (wd.hasEvents ? (wd.isOffDay ? offDayRed : Color(red: 0.06, green: 0.62, blue: 0.53)) : Color.clear))
                                 .frame(width: 4, height: 4)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 5)
-                        .background(wd.isToday ? tealGradient : LinearGradient(colors: [Color.primary.opacity(0.04)], startPoint: .top, endPoint: .bottom))
+                        .padding(.vertical, 4)
+                        .background(
+                            wd.isToday
+                                ? (wd.isOffDay ? restCardGradient : tealGradient)
+                                : LinearGradient(colors: [wd.isOffDay ? offDayRed.opacity(0.05) : Color.primary.opacity(0.04)], startPoint: .top, endPoint: .bottom)
+                        )
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
                 }
@@ -2273,10 +2385,13 @@ struct TraceCalendarWidgetEntryView: View {
 
     #if os(iOS)
     private var lockCalView: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        let holTag = entry.holidayStatus == "rest" ? " 休" : (entry.holidayStatus == "work" ? " 班" : "")
+        let lunarTag = entry.lunarLabel.isEmpty ? "" : " · \(entry.lunarLabel)"
+        return VStack(alignment: .leading, spacing: 2) {
             HStack {
-                Label("\(entry.monthNumber)月\(entry.dayNumber)日 \(entry.weekdayLabel)", systemImage: "calendar")
+                Label("\(entry.monthNumber)月\(entry.dayNumber)日 \(entry.weekdayLabel)\(holTag)\(lunarTag)", systemImage: "calendar")
                     .font(.caption2.bold())
+                    .lineLimit(1)
                 Spacer()
                 Text("\(entry.todaySchedules.count)项")
                     .font(.caption2)
